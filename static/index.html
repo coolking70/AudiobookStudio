@@ -1,0 +1,3665 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>OmniVoice Reader Studio</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg: #08111f;
+      --panel: rgba(11, 18, 32, 0.92);
+      --panel-2: #132033;
+      --panel-3: #18283f;
+      --line: rgba(125, 154, 192, 0.24);
+      --text: #e8eef9;
+      --sub: #8ca2c2;
+      --accent: #66e0a3;
+      --accent-2: #53b8ff;
+      --danger: #f87171;
+      --shadow: 0 22px 60px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(83, 184, 255, 0.15), transparent 28%),
+        radial-gradient(circle at top right, rgba(102, 224, 163, 0.12), transparent 24%),
+        linear-gradient(180deg, #08111f 0%, #0b1627 40%, #09111e 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 31px;
+      letter-spacing: 0.02em;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+    .hero-note {
+      max-width: 760px;
+      color: var(--sub);
+      margin-top: 8px;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: #d7e6ff;
+      background: rgba(19, 32, 51, 0.82);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .hero-tag::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 16px rgba(102, 224, 163, 0.7);
+    }
+    .progress-shell {
+      margin-bottom: 20px;
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: linear-gradient(135deg, rgba(19, 32, 51, 0.94), rgba(10, 18, 32, 0.96));
+      box-shadow: var(--shadow);
+    }
+    .progress-player {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(125, 154, 192, 0.16);
+      background: rgba(7, 14, 26, 0.78);
+    }
+    .player-grid {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+    .player-side {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .player-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .player-actions button {
+      flex: 1 1 140px;
+    }
+    .lyrics-panel {
+      height: 320px;
+      overflow: auto;
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(125, 154, 192, 0.16);
+      background: rgba(11, 18, 32, 0.68);
+    }
+    .lyrics-empty {
+      color: var(--sub);
+      font-size: 13px;
+      line-height: 1.7;
+      padding-top: 24px;
+    }
+    .lyrics-line {
+      padding: 10px 12px;
+      border-radius: 12px;
+      color: #9bb0cc;
+      line-height: 1.7;
+      font-size: 14px;
+      transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+    }
+    .lyrics-line.active {
+      color: #f3fbff;
+      background: rgba(83, 184, 255, 0.14);
+      transform: translateX(4px);
+    }
+    .lyrics-line.current-past {
+      color: #d7e8ff;
+    }
+    .progress-top {
+      display: grid;
+      grid-template-columns: 1.25fr 0.95fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+    .summary-card, .timeline-card, .card {
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid rgba(125, 154, 192, 0.16);
+      background: rgba(11, 18, 32, 0.92);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+    }
+    .summary-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .summary-title, .timeline-title, .muted, label {
+      color: var(--sub);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .phase-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(83, 184, 255, 0.12);
+      border: 1px solid rgba(83, 184, 255, 0.2);
+      color: #c8e8ff;
+      font-size: 13px;
+    }
+    .summary-main {
+      font-size: 20px;
+      line-height: 1.45;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+    .summary-sub {
+      color: var(--sub);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .metric {
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(19, 32, 51, 0.74);
+      border: 1px solid rgba(125, 154, 192, 0.14);
+    }
+    .metric-label {
+      color: var(--sub);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .metric-value {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .bar-wrap { margin-top: 18px; }
+    .bar-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      color: var(--sub);
+      font-size: 12px;
+    }
+    .bar {
+      position: relative;
+      height: 12px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(125, 154, 192, 0.12);
+      border: 1px solid rgba(125, 154, 192, 0.12);
+    }
+    .bar-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent-2), var(--accent));
+      transition: width 0.25s ease;
+      box-shadow: 0 0 24px rgba(83, 184, 255, 0.35);
+    }
+    .bar-fill.indeterminate {
+      width: 35%;
+      animation: indeterminate-slide 1.2s linear infinite;
+    }
+    @keyframes indeterminate-slide {
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(320%); }
+    }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .step {
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(125, 154, 192, 0.14);
+      background: rgba(19, 32, 51, 0.5);
+    }
+    .step-state {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(125, 154, 192, 0.12);
+      color: var(--sub);
+    }
+    .step.active { border-color: rgba(83, 184, 255, 0.4); }
+    .step.active .step-state {
+      background: rgba(83, 184, 255, 0.18);
+      color: #d4efff;
+    }
+    .step.done .step-state {
+      background: rgba(74, 222, 128, 0.18);
+      color: #d9ffe7;
+    }
+    .step.error .step-state {
+      background: rgba(248, 113, 113, 0.2);
+      color: #ffe3e3;
+    }
+    .step-title {
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    .step-desc {
+      color: var(--sub);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 276px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 70px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(19, 32, 51, 0.5);
+      border: 1px solid rgba(125, 154, 192, 0.1);
+    }
+    .timeline-time {
+      color: var(--sub);
+      font-size: 12px;
+    }
+    .timeline-text {
+      font-size: 13px;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 20px;
+    }
+    .analysis-grid {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 20px;
+    }
+    .audio-layout {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      gap: 20px;
+    }
+    .card h2 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+    input, textarea, select {
+      width: 100%;
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid rgba(125, 154, 192, 0.18);
+      border-radius: 12px;
+      padding: 11px 12px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: rgba(83, 184, 255, 0.55);
+      box-shadow: 0 0 0 4px rgba(83, 184, 255, 0.12);
+      background: var(--panel-3);
+    }
+    textarea {
+      resize: vertical;
+      min-height: 100px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-size: 14px;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--accent), #8ff2c2);
+      color: #052013;
+      font-weight: 700;
+      transition: transform 0.15s ease, filter 0.15s ease, opacity 0.15s ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+      filter: grayscale(0.15);
+    }
+    button.secondary {
+      background: linear-gradient(135deg, #47607d, #607793);
+      color: white;
+    }
+    button.danger {
+      background: linear-gradient(135deg, #df5e5e, #f78282);
+      color: white;
+    }
+    .status {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(7, 14, 26, 0.78);
+      border: 1px dashed rgba(125, 154, 192, 0.2);
+      color: var(--sub);
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+    .segments, .roles {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .segments[hidden] {
+      display: none;
+    }
+    .segment, .role-card {
+      border: 1px solid rgba(125, 154, 192, 0.16);
+      border-radius: 16px;
+      padding: 12px;
+      background: rgba(7, 14, 26, 0.72);
+      content-visibility: auto;
+      contain-intrinsic-size: 220px;
+    }
+    .segment-head {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 1.5fr auto;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .role-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .player-wrap {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(7, 14, 26, 0.78);
+      border: 1px solid rgba(125, 154, 192, 0.16);
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .section-meta {
+      color: var(--sub);
+      font-size: 12px;
+    }
+    .import-hint {
+      margin-top: 8px;
+      color: var(--sub);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .toggle-button {
+      background: linear-gradient(135deg, #324962, #506882);
+      color: white;
+    }
+    .mode-switch {
+      display: inline-flex;
+      gap: 8px;
+      padding: 6px;
+      border-radius: 14px;
+      background: rgba(7, 14, 26, 0.78);
+      border: 1px solid rgba(125, 154, 192, 0.16);
+      margin-bottom: 16px;
+    }
+    .mode-switch button {
+      background: transparent;
+      color: var(--sub);
+      border: 1px solid transparent;
+    }
+    .mode-switch button.active {
+      background: linear-gradient(135deg, rgba(83, 184, 255, 0.18), rgba(102, 224, 163, 0.16));
+      color: var(--text);
+      border-color: rgba(125, 154, 192, 0.18);
+    }
+    .sub-card {
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(7, 14, 26, 0.72);
+      border: 1px solid rgba(125, 154, 192, 0.16);
+      margin-top: 14px;
+    }
+    .sub-card[hidden] {
+      display: none;
+    }
+    .sub-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .workspace-tabs {
+      margin-top: 20px;
+    }
+    .workspace-tab-switch {
+      display: inline-flex;
+      gap: 8px;
+      padding: 6px;
+      border-radius: 16px;
+      background: rgba(7, 14, 26, 0.82);
+      border: 1px solid rgba(125, 154, 192, 0.16);
+      margin-bottom: 16px;
+    }
+    .workspace-tab-switch button {
+      background: transparent;
+      color: var(--sub);
+      border: 1px solid transparent;
+    }
+    .workspace-tab-switch button.active {
+      background: linear-gradient(135deg, rgba(83, 184, 255, 0.18), rgba(102, 224, 163, 0.16));
+      color: var(--text);
+      border-color: rgba(125, 154, 192, 0.18);
+    }
+    .workspace-tab-panel[hidden] {
+      display: none;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .mini-note {
+      color: var(--sub);
+      font-size: 12px;
+      line-height: 1.6;
+      margin-top: 8px;
+    }
+    .merge-list, .assignment-list, .voice-library-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .merge-item, .assignment-card, .voice-card {
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(7, 14, 26, 0.72);
+      border: 1px solid rgba(125, 154, 192, 0.16);
+    }
+    .voice-list-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .voice-list-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .editor-shell {
+      margin-top: 18px;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(125, 154, 192, 0.16);
+      background: rgba(7, 14, 26, 0.78);
+    }
+    .editor-shell[hidden] {
+      display: none;
+    }
+    .merge-row, .assignment-head, .voice-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .merge-item label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      font-size: 14px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(83, 184, 255, 0.14);
+      border: 1px solid rgba(83, 184, 255, 0.18);
+      color: #d7ecff;
+      font-size: 12px;
+    }
+    .assignment-actions, .voice-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .dropzone {
+      margin-top: 10px;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px dashed rgba(125, 154, 192, 0.28);
+      background: rgba(19, 32, 51, 0.42);
+      color: var(--sub);
+      font-size: 13px;
+      line-height: 1.6;
+      text-align: center;
+      transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+    }
+    .dropzone.dragover {
+      border-color: rgba(83, 184, 255, 0.5);
+      background: rgba(83, 184, 255, 0.1);
+      color: #d9eeff;
+    }
+    .style-picker {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .style-chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .style-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(83, 184, 255, 0.14);
+      border: 1px solid rgba(83, 184, 255, 0.22);
+      color: #eef7ff;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .style-chip button {
+      padding: 0;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.14);
+      color: white;
+      font-size: 12px;
+      line-height: 1;
+      transform: none;
+    }
+    .style-picker-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .style-picker-title {
+      color: var(--sub);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .style-picker-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .style-tag-btn {
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(19, 32, 51, 0.74);
+      border: 1px solid rgba(125, 154, 192, 0.18);
+      color: #dce9fb;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .style-tag-btn:hover {
+      transform: translateY(-1px);
+    }
+    .style-tag-btn.active {
+      background: linear-gradient(135deg, rgba(83, 184, 255, 0.22), rgba(102, 224, 163, 0.18));
+      border-color: rgba(102, 224, 163, 0.35);
+      color: #f3fbff;
+      box-shadow: 0 0 0 1px rgba(102, 224, 163, 0.12) inset;
+    }
+    .inline-audio {
+      width: 100%;
+      margin-top: 10px;
+    }
+    audio {
+      width: 100%;
+      margin-top: 8px;
+    }
+    @media (max-width: 1200px) {
+      .progress-top { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .player-grid { grid-template-columns: 1fr; }
+      .analysis-grid, .audio-layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 1000px) {
+      .grid { grid-template-columns: 1fr; }
+      .segment-head { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+    @media (max-width: 640px) {
+      .wrap { padding: 16px; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .steps { grid-template-columns: 1fr; }
+      .timeline-item { grid-template-columns: 56px 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div>
+      <h1>OmniVoice Reader Studio</h1>
+      <div class="hero-note">把原文交给 LLM 做角色切分，再按角色逐段合成声音。顶部会实时展示分析、逐段生成、拼接输出这几个阶段的进度和运行状态。</div>
+    </div>
+    <div class="hero-tag">实时任务面板已启用</div>
+  </div>
+
+  <div class="progress-shell">
+    <div class="progress-top">
+      <div class="summary-card">
+        <div class="summary-head">
+          <div class="summary-title">当前任务</div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button type="button" id="cancelTaskButton" class="danger" onclick="cancelCurrentTask()" disabled>取消当前任务</button>
+            <div id="phaseChip" class="phase-chip">空闲</div>
+          </div>
+        </div>
+        <div id="summaryMain" class="summary-main">等待新的文本分析或音频生成任务</div>
+        <div id="summarySub" class="summary-sub">顶部会显示当前所处阶段、段数进度、最后更新时间，以及最近发生的关键事件。</div>
+
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-label">阶段进度</div>
+            <div id="metricPercent" class="metric-value">0%</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">总段数</div>
+            <div id="metricTotal" class="metric-value">0</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">已生成</div>
+            <div id="metricDone" class="metric-value">0</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">最后更新</div>
+            <div id="metricUpdated" class="metric-value" style="font-size:18px;">--:--:--</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">已运行</div>
+            <div id="metricElapsed" class="metric-value" style="font-size:18px;">00:00</div>
+          </div>
+        </div>
+
+        <div class="bar-wrap">
+          <div class="bar-meta">
+            <span id="barLabel">等待任务</span>
+            <span id="barDetail">0 / 0</span>
+          </div>
+          <div class="bar">
+            <div id="barFill" class="bar-fill"></div>
+          </div>
+        </div>
+
+        <div id="steps" class="steps"></div>
+      </div>
+
+      <div class="timeline-card">
+        <div class="timeline-title">运行时间线</div>
+        <div id="timeline" class="timeline"></div>
+      </div>
+    </div>
+
+    <div class="progress-player">
+      <div class="player-grid">
+        <div class="player-side">
+          <div class="muted">试听播放器</div>
+          <audio id="audioPlayer" controls></audio>
+          <div class="player-actions">
+            <button type="button" id="exportAudioButton" class="secondary" onclick="exportCurrentAudio()" disabled>导出完整音频</button>
+            <button type="button" id="exportLrcButton" class="secondary" onclick="exportCurrentLrc()" disabled>导出完整歌词</button>
+          </div>
+        </div>
+        <div>
+          <div class="muted">滚动歌词</div>
+          <div id="lyricsPanel" class="lyrics-panel">
+            <div class="lyrics-empty">生成完整音频后，这里会自动加载并滚动显示对应的歌词内容。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="workspace-tabs">
+    <div class="workspace-tab-switch">
+      <button type="button" id="tabAnalysisBtn" class="active" onclick="setWorkspaceTab('analysis')">文本分析</button>
+      <button type="button" id="tabAudioBtn" onclick="setWorkspaceTab('audio')">音频生成</button>
+      <button type="button" id="tabLibraryBtn" onclick="setWorkspaceTab('library')">声音库</button>
+    </div>
+
+    <div id="analysisTab" class="workspace-tab-panel">
+      <div class="analysis-grid">
+        <div class="card">
+          <div class="mode-switch">
+            <button type="button" id="modeDirectBtn" class="active" onclick="setAnalysisSourceMode('direct')">直连 LLM</button>
+            <button type="button" id="modeExternalBtn" onclick="setAnalysisSourceMode('external')">外部 Chat AI</button>
+          </div>
+
+          <h2>LLM 配置</h2>
+
+          <div id="directLlmPanel">
+            <label>Base URL</label>
+            <input id="baseUrl" placeholder="例如：http://127.0.0.1:11434 或 https://your-api-host.com" />
+
+            <label>API Key</label>
+            <input id="apiKey" placeholder="输入 API Key" type="password" />
+
+            <label>Model</label>
+            <input id="model" placeholder="例如：gpt-4o-mini / qwen-max / local-model-name" />
+
+            <div class="row">
+              <div>
+                <label>Temperature</label>
+                <input id="temperature" type="number" step="0.1" value="0.2" />
+              </div>
+              <div>
+                <label>Max Tokens</label>
+                <input id="maxTokens" type="number" value="2000" />
+              </div>
+            </div>
+
+            <label>分析模式</label>
+            <select id="analysisMode">
+              <option value="stable">稳定模式</option>
+              <option value="balanced" selected>标准模式</option>
+              <option value="fast">快速模式</option>
+            </select>
+
+            <label>调用方式</label>
+            <select id="compatibilityMode">
+              <option value="strict_json">严格 JSON</option>
+              <option value="chat_compat">Chat 兼容模式</option>
+            </select>
+
+            <label>系统提示词（可选）</label>
+            <textarea id="systemPrompt" placeholder="留空则使用后端默认提示词"></textarea>
+
+            <div class="actions">
+              <button type="button" onclick="saveConfig()">保存配置</button>
+              <button type="button" class="secondary" onclick="loadConfig()">读取配置</button>
+              <button type="button" data-busy-lock class="secondary" onclick="testLLMAvailability()">测试可用性</button>
+            </div>
+          </div>
+
+          <div id="externalLlmPanel" class="sub-card" hidden>
+            <div class="muted">不通过本页面直连 API，而是由你把提示词发送给外部 Chat 型 AI，再将返回的 JSON 粘贴或导入回来。</div>
+
+            <div class="sub-grid">
+              <div>
+                <label>外部分析建议模式</label>
+                <select id="externalAnalysisMode">
+                  <option value="stable">稳定模式</option>
+                  <option value="balanced" selected>标准模式</option>
+                  <option value="fast">快速模式</option>
+                </select>
+              </div>
+              <div>
+                <label>外部 AI 参考 Max Tokens</label>
+                <input id="externalMaxTokens" type="number" value="2000" />
+              </div>
+            </div>
+
+            <label>外部 Chat AI 使用的系统提示词（可选）</label>
+            <textarea id="externalSystemPrompt" placeholder="留空则使用系统默认的结构化分析提示词"></textarea>
+
+            <div class="actions">
+              <button type="button" data-busy-lock onclick="prepareExternalAnalysis()">生成外部分析提示词</button>
+              <button type="button" class="secondary" onclick="copyExternalPrompt()">复制提示词</button>
+            </div>
+
+            <div id="externalMeta" class="import-hint">点击生成后会得到一份固定提示词模板。你只需要把完整原文接在提示词后面，发送给外部 Chat AI。</div>
+
+            <label>发送给外部 Chat AI 的提示词</label>
+            <textarea id="externalPromptText" style="min-height: 180px;" readonly placeholder="点击“生成外部分析提示词”后，这里会出现可直接发给外部 Chat AI 的内容"></textarea>
+
+            <div class="actions">
+              <button type="button" class="secondary" onclick="triggerExternalResultImport()">导入返回结果文件</button>
+            </div>
+
+            <input id="externalResultFileInput" type="file" accept=".json,.txt,.md,text/plain,application/json,text/markdown" style="display:none;" onchange="handleExternalResultFileChange(event)" />
+
+            <label>粘贴外部 AI 返回结果</label>
+            <textarea id="externalResultText" style="min-height: 180px;" placeholder='请粘贴外部 Chat AI 返回的 JSON。可以是 {"segments":[...]} 或直接 [...]'></textarea>
+
+            <div class="actions">
+              <button type="button" data-busy-lock onclick="importExternalChunkResult()">导入结果</button>
+              <button type="button" class="secondary" onclick="clearExternalImportedResults()">清空外部导入结果</button>
+            </div>
+          </div>
+
+          <hr style="border-color:rgba(125,154,192,0.18); margin:18px 0;" />
+
+          <div id="sourceInputPanel">
+            <h2>文本输入</h2>
+
+            <label>原文</label>
+            <input id="sourceFileInput" type="file" accept=".txt,.md,text/plain,text/markdown" style="display:none;" onchange="handleSourceFileChange(event)" />
+            <textarea id="sourceText" style="min-height: 300px;" placeholder="在这里粘贴原文"></textarea>
+
+            <div class="actions">
+              <button type="button" data-busy-lock class="secondary" onclick="triggerSourceFileImport()">导入 txt/md</button>
+              <button type="button" data-busy-lock onclick="parseText()">自动分析角色</button>
+              <button type="button" class="secondary" onclick="continueAnalysis()">继续上次分析</button>
+              <button type="button" class="secondary" onclick="exportAnalyzedJson()">导出已分析 JSON</button>
+            </div>
+            <div id="sourceImportHint" class="import-hint">支持导入 `.txt`、`.md` 文本文件。`稳定模式` 更适合小模型；如果你在 LM Studio 或本地小模型上分析，优先把“调用方式”切到 `Chat 兼容模式`。</div>
+          </div>
+
+          <div id="status" class="status">等待操作…</div>
+        </div>
+
+        <div class="card">
+          <div class="section-head">
+            <h2 style="margin-bottom:0;">角色合并</h2>
+            <div class="section-meta">多选后点击合并，以选中的第一个角色名为准</div>
+          </div>
+          <div class="toolbar">
+            <button type="button" class="secondary" onclick="selectAllMergeRoles()">全选角色</button>
+            <button type="button" data-busy-lock onclick="mergeSelectedRoles()">合并选中角色</button>
+            <button type="button" class="secondary" onclick="clearMergeSelection()">清空选择</button>
+          </div>
+          <div id="speakerMergeList" class="merge-list"></div>
+
+          <hr style="border-color:rgba(125,154,192,0.18); margin:18px 0;" />
+
+          <div class="section-head">
+            <h2 style="margin-bottom:0;">分段结果</h2>
+            <div id="segmentsMeta" class="section-meta">默认折叠，减少页面渲染压力</div>
+          </div>
+          <div class="actions">
+            <button type="button" data-busy-lock onclick="addSegment()">新增一段</button>
+            <button type="button" data-busy-lock class="secondary" onclick="renderSegments(true)">刷新渲染</button>
+            <button type="button" class="toggle-button" onclick="toggleSegmentsPanel()"><span id="segmentsToggleLabel">展开分段结果</span></button>
+            <button type="button" data-busy-lock onclick="goToAudioGeneration()">前往音频生成</button>
+            <button type="button" data-busy-lock class="danger" onclick="clearSegments()">清空分段</button>
+          </div>
+          <div id="segments" class="segments" hidden></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="audioTab" class="workspace-tab-panel" hidden>
+      <div class="card">
+        <h2>音频生成</h2>
+        <div class="muted">这里会自动接收文本分析结果，也可以手动导入 JSON 后统一分配角色声音、试听和生成完整音频。</div>
+
+        <label>输出文件名</label>
+        <input id="outputName" value="novel_demo" />
+
+        <label>段间停顿（毫秒）</label>
+        <input id="silenceMs" type="number" value="350" />
+
+        <input id="segmentsJsonFileInput" type="file" accept=".json,text/plain,application/json" style="display:none;" onchange="handleSegmentsJsonFileChange(event)" />
+
+        <div class="actions">
+          <button type="button" class="secondary" onclick="triggerSegmentsJsonImport()">导入分段 JSON</button>
+          <button type="button" class="secondary" onclick="autoAssignVoices()">自动分配其余角色声音</button>
+          <button type="button" class="secondary" onclick="applyNarratorVoiceToUnassigned()">其余角色套用旁白声音</button>
+          <button type="button" class="secondary" onclick="resetAudioAssignments()">清空配置</button>
+          <button type="button" data-busy-lock onclick="narrateSegments()">开始生成</button>
+        </div>
+
+        <div class="row" style="margin-top:14px;">
+          <div>
+            <label>角色排序</label>
+            <select id="audioAssignmentSort" onchange="renderRoleAssignments()">
+              <option value="count" selected>按段数排序</option>
+              <option value="time">按时间排序</option>
+            </select>
+          </div>
+          <div>
+            <label>说明</label>
+            <div class="mini-note">设置好旁白的声音后，可以一键把旁白声音复制给其余尚未分配的角色。</div>
+          </div>
+        </div>
+
+        <div class="mini-note">会按当前分析结果中的角色自动列出待分配项。你可以为每个角色选择声音，再用随机较短台词快速试听。</div>
+
+        <div id="audioAssignmentsMeta" class="import-hint">当前还没有可生成的分段，请先完成文本分析或手动导入 JSON。</div>
+        <div id="audioRoleAssignments" class="assignment-list"></div>
+      </div>
+    </div>
+
+    <div id="libraryTab" class="workspace-tab-panel" hidden>
+      <div class="card">
+        <div class="section-head">
+          <h2 style="margin-bottom:0;">声音库</h2>
+          <div class="section-meta">本地缓存角色声音模板，可复用到不同文本</div>
+        </div>
+        <div class="actions">
+          <button type="button" onclick="addVoiceLibraryEntry()">新增声音</button>
+          <button type="button" class="secondary" onclick="saveVoiceLibrary()">保存声音库</button>
+          <button type="button" class="secondary" onclick="loadVoiceLibrary()">读取声音库</button>
+        </div>
+        <div class="mini-note">默认显示简洁列表。点击“新增声音”或列表里的“编辑”后，再进入单独编辑界面设置名称、style、ref_audio 和 ref_text。</div>
+        <input id="voiceLibraryFileInput" type="file" accept=".wav,.mp3,.flac,.m4a,.ogg,audio/*" style="display:none;" onchange="handleVoiceLibraryFileChange(event)" />
+        <div id="voiceLibraryList" class="voice-library-list"></div>
+        <div id="voiceLibraryEditor" class="editor-shell" hidden></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let segmentsState = [];
+  let roleProfilesState = {};
+  let taskBusy = false;
+  let segmentsPanelExpanded = false;
+  let progressRenderQueued = false;
+  let currentAudioUrl = "";
+  let currentLrcUrl = "";
+  let lyricsState = [];
+  let activeLyricIndex = -1;
+  let activeAbortController = null;
+  let taskCancelled = false;
+  let taskStartTime = null;
+  let taskElapsedTimer = null;
+  let analysisSourceMode = "direct";
+  let activeWorkspaceTab = "analysis";
+  let externalPromptChunks = [];
+  let externalCurrentChunkIndex = 0;
+  let externalImportedSegments = [];
+  let externalImportedChunkMap = {};
+  let mergeSelectionState = {};
+  let voiceLibraryState = [];
+  let roleVoiceAssignments = {};
+  let pendingVoiceLibraryFileIndex = -1;
+  let editingVoiceLibraryIndex = -1;
+
+  const PARSE_SNAPSHOT_STORAGE_KEY = "ov_parse_snapshot";
+  const LAST_SEGMENTS_STORAGE_KEY = "ov_last_segments";
+  const VOICE_LIBRARY_STORAGE_KEY = "ov_voice_library";
+
+  const progressState = {
+    mode: "idle",
+    stage: "idle",
+    summary: "等待新的文本分析或音频生成任务",
+    detail: "顶部会显示当前所处阶段、段数进度、最后更新时间，以及最近发生的关键事件。",
+    percent: 0,
+    total: 0,
+    done: 0,
+    indeterminate: false,
+    updatedAt: "--:--:--",
+    elapsedText: "00:00",
+    logs: [],
+  };
+
+  const STEP_DEFS = [
+    { key: "prepare", title: "准备", desc: "检查参数与任务初始化" },
+    { key: "analyze", title: "文本分析", desc: "调用 LLM 切分角色与段落" },
+    { key: "synthesize", title: "声音生成", desc: "逐段生成角色语音" },
+    { key: "merge", title: "音频拼接", desc: "合并分段并刷新试听" },
+  ];
+  const LLM_TEST_TEXT = "旁白：清晨的风吹过广场。李四说：“今天就开始行动吧。”张三点了点头。";
+  const DEFAULT_EXTERNAL_ANALYSIS_PROMPT = `你是一个“小说/对白文本分析器”。
+请把用户提供的原文分析成适合 TTS 的 JSON 结构。
+
+要求：
+1. 输出必须是合法 JSON 对象。
+2. 格式固定为：
+{
+  "segments": [
+    {
+      "speaker": "旁白",
+      "text": "夜色降临。",
+      "emotion": "neutral",
+      "style": "female, moderate pitch"
+    }
+  ]
+}
+3. speaker 只填角色名或“旁白”。
+4. emotion 只能从以下值中选：neutral, soft, cold, serious, curious, angry
+5. style 必须只使用以下英文标签，且用英文逗号+空格分隔：
+american accent, australian accent, british accent, canadian accent,
+child, chinese accent, elderly, female, high pitch, indian accent,
+japanese accent, korean accent, low pitch, male, middle-aged,
+moderate pitch, portuguese accent, russian accent, teenager,
+very high pitch, very low pitch, whisper, young adult
+6. 不要输出任何解释、注释、markdown，只输出 JSON。
+7. 如果无法判断，说话内容归为“旁白”。
+8. 优先按“自然段 / 完整对白回合”切分，不要切得过碎。
+9. 旁白连续叙述可合并成 1-3 句，只要语义完整即可。
+10. 只有当单段明显过长时，才继续往下细分。`;
+
+  const CHUNK_BREAK_PREFERENCES = ["\n\n", "\n", "。", "！", "？", ".", "!", "?", "；", ";", "：", ":", "，", ",", "、", " "];
+  const STYLE_TAG_GROUPS = [
+    {
+      title: "性别",
+      tags: [
+        ["female", "女性"],
+        ["male", "男性"],
+      ],
+    },
+    {
+      title: "年龄",
+      tags: [
+        ["child", "儿童"],
+        ["teenager", "青少年"],
+        ["young adult", "年轻成人"],
+        ["middle-aged", "中年"],
+        ["elderly", "老年"],
+      ],
+    },
+    {
+      title: "音高",
+      tags: [
+        ["very high pitch", "很高音"],
+        ["high pitch", "高音"],
+        ["moderate pitch", "中音"],
+        ["low pitch", "低音"],
+        ["very low pitch", "很低音"],
+      ],
+    },
+    {
+      title: "风格",
+      tags: [
+        ["whisper", "耳语"],
+      ],
+    },
+    {
+      title: "口音",
+      tags: [
+        ["chinese accent", "中文口音"],
+        ["american accent", "美式口音"],
+        ["australian accent", "澳式口音"],
+        ["british accent", "英式口音"],
+        ["canadian accent", "加拿大口音"],
+        ["indian accent", "印度口音"],
+        ["japanese accent", "日式口音"],
+        ["korean accent", "韩式口音"],
+        ["portuguese accent", "葡语口音"],
+        ["russian accent", "俄式口音"],
+      ],
+    },
+  ];
+  const STYLE_TAG_GROUP_MAP = STYLE_TAG_GROUPS.reduce((acc, group) => {
+    group.tags.forEach(([tag]) => {
+      acc[tag] = group.title;
+    });
+    return acc;
+  }, {});
+  const ANALYSIS_MODE_PRESETS = {
+    stable: {
+      chunkTarget: 2200,
+      chunkHardLimit: 3000,
+      minRetryChunk: 500,
+      maxRetryDepth: 6,
+      maxRequestRetries: 3,
+      outputBudgetRatio: 0.52,
+      charBudgetRatio: 1.35,
+      label: "稳定模式",
+    },
+    balanced: {
+      chunkTarget: 3600,
+      chunkHardLimit: 4800,
+      minRetryChunk: 700,
+      maxRetryDepth: 5,
+      maxRequestRetries: 2,
+      outputBudgetRatio: 0.6,
+      charBudgetRatio: 1.75,
+      label: "标准模式",
+    },
+    fast: {
+      chunkTarget: 5200,
+      chunkHardLimit: 6800,
+      minRetryChunk: 1000,
+      maxRetryDepth: 4,
+      maxRequestRetries: 1,
+      outputBudgetRatio: 0.72,
+      charBudgetRatio: 2.25,
+      label: "快速模式",
+    },
+  };
+
+  function nowTime() {
+    return new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  }
+
+  function formatElapsed(ms) {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const hours = Math.floor(minutes / 60);
+    if (hours > 0) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  function stopElapsedTimer() {
+    if (taskElapsedTimer) {
+      clearInterval(taskElapsedTimer);
+      taskElapsedTimer = null;
+    }
+  }
+
+  function startElapsedTimer() {
+    stopElapsedTimer();
+    taskStartTime = Date.now();
+    progressState.elapsedText = "00:00";
+    taskElapsedTimer = setInterval(() => {
+      if (!taskStartTime) return;
+      progressState.elapsedText = formatElapsed(Date.now() - taskStartTime);
+      renderProgress();
+    }, 1000);
+  }
+
+  function setBusy(busy) {
+    taskBusy = busy;
+    document.querySelectorAll("[data-busy-lock]").forEach((button) => {
+      button.disabled = busy;
+    });
+    document.getElementById("cancelTaskButton").disabled = !busy;
+  }
+
+  function formatLyricDisplay(line) {
+    const speaker = String(line.speaker || "").trim();
+    const text = String(line.text || "").trim();
+    if (!speaker || speaker === "旁白") return text;
+    return `${speaker}：${text}`;
+  }
+
+  function parseLrcTimestamp(timestamp) {
+    const parts = String(timestamp).split(":");
+    if (parts.length !== 2) return 0;
+    return Number(parts[0]) * 60 + Number(parts[1]);
+  }
+
+  function parseLrcContent(content) {
+    return String(content || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const match = line.match(/^\[(\d{2}:\d{2}\.\d{2})\](.*)$/);
+        if (!match) return null;
+        return {
+          time: parseLrcTimestamp(match[1]),
+          text: match[2].trim() || "...",
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function pushLog(message) {
+    progressState.logs.unshift({ time: nowTime(), text: message });
+    progressState.logs = progressState.logs.slice(0, 12);
+  }
+
+  function computeStepClass(stepKey) {
+    const stageOrder = ["idle", "prepare", "analyze", "synthesize", "merge", "done", "error"];
+    const currentIndex = stageOrder.indexOf(progressState.stage);
+    const stepIndex = stageOrder.indexOf(stepKey);
+
+    if (progressState.stage === "error") {
+      if (progressState.mode === "parse" && stepKey === "analyze") return "error";
+      if ((progressState.mode === "narrate" || progressState.mode === "auto") && (stepKey === "synthesize" || stepKey === "merge")) return "error";
+      if (stepKey === "prepare") return "done";
+      if (progressState.mode !== "parse" && stepKey === "analyze" && progressState.total > 0) return "done";
+      return "";
+    }
+
+    if (progressState.stage === "done") {
+      if (progressState.mode === "parse") {
+        return ["prepare", "analyze"].includes(stepKey) ? "done" : "";
+      }
+      return "done";
+    }
+
+    if (currentIndex === -1 || stepIndex === -1) return "";
+    if (stepIndex < currentIndex) return "done";
+    if (stepKey === progressState.stage) return "active";
+    return "";
+  }
+
+  function renderSteps() {
+    const container = document.getElementById("steps");
+    container.innerHTML = STEP_DEFS.map((step, index) => {
+      const stepClass = computeStepClass(step.key);
+      const stateText = stepClass === "done" ? "✓" : stepClass === "error" ? "!" : index + 1;
+      return `
+        <div class="step ${stepClass}">
+          <div class="step-state">${stateText}</div>
+          <div class="step-title">${step.title}</div>
+          <div class="step-desc">${step.desc}</div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function renderTimeline() {
+    const timeline = document.getElementById("timeline");
+    if (!progressState.logs.length) {
+      timeline.innerHTML = `<div class="timeline-item"><div class="timeline-time">--:--:--</div><div class="timeline-text">这里会滚动显示最近的分析与合成事件。</div></div>`;
+      return;
+    }
+
+    timeline.innerHTML = progressState.logs.map((item) => `
+      <div class="timeline-item">
+        <div class="timeline-time">${escapeHtml(item.time)}</div>
+        <div class="timeline-text">${escapeHtml(item.text)}</div>
+      </div>
+    `).join("");
+  }
+
+  function renderProgressNow() {
+    document.getElementById("phaseChip").textContent = ({
+      idle: "空闲",
+      prepare: "准备中",
+      analyze: "分析中",
+      synthesize: "生成中",
+      merge: "拼接中",
+      done: "已完成",
+      error: "失败"
+    })[progressState.stage] || "处理中";
+
+    document.getElementById("summaryMain").textContent = progressState.summary;
+    document.getElementById("summarySub").textContent = progressState.detail;
+    document.getElementById("metricPercent").textContent = `${progressState.percent}%`;
+    document.getElementById("metricTotal").textContent = String(progressState.total || 0);
+    document.getElementById("metricDone").textContent = String(progressState.done || 0);
+    document.getElementById("metricUpdated").textContent = progressState.updatedAt;
+    document.getElementById("metricElapsed").textContent = progressState.elapsedText || "00:00";
+    document.getElementById("barLabel").textContent = progressState.summary;
+    document.getElementById("barDetail").textContent = `${progressState.done || 0} / ${progressState.total || 0}`;
+
+    const fill = document.getElementById("barFill");
+    fill.classList.toggle("indeterminate", !!progressState.indeterminate);
+    if (!progressState.indeterminate) {
+      fill.style.width = `${Math.max(0, Math.min(100, progressState.percent))}%`;
+      fill.style.transform = "translateX(0)";
+    } else {
+      fill.style.width = "";
+      fill.style.transform = "";
+    }
+
+    renderSteps();
+    renderTimeline();
+  }
+
+  function renderProgress() {
+    if (progressRenderQueued) return;
+    progressRenderQueued = true;
+    requestAnimationFrame(() => {
+      progressRenderQueued = false;
+      renderProgressNow();
+    });
+  }
+
+  function setProgress(patch, options = {}) {
+    Object.assign(progressState, patch);
+    progressState.updatedAt = nowTime();
+    if (options.log) {
+      pushLog(options.log);
+    }
+    renderProgress();
+  }
+
+  function resetProgress(mode = "idle") {
+    progressState.mode = mode;
+    progressState.stage = "idle";
+    progressState.summary = "等待新的文本分析或音频生成任务";
+    progressState.detail = "顶部会显示当前所处阶段、段数进度、最后更新时间，以及最近发生的关键事件。";
+    progressState.percent = 0;
+    progressState.total = 0;
+    progressState.done = 0;
+    progressState.indeterminate = false;
+    progressState.updatedAt = "--:--:--";
+    progressState.elapsedText = "00:00";
+    taskStartTime = null;
+    stopElapsedTimer();
+    if (mode === "idle") {
+      progressState.logs = [];
+    }
+    renderProgress();
+  }
+
+  function beginTask(mode, summary, detail) {
+    setBusy(true);
+    taskCancelled = false;
+    startElapsedTimer();
+    progressState.mode = mode;
+    progressState.logs = [];
+    setProgress({
+      stage: "prepare",
+      summary,
+      detail,
+      percent: 2,
+      total: 0,
+      done: 0,
+      indeterminate: false,
+    }, { log: summary });
+  }
+
+  function finishTask(summary, detail, options = {}) {
+    stopElapsedTimer();
+    setProgress({
+      stage: "done",
+      summary,
+      detail,
+      percent: 100,
+      indeterminate: false,
+      total: options.total ?? progressState.total,
+      done: options.done ?? progressState.done,
+    }, { log: summary });
+    setBusy(false);
+    activeAbortController = null;
+  }
+
+  function failTask(summary, errorMessage) {
+    stopElapsedTimer();
+    setProgress({
+      stage: "error",
+      summary,
+      detail: errorMessage,
+      indeterminate: false,
+    }, { log: `${summary}：${errorMessage}` });
+    setBusy(false);
+    activeAbortController = null;
+  }
+
+  function setStatus(msg) {
+    document.getElementById("status").textContent = msg;
+  }
+
+  function setWorkspaceTab(tab) {
+    activeWorkspaceTab = tab === "audio" || tab === "library" ? tab : "analysis";
+    document.getElementById("tabAnalysisBtn").classList.toggle("active", activeWorkspaceTab === "analysis");
+    document.getElementById("tabAudioBtn").classList.toggle("active", activeWorkspaceTab === "audio");
+    document.getElementById("tabLibraryBtn").classList.toggle("active", activeWorkspaceTab === "library");
+    document.getElementById("analysisTab").hidden = activeWorkspaceTab !== "analysis";
+    document.getElementById("audioTab").hidden = activeWorkspaceTab !== "audio";
+    document.getElementById("libraryTab").hidden = activeWorkspaceTab !== "library";
+  }
+
+  function saveParseSnapshot(snapshot) {
+    localStorage.setItem(PARSE_SNAPSHOT_STORAGE_KEY, JSON.stringify({
+      ...snapshot,
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  function getParseSnapshot() {
+    const raw = localStorage.getItem(PARSE_SNAPSHOT_STORAGE_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  function clearParseSnapshot() {
+    localStorage.removeItem(PARSE_SNAPSHOT_STORAGE_KEY);
+  }
+
+  function saveLastSegments(segments) {
+    localStorage.setItem(LAST_SEGMENTS_STORAGE_KEY, JSON.stringify({
+      segments: segments || [],
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  function getLastSegments() {
+    const raw = localStorage.getItem(LAST_SEGMENTS_STORAGE_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  function setAnalysisSourceMode(mode) {
+    analysisSourceMode = mode === "external" ? "external" : "direct";
+    document.getElementById("modeDirectBtn").classList.toggle("active", analysisSourceMode === "direct");
+    document.getElementById("modeExternalBtn").classList.toggle("active", analysisSourceMode === "external");
+    document.getElementById("directLlmPanel").hidden = analysisSourceMode !== "direct";
+    document.getElementById("externalLlmPanel").hidden = analysisSourceMode !== "external";
+    document.getElementById("sourceInputPanel").hidden = analysisSourceMode === "external";
+    if (analysisSourceMode === "external") {
+      document.getElementById("externalAnalysisMode").value = document.getElementById("analysisMode").value || "balanced";
+      document.getElementById("externalMaxTokens").value = document.getElementById("maxTokens").value || "2000";
+      document.getElementById("externalSystemPrompt").value = document.getElementById("systemPrompt").value || "";
+      if (document.getElementById("compatibilityMode").value === "chat_compat" && !document.getElementById("externalSystemPrompt").value) {
+        document.getElementById("externalSystemPrompt").value = DEFAULT_EXTERNAL_ANALYSIS_PROMPT;
+      }
+    }
+  }
+
+  function cancelCurrentTask() {
+    if (!taskBusy) return;
+    taskCancelled = true;
+    if (activeAbortController) {
+      activeAbortController.abort();
+    }
+    setStatus("正在取消当前任务...");
+    const hasSnapshot = !!getParseSnapshot();
+    failTask("任务已取消", hasSnapshot ? "用户手动取消了当前请求。已保留当前分析进度，可以继续上次分析或导出已完成 JSON。" : "用户手动取消了当前请求，已停止继续分析或生成。");
+  }
+
+  function updateExportButtons() {
+    document.getElementById("exportAudioButton").disabled = !currentAudioUrl;
+    document.getElementById("exportLrcButton").disabled = !currentLrcUrl;
+  }
+
+  function renderLyrics() {
+    const panel = document.getElementById("lyricsPanel");
+    if (!lyricsState.length) {
+      panel.innerHTML = `<div class="lyrics-empty">生成完整音频后，这里会自动加载并滚动显示对应的歌词内容。</div>`;
+      return;
+    }
+
+    panel.innerHTML = lyricsState.map((line, index) => {
+      const className = index === activeLyricIndex ? "lyrics-line active" : index < activeLyricIndex ? "lyrics-line current-past" : "lyrics-line";
+      return `<div class="${className}" data-lyric-index="${index}">${escapeHtml(line.text)}</div>`;
+    }).join("");
+  }
+
+  function updateActiveLyricUI(previousIndex, nextIndex) {
+    const panel = document.getElementById("lyricsPanel");
+
+    if (previousIndex >= 0) {
+      const previousNode = panel.querySelector(`[data-lyric-index="${previousIndex}"]`);
+      if (previousNode) {
+        previousNode.classList.remove("active");
+        previousNode.classList.add("current-past");
+      }
+    }
+
+    if (nextIndex >= 0) {
+      const nextNode = panel.querySelector(`[data-lyric-index="${nextIndex}"]`);
+      if (nextNode) {
+        nextNode.classList.add("active");
+        nextNode.classList.remove("current-past");
+      }
+    }
+  }
+
+  function scrollLyricToCenter(index) {
+    if (index < 0) return;
+    const panel = document.getElementById("lyricsPanel");
+    const activeNode = panel.querySelector(`[data-lyric-index="${index}"]`);
+    if (!activeNode) return;
+
+    const targetTop = activeNode.offsetTop - (panel.clientHeight / 2) + (activeNode.offsetHeight / 2);
+    const maxScrollTop = Math.max(0, panel.scrollHeight - panel.clientHeight);
+    panel.scrollTo({
+      top: Math.max(0, Math.min(maxScrollTop, targetTop)),
+      behavior: "auto",
+    });
+  }
+
+  function syncLyricsToAudio(currentTime) {
+    if (!lyricsState.length) return;
+
+    let nextIndex = -1;
+    for (let i = 0; i < lyricsState.length; i += 1) {
+      if (currentTime >= lyricsState[i].time) {
+        nextIndex = i;
+      } else {
+        break;
+      }
+    }
+
+    if (nextIndex === activeLyricIndex) return;
+    const previousIndex = activeLyricIndex;
+    activeLyricIndex = nextIndex;
+    updateActiveLyricUI(previousIndex, activeLyricIndex);
+    scrollLyricToCenter(activeLyricIndex);
+  }
+
+  async function loadLyrics(lrcUrl) {
+    currentLrcUrl = lrcUrl || "";
+    lyricsState = [];
+    activeLyricIndex = -1;
+    updateExportButtons();
+
+    if (!lrcUrl) {
+      renderLyrics();
+      return;
+    }
+
+    try {
+      const resp = await fetch(`${lrcUrl}?t=${Date.now()}`);
+      if (!resp.ok) {
+        throw new Error("歌词文件加载失败");
+      }
+      const content = await resp.text();
+      lyricsState = parseLrcContent(content);
+      renderLyrics();
+      syncLyricsToAudio(document.getElementById("audioPlayer").currentTime || 0);
+    } catch (err) {
+      lyricsState = [];
+      activeLyricIndex = -1;
+      renderLyrics();
+      pushLog(`歌词加载失败：${err.message}`);
+      renderProgress();
+    }
+  }
+
+  async function setMediaAssets(audioUrl, lrcUrl = "") {
+    const player = document.getElementById("audioPlayer");
+    currentAudioUrl = audioUrl || "";
+    currentLrcUrl = lrcUrl || "";
+    updateExportButtons();
+
+    if (audioUrl) {
+      player.src = `${audioUrl}?t=${Date.now()}`;
+      player.load();
+      player.play().catch(() => {});
+    } else {
+      player.removeAttribute("src");
+      player.load();
+    }
+
+    await loadLyrics(lrcUrl);
+  }
+
+  function exportCurrentAudio() {
+    if (!currentAudioUrl) return;
+    const link = document.createElement("a");
+    link.href = currentAudioUrl;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  function exportCurrentLrc() {
+    if (!currentLrcUrl) return;
+    const link = document.createElement("a");
+    link.href = currentLrcUrl;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  function getLLMConfig() {
+    return {
+      base_url: document.getElementById("baseUrl").value.trim(),
+      api_key: document.getElementById("apiKey").value.trim(),
+      model: document.getElementById("model").value.trim(),
+      temperature: parseFloat(document.getElementById("temperature").value || "0.2"),
+      max_tokens: parseInt(document.getElementById("maxTokens").value || "2000", 10),
+      analysis_mode: document.getElementById("analysisMode").value || "balanced",
+      compatibility_mode: document.getElementById("compatibilityMode").value || "strict_json",
+      system_prompt: document.getElementById("systemPrompt").value.trim() || null,
+    };
+  }
+
+  function getAnalysisPreset(mode) {
+    return ANALYSIS_MODE_PRESETS[mode] || ANALYSIS_MODE_PRESETS.balanced;
+  }
+
+  function getExternalAnalysisConfig() {
+    return {
+      max_tokens: parseInt(document.getElementById("externalMaxTokens").value || "2000", 10),
+      analysis_mode: document.getElementById("externalAnalysisMode").value || "balanced",
+      system_prompt: document.getElementById("externalSystemPrompt").value.trim() || null,
+    };
+  }
+
+  function getAvailabilitySuggestion(durationSeconds, mode, success) {
+    const preset = getAnalysisPreset(mode);
+    if (!success) {
+      return `当前模型在${preset.label}下未通过测试，建议先切到稳定模式，或进一步降低 max_tokens 后再试。`;
+    }
+    if (durationSeconds >= 60) {
+      return `当前模型响应较慢，建议正式分析时使用稳定模式，优先保证成功率。`;
+    }
+    if (durationSeconds >= 20) {
+      return `当前模型可用，但速度一般，建议保留${preset.label}或切到稳定模式处理长文本。`;
+    }
+    if (durationSeconds <= 8 && mode !== "fast") {
+      return `当前模型响应较快，可以尝试标准模式或快速模式提升整体效率。`;
+    }
+    return `当前模型在${preset.label}下表现正常，可以继续正式分析。`;
+  }
+
+  function buildExternalPrompt(config) {
+    const systemPrompt = config.system_prompt || DEFAULT_EXTERNAL_ANALYSIS_PROMPT;
+    const preset = getAnalysisPreset(config.analysis_mode);
+    return [
+      `请严格执行以下系统提示词，不要输出额外解释：`,
+      systemPrompt,
+      ``,
+      `附加要求：`,
+      `1. 本次提供的是完整原文，不需要你告诉我如何分块，也不要要求我再拆分。`,
+      `2. 如果文本较长，请你自行在内部按自然段、完整对白回合处理，但最终只输出一份完整 JSON。`,
+      `3. 当前建议模式是：${preset.label}。参考 max_tokens：${config.max_tokens}。这只是稳定性提示，不需要在回答里解释。`,
+      ``,
+      `请在这段提示词后面，由用户自行粘贴完整原文。`,
+      `当你看到原文后，请直接输出合法 JSON，不要输出解释、markdown 或额外说明。`,
+      ``,
+      `用户将在这行下面粘贴完整原文：`,
+    ].join("\n");
+  }
+
+  function refreshExternalPromptView() {
+    const meta = document.getElementById("externalMeta");
+    const promptText = document.getElementById("externalPromptText");
+    if (!externalPromptChunks.length) {
+      meta.textContent = "点击生成后会得到一份固定提示词模板。你只需要把自己的完整原文接在提示词后面，发送给外部 Chat AI。";
+      promptText.value = "";
+      return;
+    }
+
+    const current = externalPromptChunks[externalCurrentChunkIndex];
+    const importedCount = Object.keys(externalImportedChunkMap).length;
+    meta.textContent = importedCount ? `已导入外部结果。当前累计 ${externalImportedSegments.length} 个分段，可继续修改或直接合成。` : "当前展示的是固定提示词模板，请把完整原文接在末尾后发送给外部 Chat AI。";
+    promptText.value = current.prompt;
+  }
+
+  function isTaskCancelledError(err) {
+    const message = String(err && err.message ? err.message : err || "");
+    return taskCancelled || message.includes("AbortError") || message.includes("任务已取消");
+  }
+
+  function getOutputName(fallback = "result") {
+    return document.getElementById("outputName").value.trim() || fallback;
+  }
+
+  function getSilenceMs() {
+    return parseInt(document.getElementById("silenceMs").value || "350", 10);
+  }
+
+  function setSourceText(text) {
+    document.getElementById("sourceText").value = text;
+  }
+
+  function triggerSourceFileImport() {
+    if (taskBusy) return;
+    document.getElementById("sourceFileInput").click();
+  }
+
+  async function handleSourceFileChange(event) {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+    if (!(lowerName.endsWith(".txt") || lowerName.endsWith(".md"))) {
+      setStatus("仅支持导入 .txt 或 .md 文件。");
+      input.value = "";
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      setSourceText(text.replace(/\r\n/g, "\n"));
+      setStatus(`已导入文件：${file.name}`);
+      setProgress({
+        summary: `已导入文本文件 ${file.name}`,
+        detail: `文件内容已写入原文输入框，共 ${text.length} 个字符。可以直接发起自动分角色或合成。`,
+        stage: taskBusy ? progressState.stage : "idle",
+        percent: taskBusy ? progressState.percent : 0,
+        total: taskBusy ? progressState.total : 0,
+        done: taskBusy ? progressState.done : 0,
+        indeterminate: taskBusy ? progressState.indeterminate : false,
+      }, { log: `已导入文件 ${file.name}` });
+    } catch (err) {
+      setStatus("导入文件失败：\n" + err.message);
+    } finally {
+      input.value = "";
+    }
+  }
+
+  function saveConfig() {
+    localStorage.setItem("ov_llm_config", JSON.stringify(getLLMConfig()));
+    localStorage.setItem("ov_role_profiles", JSON.stringify(roleProfilesState));
+    localStorage.setItem("ov_role_voice_assignments", JSON.stringify(roleVoiceAssignments));
+    setStatus("已保存配置。");
+    setProgress({
+      summary: "配置已保存",
+      detail: "LLM 配置和角色配置已经写入本地浏览器缓存，刷新页面后仍可恢复。",
+      stage: taskBusy ? progressState.stage : "idle",
+      percent: taskBusy ? progressState.percent : 0,
+      total: taskBusy ? progressState.total : 0,
+      done: taskBusy ? progressState.done : 0,
+      indeterminate: taskBusy ? progressState.indeterminate : false,
+    }, { log: "已保存当前配置到浏览器本地缓存" });
+  }
+
+  function loadConfig() {
+    const llmRaw = localStorage.getItem("ov_llm_config");
+    if (llmRaw) {
+      const cfg = JSON.parse(llmRaw);
+      document.getElementById("baseUrl").value = cfg.base_url || "";
+      document.getElementById("apiKey").value = cfg.api_key || "";
+      document.getElementById("model").value = cfg.model || "";
+      document.getElementById("temperature").value = cfg.temperature ?? 0.2;
+      document.getElementById("maxTokens").value = cfg.max_tokens ?? 2000;
+      document.getElementById("analysisMode").value = cfg.analysis_mode || "balanced";
+      document.getElementById("compatibilityMode").value = cfg.compatibility_mode || "strict_json";
+      document.getElementById("systemPrompt").value = cfg.system_prompt || "";
+    }
+
+    const roleRaw = localStorage.getItem("ov_role_profiles");
+    if (roleRaw) {
+      roleProfilesState = JSON.parse(roleRaw);
+      renderRoles();
+    }
+
+    const assignmentRaw = localStorage.getItem("ov_role_voice_assignments");
+    if (assignmentRaw) {
+      roleVoiceAssignments = JSON.parse(assignmentRaw);
+    }
+
+    const lastSegments = getLastSegments();
+    if (lastSegments && Array.isArray(lastSegments.segments) && lastSegments.segments.length) {
+      applySegmentsState(lastSegments.segments, { persist: false });
+    }
+
+    const snapshot = getParseSnapshot();
+    if (snapshot?.text) {
+      setSourceText(snapshot.text);
+    }
+
+    setStatus(snapshot ? "已读取本地配置，并恢复到上次中断的分析文本。可点击“继续上次分析”。" : "已读取本地配置。");
+    if (!taskBusy) {
+      setProgress({
+        summary: "本地配置已恢复",
+        detail: "如果上次保存过 LLM 和角色配置，现在已经重新填充到页面中。",
+        stage: "idle",
+        percent: 0,
+        total: 0,
+        done: 0,
+        indeterminate: false,
+      }, { log: "已从浏览器本地缓存读取配置" });
+    }
+  }
+
+  function applyLLMConfigToForm(cfg) {
+    if (!cfg) return;
+    setAnalysisSourceMode("direct");
+    document.getElementById("baseUrl").value = cfg.base_url || "";
+    document.getElementById("apiKey").value = cfg.api_key || "";
+    document.getElementById("model").value = cfg.model || "";
+    document.getElementById("temperature").value = cfg.temperature ?? 0.2;
+    document.getElementById("maxTokens").value = cfg.max_tokens ?? 2000;
+    document.getElementById("analysisMode").value = cfg.analysis_mode || "balanced";
+    document.getElementById("compatibilityMode").value = cfg.compatibility_mode || "strict_json";
+    document.getElementById("systemPrompt").value = cfg.system_prompt || "";
+  }
+
+  function countSegmentsBySpeaker() {
+    const counts = {};
+    segmentsState.forEach((seg) => {
+      const speaker = seg.speaker || "旁白";
+      counts[speaker] = (counts[speaker] || 0) + 1;
+    });
+    return counts;
+  }
+
+  function getSpeakerList() {
+    return Object.keys(countSegmentsBySpeaker());
+  }
+
+  function ensureRoleAssignments() {
+    getSpeakerList().forEach((speaker) => {
+      ensureRoleProfile(speaker);
+      if (!(speaker in roleVoiceAssignments)) {
+        roleVoiceAssignments[speaker] = "";
+      }
+    });
+  }
+
+  function applySegmentsState(segments, options = {}) {
+    segmentsState = (segments || []).map((seg) => ({
+      speaker: seg.speaker || "旁白",
+      text: seg.text || "",
+      emotion: seg.emotion || "neutral",
+      style: seg.style || "",
+      ref_audio: seg.ref_audio || null,
+      ref_text: seg.ref_text || null,
+    }));
+    const speakerSet = new Set(segmentsState.map((seg) => seg.speaker || "旁白"));
+    Object.keys(roleProfilesState).forEach((speaker) => {
+      if (!speakerSet.has(speaker)) {
+        delete roleProfilesState[speaker];
+      }
+    });
+    Object.keys(roleVoiceAssignments).forEach((speaker) => {
+      if (!speakerSet.has(speaker)) {
+        delete roleVoiceAssignments[speaker];
+      }
+    });
+    if (options.persist !== false) {
+      saveLastSegments(segmentsState);
+    }
+    syncRoleProfilesFromSegments();
+    renderSpeakerMergeList();
+    renderRoleAssignments();
+    renderSegments(segmentsPanelExpanded);
+  }
+
+  function getExportableSegments() {
+    if (segmentsState.length) return segmentsState;
+    const snapshot = getParseSnapshot();
+    if (snapshot && Array.isArray(snapshot.combinedSegments) && snapshot.combinedSegments.length) {
+      return snapshot.combinedSegments;
+    }
+    const last = getLastSegments();
+    if (last && Array.isArray(last.segments) && last.segments.length) {
+      return last.segments;
+    }
+    return [];
+  }
+
+  function exportAnalyzedJson() {
+    const segments = getExportableSegments();
+    if (!segments.length) {
+      setStatus("当前没有可导出的分析结果。");
+      return;
+    }
+    const blob = new Blob([JSON.stringify({ segments }, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${getOutputName("analyzed_segments")}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setStatus(`已导出 ${segments.length} 段分析结果。`);
+  }
+
+  function buildParseSnapshotPayload(text, llm, workChunks, index, completedChunks, combinedSegments) {
+    return {
+      text,
+      llm,
+      workChunks,
+      index,
+      completedChunks,
+      combinedSegments,
+    };
+  }
+
+  function renderSpeakerMergeList() {
+    const container = document.getElementById("speakerMergeList");
+    const counts = countSegmentsBySpeaker();
+    const speakers = Object.keys(counts);
+    if (!speakers.length) {
+      container.innerHTML = `<div class="merge-item"><div class="mini-note">完成文本分析后，这里会列出当前识别到的所有角色，便于统一合并名称。</div></div>`;
+      return;
+    }
+
+    container.innerHTML = speakers.map((speaker) => `
+      <div class="merge-item">
+        <div class="merge-row">
+          <label>
+            <input type="checkbox" ${mergeSelectionState[speaker] ? "checked" : ""} onchange="toggleMergeRole('${escapeJs(speaker)}', this.checked)" />
+            <span>${escapeHtml(speaker)}</span>
+          </label>
+          <span class="pill">${counts[speaker]} 段</span>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function toggleMergeRole(speaker, checked) {
+    mergeSelectionState[speaker] = checked;
+  }
+
+  function selectAllMergeRoles() {
+    getSpeakerList().forEach((speaker) => {
+      mergeSelectionState[speaker] = true;
+    });
+    renderSpeakerMergeList();
+  }
+
+  function clearMergeSelection() {
+    mergeSelectionState = {};
+    renderSpeakerMergeList();
+  }
+
+  function mergeSelectedRoles() {
+    const selected = getSpeakerList().filter((speaker) => mergeSelectionState[speaker]);
+    if (selected.length < 2) {
+      setStatus("请至少勾选两个角色再执行合并。");
+      return;
+    }
+    const target = selected[0];
+    segmentsState = segmentsState.map((seg) => selected.includes(seg.speaker || "旁白") ? { ...seg, speaker: target } : seg);
+    selected.slice(1).forEach((speaker) => {
+      if (roleProfilesState[speaker] && !roleProfilesState[target]) {
+        roleProfilesState[target] = { ...roleProfilesState[speaker], speaker: target };
+      }
+      delete roleProfilesState[speaker];
+      delete roleVoiceAssignments[speaker];
+      delete mergeSelectionState[speaker];
+    });
+    ensureRoleProfile(target);
+    mergeSelectionState[target] = false;
+    applySegmentsState(segmentsState);
+    setStatus(`已将 ${selected.length} 个角色合并为“${target}”。`);
+  }
+
+  function goToAudioGeneration() {
+    if (!segmentsState.length) {
+      setStatus("当前还没有可用于生成的分析结果。");
+      return;
+    }
+    setWorkspaceTab("audio");
+    renderRoleAssignments();
+    renderRoles();
+    setStatus(`已切换到音频生成标签页，当前共 ${segmentsState.length} 段文本。`);
+  }
+
+  function getVoiceLabel(voice) {
+    return voice.name || "未命名声音";
+  }
+
+  function getFileStem(filename) {
+    const name = String(filename || "").split(/[\\/]/).pop() || "";
+    return name.replace(/\.[^.]+$/, "") || "";
+  }
+
+  function loadVoiceLibrary() {
+    const raw = localStorage.getItem(VOICE_LIBRARY_STORAGE_KEY);
+    if (raw) {
+      try {
+        voiceLibraryState = JSON.parse(raw);
+      } catch {
+        voiceLibraryState = [];
+      }
+    }
+    editingVoiceLibraryIndex = -1;
+    renderVoiceLibrary();
+    renderRoleAssignments();
+  }
+
+  function saveVoiceLibrary() {
+    localStorage.setItem(VOICE_LIBRARY_STORAGE_KEY, JSON.stringify(voiceLibraryState));
+    setStatus(`已保存声音库，共 ${voiceLibraryState.length} 个声音模板。`);
+    renderRoleAssignments();
+  }
+
+  function addVoiceLibraryEntry() {
+    voiceLibraryState.push({
+      id: `voice_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+      name: "",
+      style: "",
+      ref_audio: "",
+      ref_text: "",
+    });
+    editingVoiceLibraryIndex = voiceLibraryState.length - 1;
+    renderVoiceLibrary();
+  }
+
+  function updateVoiceLibraryField(index, field, value) {
+    if (!voiceLibraryState[index]) return;
+    voiceLibraryState[index][field] = field === "style" ? normalizeStyleValue(value) : value;
+    if (field === "style") {
+      renderVoiceLibrary();
+    }
+    renderRoleAssignments();
+  }
+
+  function openVoiceLibraryEditor(index) {
+    if (!voiceLibraryState[index]) return;
+    editingVoiceLibraryIndex = index;
+    renderVoiceLibrary();
+  }
+
+  function closeVoiceLibraryEditor() {
+    editingVoiceLibraryIndex = -1;
+    renderVoiceLibrary();
+  }
+
+  function mergeStyleTags(existing, nextTag) {
+    const nextGroup = STYLE_TAG_GROUP_MAP[nextTag] || "";
+    const parts = getStyleParts(existing);
+    const filtered = nextGroup
+      ? parts.filter((item) => STYLE_TAG_GROUP_MAP[item] !== nextGroup)
+      : parts.slice();
+    if (!filtered.includes(nextTag)) {
+      filtered.push(nextTag);
+    }
+    return filtered.join(", ");
+  }
+
+  function renderStylePicker(targetType, key) {
+    const activeTagList = getStyleParts(getCurrentStyleValue(targetType, key));
+    const activeTags = new Set(activeTagList);
+    return `
+      <div class="mini-note">OmniVoice 官方支持标签。组内互斥，点击新标签会自动替换同组旧标签；不同组可以叠加。</div>
+      <div class="style-chip-list">
+        ${activeTagList.length ? activeTagList.map((tag) => `
+          <div class="style-chip">
+            <span>${escapeHtml(tag)}</span>
+            <button type="button" onclick="removeStyleTag('${targetType}', '${escapeJs(String(key))}', '${escapeJs(tag)}')">×</button>
+          </div>
+        `).join("") : `<div class="mini-note">当前还没有选中标签，可以手填 style，也可以直接点击下方标签。</div>`}
+      </div>
+      <div class="style-picker">
+        ${STYLE_TAG_GROUPS.map((group) => `
+          <div class="style-picker-group">
+            <div class="style-picker-title">${escapeHtml(group.title)}</div>
+            <div class="style-picker-tags">
+              ${group.tags.map(([tag, label]) => `
+                <button type="button" class="style-tag-btn ${activeTags.has(tag) ? "active" : ""}" onclick="appendStyleTag('${targetType}', '${escapeJs(String(key))}', '${escapeJs(tag)}')">${escapeHtml(tag)} / ${escapeHtml(label)}</button>
+              `).join("")}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function getStyleParts(value) {
+    return String(value || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function normalizeStyleValue(value) {
+    const normalized = [];
+    getStyleParts(value)
+      .map((item) => item.toLowerCase())
+      .forEach((item) => {
+        if (!STYLE_TAG_GROUP_MAP[item]) {
+          return;
+        }
+        const merged = mergeStyleTags(normalized.join(", "), item);
+        normalized.length = 0;
+        normalized.push(...getStyleParts(merged));
+      });
+    return normalized.join(", ");
+  }
+
+  function getCurrentStyleValue(targetType, key) {
+    if (targetType === "role") {
+      return roleProfilesState[key]?.style || "";
+    }
+    if (targetType === "voice") {
+      return voiceLibraryState[Number(key)]?.style || "";
+    }
+    if (targetType === "segment") {
+      return segmentsState[Number(key)]?.style || "";
+    }
+    return "";
+  }
+
+  function appendStyleTag(targetType, key, tag) {
+    if (targetType === "role") {
+      ensureRoleProfile(key);
+      roleProfilesState[key].style = mergeStyleTags(roleProfilesState[key].style, tag);
+      renderRoles();
+      return;
+    }
+    if (targetType === "voice") {
+      const index = Number(key);
+      if (!voiceLibraryState[index]) return;
+      voiceLibraryState[index].style = mergeStyleTags(voiceLibraryState[index].style, tag);
+      renderVoiceLibrary();
+      renderRoleAssignments();
+      return;
+    }
+    if (targetType === "segment") {
+      const index = Number(key);
+      if (!segmentsState[index]) return;
+      segmentsState[index].style = mergeStyleTags(segmentsState[index].style, tag);
+      renderSegments(true);
+      saveLastSegments(segmentsState);
+    }
+  }
+
+  function removeStyleTag(targetType, key, tag) {
+    const nextStyle = getStyleParts(getCurrentStyleValue(targetType, key))
+      .filter((item) => item !== tag)
+      .join(", ");
+    if (targetType === "role") {
+      ensureRoleProfile(key);
+      roleProfilesState[key].style = nextStyle;
+      renderRoles();
+      return;
+    }
+    if (targetType === "voice") {
+      const index = Number(key);
+      if (!voiceLibraryState[index]) return;
+      voiceLibraryState[index].style = nextStyle;
+      renderVoiceLibrary();
+      renderRoleAssignments();
+      return;
+    }
+    if (targetType === "segment") {
+      const index = Number(key);
+      if (!segmentsState[index]) return;
+      segmentsState[index].style = nextStyle;
+      renderSegments(true);
+      saveLastSegments(segmentsState);
+    }
+  }
+
+  async function uploadRefAudioFile(file) {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("读取音频文件失败"));
+      reader.readAsDataURL(file);
+    });
+    return await fetchJson("/api/upload-ref-audio", {
+      filename: file.name,
+      content_base64: dataUrl,
+    });
+  }
+
+  function triggerVoiceLibraryFilePick(index) {
+    pendingVoiceLibraryFileIndex = index;
+    document.getElementById("voiceLibraryFileInput").click();
+  }
+
+  async function assignVoiceLibraryFile(index, file) {
+    if (!file) return;
+    try {
+      setStatus(`正在导入声音参考文件：${file.name}`);
+      const uploaded = await uploadRefAudioFile(file);
+      if (!voiceLibraryState[index]) return;
+      voiceLibraryState[index].ref_audio = uploaded.saved_path || "";
+      voiceLibraryState[index].ref_audio_url = uploaded.audio_url || "";
+      if (!String(voiceLibraryState[index].name || "").trim()) {
+        voiceLibraryState[index].name = getFileStem(file.name) || voiceLibraryState[index].name || "";
+      }
+      renderVoiceLibrary();
+      renderRoleAssignments();
+      setStatus(`已导入参考音频：${uploaded.file_name}`);
+    } catch (err) {
+      setStatus("导入参考音频失败，请查看上方任务面板中的详细错误。");
+      failTask("导入参考音频失败", err.message || String(err));
+    }
+  }
+
+  async function handleVoiceLibraryFileChange(event) {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    const targetIndex = pendingVoiceLibraryFileIndex;
+    pendingVoiceLibraryFileIndex = -1;
+    if (!file || targetIndex < 0) {
+      input.value = "";
+      return;
+    }
+    try {
+      await assignVoiceLibraryFile(targetIndex, file);
+    } finally {
+      input.value = "";
+    }
+  }
+
+  function setVoiceDropzoneState(index, active) {
+    const zone = document.getElementById(`voiceDropzone_${index}`);
+    if (zone) {
+      zone.classList.toggle("dragover", !!active);
+    }
+  }
+
+  function handleVoiceDropDragOver(event, index) {
+    event.preventDefault();
+    setVoiceDropzoneState(index, true);
+  }
+
+  function handleVoiceDropDragLeave(event, index) {
+    event.preventDefault();
+    setVoiceDropzoneState(index, false);
+  }
+
+  async function handleVoiceDrop(event, index) {
+    event.preventDefault();
+    setVoiceDropzoneState(index, false);
+    const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+    if (!file) return;
+    await assignVoiceLibraryFile(index, file);
+  }
+
+  function removeVoiceLibraryEntry(index) {
+    const [removed] = voiceLibraryState.splice(index, 1);
+    if (removed) {
+      Object.keys(roleVoiceAssignments).forEach((speaker) => {
+        if (roleVoiceAssignments[speaker] === removed.id) {
+          roleVoiceAssignments[speaker] = "";
+        }
+      });
+    }
+    if (editingVoiceLibraryIndex === index) {
+      editingVoiceLibraryIndex = -1;
+    } else if (editingVoiceLibraryIndex > index) {
+      editingVoiceLibraryIndex -= 1;
+    }
+    renderVoiceLibrary();
+    renderRoleAssignments();
+  }
+
+  function renderVoiceLibrary() {
+    const container = document.getElementById("voiceLibraryList");
+    const editor = document.getElementById("voiceLibraryEditor");
+    if (!voiceLibraryState.length) {
+      container.innerHTML = `<div class="voice-card"><div class="mini-note">当前还没有声音模板。新增后可在音频生成页自动分配给角色。</div></div>`;
+      editor.hidden = true;
+      editor.innerHTML = "";
+      return;
+    }
+
+    container.innerHTML = voiceLibraryState.map((voice, index) => `
+      <div class="voice-card">
+        <div class="voice-list-row">
+          <div>
+            <strong>${escapeHtml(getVoiceLabel(voice))}</strong>
+            <div class="voice-list-meta">
+              <span class="pill">${escapeHtml(voice.style || "未设置 style")}</span>
+              <span class="pill">${voice.ref_audio ? "已配置参考音频" : "无参考音频"}</span>
+            </div>
+          </div>
+          <div class="voice-actions">
+            <button type="button" class="secondary" onclick="openVoiceLibraryEditor(${index})">编辑</button>
+            <button type="button" class="danger" onclick="removeVoiceLibraryEntry(${index})">删除</button>
+          </div>
+        </div>
+      </div>
+    `).join("");
+
+    const editIndex = editingVoiceLibraryIndex;
+    if (editIndex < 0 || !voiceLibraryState[editIndex]) {
+      editor.hidden = true;
+      editor.innerHTML = "";
+      return;
+    }
+
+    const voice = voiceLibraryState[editIndex];
+    editor.hidden = false;
+    editor.innerHTML = `
+      <div class="voice-head">
+        <strong>编辑声音：${escapeHtml(getVoiceLabel(voice))}</strong>
+        <button type="button" class="secondary" onclick="closeVoiceLibraryEditor()">完成编辑</button>
+      </div>
+      <label>ref_audio</label>
+      <input value="${escapeHtml(voice.ref_audio || "")}" placeholder="可以填写本地或可访问的音频路径" onchange="updateVoiceLibraryField(${editIndex}, 'ref_audio', this.value)" />
+      <div class="voice-actions">
+        <button type="button" class="secondary" onclick="triggerVoiceLibraryFilePick(${editIndex})">选择本地音频</button>
+      </div>
+      <div id="voiceDropzone_${editIndex}" class="dropzone" ondragover="handleVoiceDropDragOver(event, ${editIndex})" ondragleave="handleVoiceDropDragLeave(event, ${editIndex})" ondrop="handleVoiceDrop(event, ${editIndex})">
+        把本地音频文件拖到这里即可自动上传并填入路径
+      </div>
+      ${(voice.ref_audio_url || voice.ref_audio) ? `<audio class="inline-audio" controls src="${escapeHtml(voice.ref_audio_url || voice.ref_audio)}"></audio>` : ""}
+      <label>声音名称</label>
+      <input value="${escapeHtml(voice.name || "")}" onchange="updateVoiceLibraryField(${editIndex}, 'name', this.value)" />
+      <label>style</label>
+      <input value="${escapeHtml(voice.style || "")}" placeholder="例如：female, moderate pitch" onchange="updateVoiceLibraryField(${editIndex}, 'style', this.value)" />
+      ${renderStylePicker("voice", editIndex)}
+      <label>ref_text</label>
+      <textarea onchange="updateVoiceLibraryField(${editIndex}, 'ref_text', this.value)">${escapeHtml(voice.ref_text || "")}</textarea>
+    `;
+  }
+
+  function setAudio(url, lrcUrl = "") {
+    setMediaAssets(url, lrcUrl);
+  }
+
+  function ensureRoleProfile(speaker) {
+    if (!roleProfilesState[speaker]) {
+      roleProfilesState[speaker] = {
+        speaker,
+        style: speaker === "旁白" ? "female, moderate pitch" : "male, moderate pitch",
+        ref_audio: "",
+        ref_text: "",
+      };
+    }
+  }
+
+  function rebuildRoleProfilesFromSegments() {
+    const speakers = [...new Set(segmentsState.map((x) => x.speaker || "旁白"))];
+    speakers.forEach(ensureRoleProfile);
+    ensureRoleAssignments();
+    renderRoles();
+  }
+
+  function updateSegmentsMeta() {
+    const count = segmentsState.length;
+    const meta = document.getElementById("segmentsMeta");
+    const label = document.getElementById("segmentsToggleLabel");
+    meta.textContent = segmentsPanelExpanded
+      ? `当前共 ${count} 段，已展开编辑视图`
+      : `当前共 ${count} 段，默认折叠以减少滚动卡顿`;
+    label.textContent = segmentsPanelExpanded ? "收起分段结果" : "展开分段结果";
+  }
+
+  function syncRoleProfilesFromSegments() {
+    const speakers = [...new Set(segmentsState.map((x) => x.speaker || "旁白"))];
+    speakers.forEach(ensureRoleProfile);
+    ensureRoleAssignments();
+    renderRoles();
+    renderRoleAssignments();
+    renderSpeakerMergeList();
+    updateSegmentsMeta();
+  }
+
+  function toggleSegmentsPanel(forceState) {
+    const nextState = typeof forceState === "boolean" ? forceState : !segmentsPanelExpanded;
+    segmentsPanelExpanded = nextState;
+    const container = document.getElementById("segments");
+    container.hidden = !segmentsPanelExpanded;
+    updateSegmentsMeta();
+    if (segmentsPanelExpanded) {
+      renderSegments(true);
+    }
+  }
+
+  function renderRoles() {
+    const container = document.getElementById("roles");
+    if (!container) return;
+    container.innerHTML = "";
+
+    Object.keys(roleProfilesState).forEach((speaker) => {
+      const role = roleProfilesState[speaker];
+      const div = document.createElement("div");
+      div.className = "role-card";
+      div.innerHTML = `
+        <div class="role-head">
+          <strong>${escapeHtml(speaker)}</strong>
+          <button type="button" class="danger" ${taskBusy ? "disabled" : ""} onclick="removeRole('${escapeJs(speaker)}')">删除角色配置</button>
+        </div>
+        <label>style</label>
+        <input value="${escapeHtml(role.style || "")}" placeholder="例如：female, moderate pitch" onchange="updateRoleField('${escapeJs(speaker)}', 'style', this.value)" />
+        ${renderStylePicker("role", speaker)}
+        <label>ref_audio（推荐用于角色一致性）</label>
+        <input value="${escapeHtml(role.ref_audio || "")}" placeholder="例如：I:/voices/zhangsan.wav" onchange="updateRoleField('${escapeJs(speaker)}', 'ref_audio', this.value)" />
+        <label>ref_text（可选）</label>
+        <textarea onchange="updateRoleField('${escapeJs(speaker)}', 'ref_text', this.value)">${escapeHtml(role.ref_text || "")}</textarea>
+      `;
+      container.appendChild(div);
+    });
+  }
+
+  function updateRoleField(speaker, field, value) {
+    ensureRoleProfile(speaker);
+    roleProfilesState[speaker][field] = field === "style" ? normalizeStyleValue(value) : value;
+    if (field === "style") {
+      renderRoles();
+    }
+  }
+
+  function removeRole(speaker) {
+    if (taskBusy) return;
+    delete roleProfilesState[speaker];
+    delete roleVoiceAssignments[speaker];
+    renderRoles();
+    renderRoleAssignments();
+  }
+
+  function applyVoiceToRole(speaker, voiceId) {
+    roleVoiceAssignments[speaker] = voiceId || "";
+    ensureRoleProfile(speaker);
+    const voice = voiceLibraryState.find((item) => item.id === voiceId);
+    if (voice) {
+      roleProfilesState[speaker].style = voice.style || roleProfilesState[speaker].style || "";
+      roleProfilesState[speaker].ref_audio = voice.ref_audio || "";
+      roleProfilesState[speaker].ref_text = voice.ref_text || "";
+    }
+    renderRoleAssignments();
+  }
+
+  function getAudioAssignmentSortMode() {
+    return document.getElementById("audioAssignmentSort")?.value || "count";
+  }
+
+  function getSpeakerFirstAppearanceMap() {
+    const result = {};
+    segmentsState.forEach((seg, index) => {
+      const speaker = seg.speaker || "旁白";
+      if (!(speaker in result)) {
+        result[speaker] = index;
+      }
+    });
+    return result;
+  }
+
+  function getSpeakerFirstSegmentMap() {
+    const result = {};
+    segmentsState.forEach((seg, index) => {
+      const speaker = seg.speaker || "旁白";
+      if (!(speaker in result)) {
+        result[speaker] = {
+          index,
+          style: seg.style || "",
+          ref_audio: seg.ref_audio || "",
+          ref_text: seg.ref_text || "",
+        };
+      }
+    });
+    return result;
+  }
+
+  function inferGenderFromStyle(style) {
+    const normalized = String(style || "").toLowerCase();
+    if (normalized.includes("female")) return "female";
+    if (normalized.includes("male")) return "male";
+    return "";
+  }
+
+  function getSortedSpeakersForAssignments() {
+    const counts = countSegmentsBySpeaker();
+    const firstAppearance = getSpeakerFirstAppearanceMap();
+    const speakers = Object.keys(counts);
+    const sortMode = getAudioAssignmentSortMode();
+    return speakers.slice().sort((a, b) => {
+      if (sortMode === "time") {
+        return (firstAppearance[a] ?? Number.MAX_SAFE_INTEGER) - (firstAppearance[b] ?? Number.MAX_SAFE_INTEGER);
+      }
+      if (counts[b] !== counts[a]) {
+        return counts[b] - counts[a];
+      }
+      return (firstAppearance[a] ?? Number.MAX_SAFE_INTEGER) - (firstAppearance[b] ?? Number.MAX_SAFE_INTEGER);
+    });
+  }
+
+  function choosePreviewTextForSpeaker(speaker) {
+    const candidates = segmentsState
+      .filter((seg) => (seg.speaker || "旁白") === speaker && String(seg.text || "").trim())
+      .sort((a, b) => String(a.text || "").length - String(b.text || "").length);
+    if (!candidates.length) return null;
+    const shortlist = candidates.slice(0, Math.min(6, candidates.length));
+    return shortlist[Math.floor(Math.random() * shortlist.length)];
+  }
+
+  async function previewRoleVoice(speaker) {
+    if (taskBusy) return;
+    const segment = choosePreviewTextForSpeaker(speaker);
+    if (!segment) {
+      setStatus(`角色“${speaker}”当前没有可试听的台词。`);
+      return;
+    }
+    const profile = roleProfilesState[speaker] || {};
+    beginTask("narrate", `准备试听角色“${speaker}”`, "将随机抽选一条较短台词快速生成试听音频。");
+    try {
+      const outputName = `preview_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`;
+      const resp = await fetchJson("/api/tts", {
+        text: segment.text,
+        instruct: segment.style || profile.style || null,
+        ref_audio: segment.ref_audio || profile.ref_audio || null,
+        ref_text: segment.ref_text || profile.ref_text || null,
+        output_name: outputName,
+      });
+      if (resp.audio_url) {
+        await setMediaAssets(resp.audio_url, "");
+      }
+      finishTask(`角色“${speaker}”试听生成完成`, `已随机抽选一条较短台词并生成试听音频：${segment.text}`, { total: 1, done: 1 });
+      setStatus(`已为角色“${speaker}”生成试听音频。`);
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("角色试听失败，请查看上方任务面板中的详细错误。");
+      failTask(`角色“${speaker}”试听失败`, err.message);
+    }
+  }
+
+  function renderRoleAssignments() {
+    const container = document.getElementById("audioRoleAssignments");
+    const meta = document.getElementById("audioAssignmentsMeta");
+    if (!container || !meta) return;
+
+    const counts = countSegmentsBySpeaker();
+    const firstAppearance = getSpeakerFirstAppearanceMap();
+    const firstSegmentMap = getSpeakerFirstSegmentMap();
+    const speakers = Object.keys(counts);
+    if (!speakers.length) {
+      meta.textContent = "当前还没有可生成的分段，请先完成文本分析或手动导入 JSON。";
+      container.innerHTML = "";
+      return;
+    }
+
+    ensureRoleAssignments();
+    const sortMode = getAudioAssignmentSortMode();
+    const sortedSpeakers = getSortedSpeakersForAssignments();
+
+    meta.textContent = `当前共有 ${speakers.length} 个角色、${segmentsState.length} 段文本。当前按${sortMode === "time" ? "时间" : "段数"}排序。选择声音后即可快速试听或开始生成。`;
+    container.innerHTML = sortedSpeakers.map((speaker) => {
+      const assignedId = roleVoiceAssignments[speaker] || "";
+      const profile = roleProfilesState[speaker] || {};
+      const firstSeg = firstSegmentMap[speaker] || {};
+      const referenceStyle = firstSeg.style || profile.style || "";
+      return `
+        <div class="assignment-card">
+          <div class="assignment-head">
+            <strong>${escapeHtml(speaker)}</strong>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <span class="pill">${counts[speaker]} 段</span>
+              <span class="pill">第 ${Number(firstAppearance[speaker] ?? 0) + 1} 次出现</span>
+            </div>
+          </div>
+          <label>分配声音</label>
+          <select onchange="applyVoiceToRole('${escapeJs(speaker)}', this.value)">
+            <option value="">未分配</option>
+            ${voiceLibraryState.map((voice) => `<option value="${escapeHtml(voice.id)}" ${assignedId === voice.id ? "selected" : ""}>${escapeHtml(getVoiceLabel(voice))}</option>`).join("")}
+          </select>
+          <div class="mini-note">首次出现的参考 style：${escapeHtml(referenceStyle || "未设置")}。当前 ref_audio：${escapeHtml(profile.ref_audio || "未设置")}</div>
+          <div class="assignment-actions">
+            <button type="button" class="secondary" data-busy-lock onclick="previewRoleVoice('${escapeJs(speaker)}')">试听随机短句</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function applyNarratorVoiceToUnassigned() {
+    const narrator = "旁白";
+    ensureRoleProfile(narrator);
+    const narratorProfile = roleProfilesState[narrator] || {};
+    const narratorVoiceId = roleVoiceAssignments[narrator] || "";
+    const hasNarratorVoice = narratorVoiceId || narratorProfile.style || narratorProfile.ref_audio || narratorProfile.ref_text;
+
+    if (!hasNarratorVoice) {
+      setStatus("请先为旁白设置声音或角色配置，再执行自动套用。");
+      return;
+    }
+
+    let appliedCount = 0;
+    Object.keys(countSegmentsBySpeaker()).forEach((speaker) => {
+      if (speaker === narrator) return;
+      const alreadyAssigned = !!roleVoiceAssignments[speaker];
+      if (alreadyAssigned) return;
+      ensureRoleProfile(speaker);
+      roleVoiceAssignments[speaker] = narratorVoiceId;
+      roleProfilesState[speaker].style = narratorProfile.style || roleProfilesState[speaker].style || "";
+      roleProfilesState[speaker].ref_audio = narratorProfile.ref_audio || roleProfilesState[speaker].ref_audio || "";
+      roleProfilesState[speaker].ref_text = narratorProfile.ref_text || roleProfilesState[speaker].ref_text || "";
+      appliedCount += 1;
+    });
+
+    renderRoleAssignments();
+    setStatus(appliedCount ? `已将旁白声音套用到 ${appliedCount} 个尚未分配声音的角色。` : "当前没有需要套用旁白声音的未分配角色。");
+  }
+
+  function resetAudioAssignments() {
+    roleVoiceAssignments = {};
+    Object.keys(countSegmentsBySpeaker()).forEach((speaker) => {
+      roleVoiceAssignments[speaker] = "";
+      ensureRoleProfile(speaker);
+      const firstSeg = segmentsState.find((seg) => (seg.speaker || "旁白") === speaker) || {};
+      roleProfilesState[speaker].style = firstSeg.style || "";
+      roleProfilesState[speaker].ref_audio = firstSeg.ref_audio || "";
+      roleProfilesState[speaker].ref_text = firstSeg.ref_text || "";
+    });
+    renderRoleAssignments();
+    setStatus("已清空当前音频生成配置，所有角色都恢复为导入 JSON 后的未分配状态。");
+  }
+
+  function autoAssignVoices() {
+    if (!voiceLibraryState.length) {
+      setStatus("声音库为空，请先在“声音库”标签页中添加声音模板。");
+      return;
+    }
+    const firstSegmentMap = getSpeakerFirstSegmentMap();
+    const sortedSpeakers = getSortedSpeakersForAssignments();
+    const unassignedSpeakers = sortedSpeakers.filter((speaker) => !roleVoiceAssignments[speaker]);
+
+    if (!unassignedSpeakers.length) {
+      setStatus("当前所有角色都已经分配了声音。");
+      return;
+    }
+
+    const usedVoiceIds = new Set(Object.values(roleVoiceAssignments).filter(Boolean));
+    let assignedCount = 0;
+    let blockedCount = 0;
+
+    const getStyleSet = (style) => new Set(getStyleParts(style).map((item) => item.toLowerCase()));
+    const scoreVoiceMatch = (speaker, voice) => {
+      const referenceStyle = firstSegmentMap[speaker]?.style || roleProfilesState[speaker]?.style || "";
+      const speakerTags = getStyleSet(referenceStyle);
+      const voiceTags = getStyleSet(voice.style || "");
+      let score = 0;
+      speakerTags.forEach((tag) => {
+        if (tag === "female" || tag === "male") return;
+        if (voiceTags.has(tag)) {
+          score += 1;
+        }
+      });
+      return score;
+    };
+
+    const findBestVoice = (speaker) => {
+      const referenceStyle = firstSegmentMap[speaker]?.style || roleProfilesState[speaker]?.style || "";
+      const targetGender = inferGenderFromStyle(referenceStyle);
+
+      const exactGenderUnused = voiceLibraryState
+        .filter((voice) => !usedVoiceIds.has(voice.id))
+        .filter((voice) => inferGenderFromStyle(voice.style) === targetGender);
+
+      if (!targetGender) {
+        return null;
+      }
+
+      if (!exactGenderUnused.length) {
+        return null;
+      }
+
+      return exactGenderUnused
+        .map((voice) => ({ voice, score: scoreVoiceMatch(speaker, voice) }))
+        .sort((a, b) => b.score - a.score)[0]?.voice || null;
+    };
+
+    unassignedSpeakers.forEach((speaker) => {
+      const voice = findBestVoice(speaker);
+      if (!voice) {
+        blockedCount += 1;
+        return;
+      }
+      applyVoiceToRole(speaker, voice.id);
+      usedVoiceIds.add(voice.id);
+      assignedCount += 1;
+    });
+
+    const message = blockedCount > 0
+      ? `已为 ${assignedCount} 个未分配角色自动分配声音。另有 ${blockedCount} 个角色未分配成功：当前声音库中没有满足性别且未被占用的声音。`
+      : `已为 ${assignedCount} 个未分配角色自动分配声音。已按当前排序顺序强制匹配性别且不重复，并在满足性别后尽量贴近其余 style 标签。`;
+    setStatus(message);
+  }
+
+  function triggerSegmentsJsonImport() {
+    document.getElementById("segmentsJsonFileInput").click();
+  }
+
+  async function importSegmentsContent(content, sourceLabel = "导入文件") {
+    const data = await fetchJson("/api/import-segments", { content });
+    applySegmentsState(data.segments || []);
+    setWorkspaceTab("audio");
+    setStatus(`${sourceLabel} 已导入，共 ${segmentsState.length} 段。`);
+  }
+
+  async function handleSegmentsJsonFileChange(event) {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    if (!file) return;
+    try {
+      await importSegmentsContent(await file.text(), `文件 ${file.name}`);
+    } catch (err) {
+      setStatus("导入分段 JSON 失败，请查看上方任务面板中的详细错误。");
+      failTask("导入分段 JSON 失败", err.message || String(err));
+    } finally {
+      input.value = "";
+    }
+  }
+
+  function renderSegments(force = false) {
+    syncRoleProfilesFromSegments();
+    if (!segmentsPanelExpanded && !force) {
+      return;
+    }
+
+    const container = document.getElementById("segments");
+    container.hidden = !segmentsPanelExpanded;
+    container.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+
+    segmentsState.forEach((seg, idx) => {
+      const div = document.createElement("div");
+      div.className = "segment";
+      div.innerHTML = `
+        <div class="segment-head">
+          <input value="${escapeHtml(seg.speaker || "旁白")}" placeholder="speaker" onchange="updateSegmentField(${idx}, 'speaker', this.value)" />
+          <select onchange="updateSegmentField(${idx}, 'emotion', this.value)">
+            ${["neutral", "soft", "cold", "serious", "curious", "angry"].map((e) =>
+              `<option value="${e}" ${seg.emotion === e ? "selected" : ""}>${e}</option>`
+            ).join("")}
+          </select>
+          <input value="${escapeHtml(seg.style || "")}" placeholder="可留空，优先继承角色配置" onchange="updateSegmentField(${idx}, 'style', this.value)" />
+          <button type="button" class="danger" ${taskBusy ? "disabled" : ""} onclick="removeSegment(${idx})">删除</button>
+        </div>
+        ${renderStylePicker("segment", idx)}
+        <textarea onchange="updateSegmentField(${idx}, 'text', this.value)">${escapeHtml(seg.text || "")}</textarea>
+      `;
+      fragment.appendChild(div);
+    });
+
+    container.appendChild(fragment);
+  }
+
+  function escapeHtml(text) {
+    return String(text ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
+
+  function escapeJs(text) {
+    return String(text ?? "").replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  }
+
+  function updateSegmentField(index, field, value) {
+    segmentsState[index][field] = field === "style" ? normalizeStyleValue(value) : value;
+    if (field === "speaker") {
+      ensureRoleProfile(value || "旁白");
+      renderRoles();
+      renderRoleAssignments();
+      renderSpeakerMergeList();
+    }
+    if (field === "style") {
+      renderSegments(true);
+    }
+    saveLastSegments(segmentsState);
+  }
+
+  function addSegment() {
+    if (taskBusy) return;
+    segmentsState.push({
+      speaker: "旁白",
+      text: "",
+      emotion: "neutral",
+      style: "",
+      ref_audio: null,
+      ref_text: null
+    });
+    applySegmentsState(segmentsState);
+  }
+
+  function removeSegment(index) {
+    if (taskBusy) return;
+    segmentsState.splice(index, 1);
+    applySegmentsState(segmentsState);
+  }
+
+  function clearSegments() {
+    if (taskBusy) return;
+    applySegmentsState([], { persist: true });
+    clearParseSnapshot();
+    setStatus("已清空分段。");
+    if (!taskBusy) {
+      setProgress({
+        summary: "分段结果已清空",
+        detail: "可以重新做 LLM 分析，或者手动新增段落再合成。",
+        stage: "idle",
+        percent: 0,
+        total: 0,
+        done: 0,
+        indeterminate: false,
+      }, { log: "已清空当前分段列表" });
+    }
+  }
+
+  function prepareExternalAnalysis() {
+    if (taskBusy) return;
+
+    try {
+      const config = getExternalAnalysisConfig();
+      setStatus("正在生成外部分析提示词...");
+      setProgress({
+        summary: "正在生成外部 Chat AI 提示词",
+        detail: "系统将生成一份固定分析提示词模板。你只需要把完整原文接在末尾后发给外部 Chat AI。",
+        stage: taskBusy ? progressState.stage : "prepare",
+        percent: taskBusy ? progressState.percent : 8,
+        total: 0,
+        done: 0,
+        indeterminate: true,
+      }, { log: "开始生成外部 Chat AI 提示词" });
+
+      externalPromptChunks = [{
+        prompt: buildExternalPrompt(config),
+        text: "",
+        index: 0,
+      }];
+      externalCurrentChunkIndex = 0;
+      externalImportedSegments = [];
+      externalImportedChunkMap = {};
+      document.getElementById("externalResultText").value = "";
+      refreshExternalPromptView();
+      setStatus("外部分析提示词已生成，把完整原文接在后面即可发送给外部 Chat AI。");
+      setProgress({
+        summary: "已生成外部 Chat AI 提示词",
+        detail: "你可以复制这份固定提示词模板，把完整原文接在后面发送给外部 Chat AI，再把返回的 JSON 整体导入回来。",
+        stage: taskBusy ? progressState.stage : "idle",
+        percent: taskBusy ? progressState.percent : 0,
+        total: 1,
+        done: 0,
+        indeterminate: false,
+      }, { log: "已生成外部 Chat AI 提示词" });
+    } catch (err) {
+      setStatus("生成外部分析提示词失败，请查看上方任务面板中的详细错误。");
+      failTask("生成外部分析提示词失败", err.message || String(err));
+    }
+  }
+
+  async function copyTextToClipboard(text, successMessage) {
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    setStatus(successMessage);
+  }
+
+  function copyExternalPrompt() {
+    if (!externalPromptChunks.length) {
+      setStatus("请先生成外部分析提示词。");
+      return;
+    }
+    copyTextToClipboard(externalPromptChunks[externalCurrentChunkIndex].prompt, "已复制当前提示词。");
+  }
+
+  function copyAllExternalPrompts() {
+    if (!externalPromptChunks.length) {
+      setStatus("请先生成外部分析提示词。");
+      return;
+    }
+    copyTextToClipboard(externalPromptChunks[0].prompt, "已复制提示词。");
+  }
+
+  function triggerExternalResultImport() {
+    document.getElementById("externalResultFileInput").click();
+  }
+
+  async function handleExternalResultFileChange(event) {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    if (!file) return;
+    try {
+      document.getElementById("externalResultText").value = await file.text();
+      setStatus(`已导入外部结果文件：${file.name}`);
+    } catch (err) {
+      setStatus("导入外部结果文件失败。");
+    } finally {
+      input.value = "";
+    }
+  }
+
+  function clearExternalImportedResults() {
+    externalImportedSegments = [];
+    externalImportedChunkMap = {};
+    document.getElementById("externalResultText").value = "";
+    refreshExternalPromptView();
+    setStatus("已清空外部导入结果。");
+  }
+
+  async function importExternalChunkResult() {
+    if (taskBusy) return;
+    if (!externalPromptChunks.length) {
+      setStatus("请先生成外部分析提示词。");
+      return;
+    }
+
+    const content = document.getElementById("externalResultText").value.trim();
+    if (!content) {
+      setStatus("请先粘贴或导入当前块的外部结果 JSON。");
+      return;
+    }
+
+    beginTask("parse", "准备导入外部 Chat AI 分析结果", "将使用和系统一致的清洗逻辑校验并导入当前块的 JSON 结果。");
+
+    try {
+      const data = await fetchJson("/api/import-segments", { content });
+      externalImportedChunkMap[externalCurrentChunkIndex] = data.segments || [];
+      externalImportedSegments = data.segments || [];
+      applySegmentsState(externalImportedSegments.slice());
+      refreshExternalPromptView();
+
+      refreshExternalPromptView();
+      document.getElementById("externalResultText").value = "";
+
+      finishTask(
+        "已导入外部 Chat AI 分析结果",
+        `当前累计 ${segmentsState.length} 个分段，已经可以直接进行语音合成。`,
+        { total: 1, done: 1 }
+      );
+      setStatus(`外部结果已导入，共 ${segmentsState.length} 段。`);
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("外部结果导入失败，请查看上方任务面板中的详细错误。");
+      failTask("外部结果导入失败", err.message);
+    }
+  }
+
+  async function fetchJson(url, payload) {
+    if (taskCancelled) {
+      throw new Error("任务已取消");
+    }
+    activeAbortController = new AbortController();
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: activeAbortController.signal,
+    });
+    try {
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.detail || JSON.stringify(data));
+      }
+      return data;
+    } catch (err) {
+      throw err;
+    } finally {
+      activeAbortController = null;
+    }
+  }
+
+  function normalizeSourceText(text) {
+    return String(text || "").replace(/\r\n/g, "\n").trim();
+  }
+
+  function findChunkBreakIndex(text, start, target, hardLimit) {
+    const textEnd = Math.min(text.length, start + hardLimit);
+    if (textEnd >= text.length) return text.length;
+
+    const preferredEnd = Math.min(text.length, start + target);
+    const minBreak = Math.max(start + Math.floor(target * 0.55), start + 1);
+    const preferredSlice = text.slice(minBreak, textEnd);
+
+    for (const delimiter of CHUNK_BREAK_PREFERENCES) {
+      const idx = preferredSlice.lastIndexOf(delimiter);
+      if (idx !== -1) {
+        return minBreak + idx + delimiter.length;
+      }
+    }
+
+    const fallbackSlice = text.slice(preferredEnd, textEnd);
+    for (const delimiter of CHUNK_BREAK_PREFERENCES) {
+      const idx = fallbackSlice.indexOf(delimiter);
+      if (idx !== -1) {
+        return preferredEnd + idx + delimiter.length;
+      }
+    }
+
+    return textEnd;
+  }
+
+  function splitTextForLLM(text, target, hardLimit) {
+    const normalized = normalizeSourceText(text);
+    if (!normalized) return [];
+
+    const chunks = [];
+    let cursor = 0;
+
+    while (cursor < normalized.length) {
+      const breakIndex = findChunkBreakIndex(normalized, cursor, target, hardLimit);
+      const chunk = normalized.slice(cursor, breakIndex).trim();
+      if (chunk) {
+        chunks.push(chunk);
+      }
+      cursor = breakIndex;
+      while (cursor < normalized.length && /\s/.test(normalized[cursor])) {
+        cursor += 1;
+      }
+    }
+
+    return chunks;
+  }
+
+  function estimateOutputTokens(text) {
+    const normalized = normalizeSourceText(text);
+    if (!normalized) return 0;
+    const sentenceMatches = normalized.match(/[。！？!?；;\n]/g) || [];
+    const estimatedSegments = Math.max(1, Math.min(sentenceMatches.length + 1, Math.ceil(normalized.length / 48)));
+    return Math.ceil(normalized.length * 0.54 + estimatedSegments * 42);
+  }
+
+  function splitLongUnit(unit, charBudget, preset) {
+    if (unit.length <= charBudget) return [unit];
+    return splitTextForLLM(
+      unit,
+      Math.min(preset.chunkTarget, charBudget),
+      Math.max(charBudget, preset.minRetryChunk + 400),
+    );
+  }
+
+  function buildLLMChunks(text, llm) {
+    const normalized = normalizeSourceText(text);
+    if (!normalized) return [];
+
+    const preset = getAnalysisPreset(llm.analysis_mode);
+    const maxTokens = Math.max(400, Number(llm.max_tokens || 2000));
+    const outputBudget = Math.max(220, Math.floor(maxTokens * preset.outputBudgetRatio));
+    const charBudget = Math.max(1000, Math.min(preset.chunkHardLimit, Math.floor(maxTokens * preset.charBudgetRatio)));
+
+    const rawUnits = normalized
+      .split(/\n{2,}/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    const units = [];
+    for (const rawUnit of rawUnits.length ? rawUnits : [normalized]) {
+      const lineUnits = rawUnit
+        .split(/\n/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const baseUnits = lineUnits.length > 1 ? lineUnits : [rawUnit];
+      for (const baseUnit of baseUnits) {
+        units.push(...splitLongUnit(baseUnit, charBudget, preset));
+      }
+    }
+
+    const chunks = [];
+    let current = "";
+
+    for (const unit of units) {
+      const candidate = current ? `${current}\n\n${unit}` : unit;
+      if (!current) {
+        current = unit;
+        continue;
+      }
+
+      const candidateFits = candidate.length <= charBudget && estimateOutputTokens(candidate) <= outputBudget;
+      if (candidateFits) {
+        current = candidate;
+        continue;
+      }
+
+      chunks.push(current);
+      current = unit;
+    }
+
+    if (current) {
+      chunks.push(current);
+    }
+
+    return chunks;
+  }
+
+  function shouldRetryChunking(error) {
+    const message = String(error && error.message ? error.message : error || "").toLowerCase();
+    return [
+      "没有返回合法 json",
+      "没有返回可提取的 json",
+      "返回为空",
+      "输出被截断",
+      "finish_reason=length",
+      "被截断",
+      "timeout",
+      "timed out",
+      "502",
+      "503",
+      "504",
+    ].some((item) => message.includes(item));
+  }
+
+  function splitChunkForRetry(chunk, preset, aggressive = false) {
+    const retryTarget = Math.max(
+      Math.floor(preset.minRetryChunk * (aggressive ? 0.6 : 1)),
+      Math.floor(chunk.length * (aggressive ? 0.3 : 0.5)),
+    );
+    const retryHardLimit = Math.max(retryTarget + 400, Math.floor(chunk.length * 0.72));
+    const smallerChunks = splitTextForLLM(chunk, retryTarget, retryHardLimit).filter(Boolean);
+
+    if (smallerChunks.length > 1) {
+      return smallerChunks;
+    }
+
+    if (aggressive) {
+      const sentenceChunks = chunk
+        .split(/(?<=[。！？!?；;：:\n])/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (sentenceChunks.length > 1) {
+        return sentenceChunks;
+      }
+    }
+
+    const middle = Math.floor(chunk.length / 2);
+    return [chunk.slice(0, middle).trim(), chunk.slice(middle).trim()].filter(Boolean);
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  async function requestParseChunk(chunk, llm, chunkLabel, workChunksLength, completedChunks) {
+    const preset = getAnalysisPreset(llm.analysis_mode);
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= preset.maxRequestRetries; attempt += 1) {
+      if (attempt > 0) {
+        const waitMs = 1200 * attempt;
+        setProgress({
+          stage: "analyze",
+          summary: `第 ${chunkLabel} 块分析超时，准备第 ${attempt + 1} 次尝试`,
+          detail: `当前已完成 ${completedChunks} / ${workChunksLength} 块，累计等待 ${waitMs}ms 后重试。`,
+          percent: Math.min(43, Math.round(18 + ((completedChunks / Math.max(workChunksLength, 1)) * 24))),
+          total: workChunksLength,
+          done: completedChunks,
+          indeterminate: false,
+        }, { log: `第 ${chunkLabel} 块分析超时，准备第 ${attempt + 1} 次尝试` });
+        setStatus(`第 ${chunkLabel} 块请求超时，正在进行第 ${attempt + 1} 次重试...`);
+        await sleep(waitMs);
+      }
+
+      try {
+        return await fetchJson("/api/parse", { text: chunk, llm });
+      } catch (err) {
+        lastError = err;
+        const isRetryableTimeout = String(err && err.message ? err.message : err || "").toLowerCase().includes("timeout") || String(err && err.message ? err.message : err || "").toLowerCase().includes("超时");
+        if (!isRetryableTimeout || attempt >= preset.maxRequestRetries) {
+          break;
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  function validateSourceText() {
+    const text = normalizeSourceText(document.getElementById("sourceText").value);
+    if (!text) {
+      setStatus("请先输入原文。");
+      return null;
+    }
+    return text;
+  }
+
+  function validateLLMConfig() {
+    const llm = getLLMConfig();
+    if (!llm.base_url || !llm.api_key || !llm.model) {
+      setStatus("请先填写完整的 LLM 配置。");
+      return null;
+    }
+    return llm;
+  }
+
+  async function runParseOnly(text, llm, resumeSnapshot = null) {
+    const preset = getAnalysisPreset(llm.analysis_mode);
+    const chunks = resumeSnapshot?.workChunks?.length
+      ? resumeSnapshot.workChunks.map((item) => item.text)
+      : buildLLMChunks(text, llm);
+    const workChunks = resumeSnapshot?.workChunks?.length
+      ? resumeSnapshot.workChunks.slice()
+      : chunks.map((chunk, index) => ({
+          text: chunk,
+          label: String(index + 1),
+          depth: 0,
+        }));
+    const combinedSegments = Array.isArray(resumeSnapshot?.combinedSegments) ? resumeSnapshot.combinedSegments.slice() : [];
+    if (combinedSegments.length) {
+      applySegmentsState(combinedSegments);
+    }
+
+    setProgress({
+      stage: "analyze",
+      summary: workChunks.length > 1 ? `长文本已拆为 ${workChunks.length} 块，准备分批分析` : "LLM 正在分析文本并切分角色",
+      detail: resumeSnapshot
+        ? `已恢复上次中断的分析任务，将从第 ${Math.min((resumeSnapshot.completedChunks || 0) + 1, workChunks.length)} 块继续。`
+        : workChunks.length > 1
+          ? `当前使用${preset.label}，会优先按自然段、换行和完整对白回合分块，并结合 max_tokens 估算输出预算后逐块分析。`
+          : "请求已经发出，正在等待模型返回 JSON 分段结果。",
+      percent: 18,
+      total: workChunks.length,
+      done: resumeSnapshot?.completedChunks || 0,
+      indeterminate: false,
+    }, { log: resumeSnapshot ? `已恢复分析快照，准备从第 ${(resumeSnapshot.completedChunks || 0) + 1} 块继续` : workChunks.length > 1 ? `长文本已拆分为 ${workChunks.length} 个分析块` : "已向 LLM 发起文本分析请求" });
+
+    setStatus(workChunks.length > 1 ? `长文本已拆成 ${workChunks.length} 块，正在逐块分析...` : "正在调用 LLM 自动分析角色...");
+
+    let completedChunks = resumeSnapshot?.completedChunks || 0;
+    let index = resumeSnapshot?.index || 0;
+    saveParseSnapshot(buildParseSnapshotPayload(text, llm, workChunks, index, completedChunks, combinedSegments));
+
+    while (index < workChunks.length) {
+      const currentChunk = workChunks[index];
+      const chunk = currentChunk.text;
+      setProgress({
+        stage: "analyze",
+        summary: `正在分析第 ${completedChunks + 1} / ${workChunks.length} 块文本`,
+        detail: `当前块编号 ${currentChunk.label}，长度 ${chunk.length} 字符，切分点已尽量贴近换行和句读标点。`,
+        percent: Math.min(43, Math.round(18 + ((completedChunks / Math.max(workChunks.length, 1)) * 24))),
+        total: workChunks.length,
+        done: completedChunks,
+        indeterminate: true,
+      }, { log: `开始分析第 ${currentChunk.label} 块文本` });
+
+      try {
+        const data = await requestParseChunk(
+          chunk,
+          llm,
+          currentChunk.label,
+          workChunks.length,
+          completedChunks,
+        );
+        const chunkSegments = data.segments || [];
+        combinedSegments.push(...chunkSegments);
+        completedChunks += 1;
+        index += 1;
+        applySegmentsState(combinedSegments);
+        saveParseSnapshot(buildParseSnapshotPayload(text, llm, workChunks, index, completedChunks, combinedSegments));
+
+        setProgress({
+          stage: "analyze",
+          summary: `已完成第 ${completedChunks} / ${workChunks.length} 块分析`,
+          detail: `当前已累计 ${combinedSegments.length} 个分段，继续等待剩余文本分析。`,
+          percent: Math.min(45, Math.round(18 + ((completedChunks / Math.max(workChunks.length, 1)) * 27))),
+          total: workChunks.length,
+          done: completedChunks,
+          indeterminate: false,
+        }, { log: `第 ${currentChunk.label} 块分析完成，累计 ${combinedSegments.length} 段` });
+      } catch (err) {
+        const retryMessage = String(err && err.message ? err.message : err || "").toLowerCase();
+        const isLengthCutoff = retryMessage.includes("finish_reason=length") || retryMessage.includes("输出被截断") || retryMessage.includes("没有返回可提取的 json");
+        const depthLimit = isLengthCutoff ? preset.maxRetryDepth + 2 : preset.maxRetryDepth;
+        const sizeEligible = isLengthCutoff ? chunk.length > 140 : chunk.length > preset.minRetryChunk;
+        const canRetry = shouldRetryChunking(err) && currentChunk.depth < depthLimit && sizeEligible;
+        if (!canRetry) {
+          applySegmentsState(combinedSegments);
+          saveParseSnapshot(buildParseSnapshotPayload(text, llm, workChunks, index, completedChunks, combinedSegments));
+          err.message = `在第 ${currentChunk.label} 块分析时失败；此前已完成 ${completedChunks} / ${workChunks.length} 块，累计 ${combinedSegments.length} 段。${err.message}`;
+          throw err;
+        }
+
+        const retryChunks = splitChunkForRetry(chunk, preset, isLengthCutoff);
+        if (retryChunks.length <= 1) {
+          err.message = `在第 ${currentChunk.label} 块分析时失败；此前已完成 ${completedChunks} / ${workChunks.length} 块，累计 ${combinedSegments.length} 段。${err.message}`;
+          throw err;
+        }
+
+        const replacement = retryChunks.map((retryChunk, retryIndex) => ({
+          text: retryChunk,
+          label: `${currentChunk.label}.${retryIndex + 1}`,
+          depth: currentChunk.depth + 1,
+        }));
+        workChunks.splice(index, 1, ...replacement);
+        saveParseSnapshot(buildParseSnapshotPayload(text, llm, workChunks, index, completedChunks, combinedSegments));
+
+        setProgress({
+          stage: "analyze",
+          summary: isLengthCutoff ? `第 ${currentChunk.label} 块输出被截断，已自动细分重试` : `第 ${currentChunk.label} 块返回不完整，已自动细分重试`,
+          detail: isLengthCutoff
+            ? `检测到当前块触发了输出长度上限，已拆成 ${replacement.length} 个更小子块后继续分析。建议优先使用稳定模式，或适当提高 max_tokens。`
+            : `检测到当前块可能超出模型稳定输出范围，已拆成 ${replacement.length} 个更小子块后继续分析。`,
+          percent: Math.min(42, Math.round(18 + ((completedChunks / Math.max(workChunks.length, 1)) * 24))),
+          total: workChunks.length,
+          done: completedChunks,
+          indeterminate: false,
+        }, { log: isLengthCutoff ? `第 ${currentChunk.label} 块输出被截断，已自动细分为 ${replacement.length} 个子块重试` : `第 ${currentChunk.label} 块分析失败，已自动细分为 ${replacement.length} 个子块重试` });
+
+        setStatus(isLengthCutoff ? `第 ${currentChunk.label} 块输出被截断，已自动切小后继续分析...` : `第 ${currentChunk.label} 块返回不完整，已自动切小后继续分析...`);
+      }
+    }
+
+    applySegmentsState(combinedSegments);
+    clearParseSnapshot();
+
+    setProgress({
+      stage: "analyze",
+      summary: `LLM 分析完成，得到 ${segmentsState.length} 个分段`,
+      detail: workChunks.length > 1 ? `已完成分块分析并合并结果。你现在可以检查分段，也可以继续进入语音生成。` : "你现在可以直接检查分段，也可以继续进入语音生成。",
+      percent: 45,
+      total: segmentsState.length,
+      done: 0,
+      indeterminate: false,
+    }, { log: `文本分析完成，共返回 ${segmentsState.length} 段` });
+    setStatus(`文本分析完成，共 ${segmentsState.length} 段。可直接导出 JSON 或前往音频生成。`);
+
+    return segmentsState;
+  }
+
+  async function synthesizeSegmentsSequentially(segments, baseName, silenceMs) {
+    const total = segments.length;
+    const wavFiles = [];
+
+    setProgress({
+      stage: "synthesize",
+      summary: "开始逐段生成语音",
+      detail: `总共需要生成 ${total} 段音频，页面会在每一段完成后立刻刷新进度。`,
+      percent: total ? 46 : 70,
+      total,
+      done: 0,
+      indeterminate: false,
+    }, { log: `开始逐段生成语音，共 ${total} 段` });
+
+    for (let i = 0; i < segments.length; i += 1) {
+      const seg = segments[i];
+      const speaker = seg.speaker || "旁白";
+      const profile = roleProfilesState[speaker] || {};
+      const segmentOutputName = `${baseName}_${String(i + 1).padStart(3, "0")}`;
+
+      setProgress({
+        stage: "synthesize",
+        summary: `正在生成第 ${i + 1} / ${total} 段`,
+        detail: `角色：${speaker}。当前文本长度 ${String(seg.text || "").length} 字符。`,
+        percent: total ? Math.min(92, Math.round(45 + ((i / total) * 45))) : 70,
+        total,
+        done: i,
+        indeterminate: true,
+      }, { log: `开始生成第 ${i + 1} 段，角色为 ${speaker}` });
+
+      await fetchJson("/api/tts", {
+        text: seg.text,
+        instruct: seg.style || profile.style || null,
+        ref_audio: seg.ref_audio || profile.ref_audio || null,
+        ref_text: seg.ref_text || profile.ref_text || null,
+        output_name: segmentOutputName,
+      });
+
+      wavFiles.push(`${segmentOutputName}.wav`);
+
+      setProgress({
+        stage: "synthesize",
+        summary: `已完成 ${i + 1} / ${total} 段语音`,
+        detail: `最新完成角色：${speaker}。可以继续等待剩余段落生成。`,
+        percent: total ? Math.min(92, Math.round(45 + (((i + 1) / total) * 45))) : 92,
+        total,
+        done: i + 1,
+        indeterminate: false,
+      }, { log: `第 ${i + 1} 段生成完成` });
+    }
+
+    setProgress({
+      stage: "merge",
+      summary: "所有分段已生成，正在拼接最终音频",
+      detail: "后端正在将所有 wav 文件按设定停顿合并成最终输出。",
+      percent: 94,
+      total,
+      done: total,
+      indeterminate: true,
+    }, { log: "所有分段生成完成，进入音频拼接阶段" });
+
+    return await fetchJson("/api/merge", {
+      wav_files: wavFiles,
+      output_name: baseName,
+      silence_ms: silenceMs,
+      lyrics: segments.map((seg) => ({
+        speaker: seg.speaker || "旁白",
+        text: seg.text || "",
+      })),
+    });
+  }
+
+  async function parseText() {
+    if (taskBusy) return;
+    if (analysisSourceMode === "external") {
+      setStatus("当前处于外部 Chat AI 模式，请先生成提示词并导入外部返回结果。");
+      return;
+    }
+
+    const text = validateSourceText();
+    if (!text) return;
+
+    const llm = validateLLMConfig();
+    if (!llm) return;
+
+    beginTask("parse", "准备开始文本分析", "正在检查原文和 LLM 配置，准备发起角色分析任务。");
+
+    try {
+      const segments = await runParseOnly(text, llm);
+      finishTask(`文本分析完成，共 ${segments.length} 段`, "角色、情绪和风格建议已经更新到右侧分段区域。", {
+        total: segments.length,
+        done: 0,
+      });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("文本分析失败。你可以继续上次分析，或先导出已完成 JSON。");
+      failTask("文本分析失败", `${err.message} 你可以继续上次分析，或导出当前已完成的 JSON。`);
+    }
+  }
+
+  async function continueAnalysis() {
+    if (taskBusy) return;
+    const snapshot = getParseSnapshot();
+    if (!snapshot) {
+      setStatus("当前没有可继续的分析任务快照。");
+      return;
+    }
+
+    applyLLMConfigToForm(snapshot.llm);
+    setSourceText(snapshot.text || "");
+    beginTask("parse", "准备继续上次文本分析", "正在恢复中断前的分析快照，并从未完成的文本块继续。");
+
+    try {
+      const segments = await runParseOnly(snapshot.text || "", snapshot.llm || getLLMConfig(), snapshot);
+      finishTask(`续跑完成，共 ${segments.length} 段`, "之前中断的文本分析已继续完成，现在可以直接导出 JSON 或前往音频生成。", {
+        total: segments.length,
+        done: 0,
+      });
+      setStatus(`已继续完成文本分析，共 ${segments.length} 段。`);
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("续跑分析失败。你仍然可以继续上次分析，或先导出已完成 JSON。");
+      failTask("继续分析失败", `${err.message} 你仍然可以继续上次分析，或导出当前已完成的 JSON。`);
+    }
+  }
+
+  async function testLLMAvailability() {
+    if (taskBusy) return;
+    if (analysisSourceMode === "external") {
+      setStatus("当前处于外部 Chat AI 模式，不执行直连 LLM 可用性测试。");
+      return;
+    }
+
+    const llm = validateLLMConfig();
+    if (!llm) return;
+
+    beginTask("parse", "准备测试当前 LLM 可用性", "将使用一小段固定样例验证当前模型能否在合理时间内返回合法 JSON。");
+    setStatus("正在测试当前 LLM 的可用性...");
+    const startedAt = performance.now();
+
+    try {
+      setProgress({
+        stage: "analyze",
+        summary: "正在进行连通性测试",
+        detail: "先使用最小普通 chat 请求验证当前 LLM 服务是否能立即返回响应。",
+        percent: 15,
+        total: 2,
+        done: 0,
+        indeterminate: true,
+      }, { log: "已发起 LLM 连通性测试请求" });
+
+      const connectivityResp = await fetchJson("/api/test-connectivity", { llm });
+      const connectivityDuration = ((performance.now() - startedAt) / 1000).toFixed(1);
+      setProgress({
+        stage: "analyze",
+        summary: "连通性测试通过，准备结构化分析测试",
+        detail: `普通 chat 请求已返回：${connectivityResp.message || "响应正常"}。接下来验证结构化分析是否可用。`,
+        percent: 40,
+        total: 2,
+        done: 1,
+        indeterminate: false,
+      }, { log: `连通性测试通过，耗时约 ${connectivityDuration} 秒` });
+
+      setProgress({
+        stage: "analyze",
+        summary: "正在进行结构化分析测试",
+        detail: `将使用当前的${getAnalysisPreset(llm.analysis_mode).label}和固定样例文本验证 JSON 分析能力。`,
+        percent: 60,
+        total: 2,
+        done: 1,
+        indeterminate: true,
+      }, { log: "已发起结构化分析测试请求" });
+
+      const data = await requestParseChunk(
+        LLM_TEST_TEXT,
+        llm,
+        "结构化测试",
+        2,
+        1,
+      );
+      const segments = data.segments || [];
+      const duration = (performance.now() - startedAt) / 1000;
+      const durationSec = duration.toFixed(1);
+      const suggestion = getAvailabilitySuggestion(duration, llm.analysis_mode, true);
+
+      setStatus(`可用性测试通过：连通性正常，结构化分析成功，耗时约 ${durationSec} 秒，共返回 ${segments.length} 段。${suggestion}`);
+      finishTask(
+        `LLM 可用性测试通过，耗时约 ${durationSec} 秒`,
+        `连通性测试通过，结构化分析测试也通过，当前模型成功返回合法 JSON，共 ${segments.length} 个分段。${suggestion}`,
+        { total: 2, done: 2 }
+      );
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      const duration = (performance.now() - startedAt) / 1000;
+      const durationSec = duration.toFixed(1);
+      const suggestion = getAvailabilitySuggestion(duration, llm.analysis_mode, false);
+      setStatus("可用性测试失败，请查看上方任务面板中的详细错误。");
+      failTask(
+        "LLM 可用性测试失败",
+        `耗时约 ${durationSec} 秒。请区分连通性与结构化分析两类问题。${suggestion}${err.message ? ` ${err.message}` : ""}`
+      );
+    }
+  }
+
+  async function autoNarrate() {
+    if (taskBusy) return;
+    if (analysisSourceMode === "external") {
+      setStatus("当前处于外部 Chat AI 模式，请先导入外部分析结果，再按当前分段合成。");
+      return;
+    }
+
+    const text = validateSourceText();
+    if (!text) return;
+
+    const llm = validateLLMConfig();
+    if (!llm) return;
+
+    const baseName = getOutputName("auto_narration");
+    const silenceMs = getSilenceMs();
+
+    beginTask("auto", "准备开始自动分角色与合成", "本次任务会先做文本分析，再按分段逐条生成语音，最后拼接成完整音频。");
+
+    try {
+      const segments = await runParseOnly(text, llm);
+      const merged = await synthesizeSegmentsSequentially(segments, baseName, silenceMs);
+
+      if (merged.audio_url) {
+        await setMediaAssets(merged.audio_url, merged.lrc_url || "");
+      }
+
+      setStatus(`自动合成成功，共 ${segments.length} 段。`);
+      finishTask(`自动合成完成，共 ${segments.length} 段`, "最终音频已经生成并加载到播放器，可以直接试听。", {
+        total: segments.length,
+        done: segments.length,
+      });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("自动合成失败，请查看上方任务面板中的详细错误。");
+      failTask("自动合成失败", err.message);
+    }
+  }
+
+  async function narrateSegments() {
+    if (taskBusy) return;
+
+    if (!segmentsState.length) {
+      setStatus("请先分角色或手动添加分段。");
+      return;
+    }
+
+    const baseName = getOutputName("narration");
+    const silenceMs = getSilenceMs();
+
+    beginTask("narrate", "准备按当前分段生成音频", "页面将依次调用每一段的语音生成，并把实时结果反馈在顶部。");
+
+    try {
+      const merged = await synthesizeSegmentsSequentially(segmentsState, baseName, silenceMs);
+
+      if (merged.audio_url) {
+        await setMediaAssets(merged.audio_url, merged.lrc_url || "");
+      }
+
+      setStatus(`合成成功，共 ${segmentsState.length} 段。`);
+      finishTask(`分段合成完成，共 ${segmentsState.length} 段`, "所有段落已经成功合并，播放器已切换到最新音频。", {
+        total: segmentsState.length,
+        done: segmentsState.length,
+      });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("分段合成失败，请查看上方任务面板中的详细错误。");
+      failTask("分段合成失败", err.message);
+    }
+  }
+
+  const audioPlayer = document.getElementById("audioPlayer");
+  audioPlayer.addEventListener("timeupdate", () => {
+    syncLyricsToAudio(audioPlayer.currentTime || 0);
+  });
+  audioPlayer.addEventListener("seeked", () => {
+    syncLyricsToAudio(audioPlayer.currentTime || 0);
+  });
+  audioPlayer.addEventListener("loadedmetadata", () => {
+    syncLyricsToAudio(audioPlayer.currentTime || 0);
+  });
+  audioPlayer.addEventListener("ended", () => {
+    syncLyricsToAudio(Number.POSITIVE_INFINITY);
+  });
+
+  resetProgress();
+  renderLyrics();
+  updateExportButtons();
+  setWorkspaceTab("analysis");
+  setAnalysisSourceMode("direct");
+  refreshExternalPromptView();
+  loadVoiceLibrary();
+  renderSpeakerMergeList();
+  renderRoleAssignments();
+  updateSegmentsMeta();
+  loadConfig();
+</script>
+</body>
+</html>

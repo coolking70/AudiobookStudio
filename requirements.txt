@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+soundfile
+python-multipart
+httpx
+numpy
+pydantic>=2,<3
+
+# Optional runtime dependencies used by OmniVoice pipeline:
+# torch
+# torchaudio
