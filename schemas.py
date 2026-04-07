@@ -24,6 +24,7 @@ class TTSRequest(BaseModel):
     ref_audio: Optional[str] = None
     ref_text: Optional[str] = None
     output_name: str = "result"
+    inference_device: Optional[str] = None
 
 
 class NarrateRequest(BaseModel):
@@ -31,6 +32,7 @@ class NarrateRequest(BaseModel):
     silence_ms: int = 350
     output_name: str = "narration"
     role_profiles: Optional[Dict[str, RoleProfile]] = None
+    inference_device: Optional[str] = None
 
 
 class LLMConfig(BaseModel):
@@ -41,10 +43,31 @@ class LLMConfig(BaseModel):
     max_tokens: int = 2000
     compatibility_mode: str = "strict_json"
     system_prompt: Optional[str] = None
+    workers: int = 5
 
 
 class ParseRequest(BaseModel):
     text: str
+    llm: LLMConfig
+
+
+class TextChunk(BaseModel):
+    title: str = "全文"
+    content: str
+
+
+class SegmentPlanRequest(BaseModel):
+    text: str
+    llm: LLMConfig
+
+
+class ChunkOptimizeRequest(BaseModel):
+    chunks: List[TextChunk]
+    llm: LLMConfig
+
+
+class AnalyzeChunksRequest(BaseModel):
+    chunks: List[TextChunk]
     llm: LLMConfig
 
 
@@ -54,6 +77,7 @@ class AutoNarrateRequest(BaseModel):
     silence_ms: int = 350
     output_name: str = "auto_narration"
     role_profiles: Optional[Dict[str, RoleProfile]] = None
+    inference_device: Optional[str] = None
 
 
 class LyricLine(BaseModel):

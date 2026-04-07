@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>OmniVoice Reader Studio</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <style>
     :root {
       --bg: #08111f;
@@ -831,6 +832,10 @@
                 <label>Max Tokens</label>
                 <input id="maxTokens" type="number" value="2000" />
               </div>
+              <div>
+                <label>并发数</label>
+                <input id="llmWorkers" type="number" min="1" max="12" value="5" />
+              </div>
             </div>
 
             <label>分析模式</label>
@@ -913,11 +918,15 @@
 
             <div class="actions">
               <button type="button" data-busy-lock class="secondary" onclick="triggerSourceFileImport()">导入 txt/md</button>
-              <button type="button" data-busy-lock onclick="parseText()">自动分析角色</button>
+              <button type="button" data-busy-lock onclick="smartSegmentText()">智能分段</button>
+              <button type="button" data-busy-lock class="secondary" onclick="optimizePreparedText()">语音适配优化</button>
+              <button type="button" data-busy-lock class="secondary" onclick="analyzePreparedChunks()">分析角色</button>
+              <button type="button" data-busy-lock onclick="parseText()">一键执行全流程</button>
               <button type="button" class="secondary" onclick="continueAnalysis()">继续上次分析</button>
               <button type="button" class="secondary" onclick="exportAnalyzedJson()">导出已分析 JSON</button>
             </div>
             <div id="sourceImportHint" class="import-hint">支持导入 `.txt`、`.md` 文本文件。`稳定模式` 更适合小模型；如果你在 LM Studio 或本地小模型上分析，优先把“调用方式”切到 `Chat 兼容模式`。</div>
+            <div id="analysisPipelineMeta" class="import-hint" style="margin-top:10px;">当前尚未执行智能分段。</div>
           </div>
 
           <div id="status" class="status">等待操作…</div>
@@ -963,6 +972,22 @@
 
         <label>段间停顿（毫秒）</label>
         <input id="silenceMs" type="number" value="350" />
+
+        <div class="row">
+          <div>
+            <label>推理设备</label>
+            <select id="inferenceDevice">
+              <option value="auto" selected>自动选择（官方默认）</option>
+              <option value="mps">MPS（Apple Silicon）</option>
+              <option value="cpu">CPU</option>
+              <option value="cuda">CUDA</option>
+            </select>
+          </div>
+          <div>
+            <label>说明</label>
+            <div class="mini-note">参考 OmniVoice 官方示例：默认自动检测 CUDA &gt; MPS &gt; CPU。这里的选择会同时作用于试听和完整生成。</div>
+          </div>
+        </div>
 
         <input id="segmentsJsonFileInput" type="file" accept=".json,text/plain,application/json" style="display:none;" onchange="handleSegmentsJsonFileChange(event)" />
 
@@ -1038,12 +1063,16 @@
   let mergeSelectionState = {};
   let voiceLibraryState = [];
   let roleVoiceAssignments = {};
+  let plannedChunksState = [];
+  let optimizedChunksState = [];
   let pendingVoiceLibraryFileIndex = -1;
   let editingVoiceLibraryIndex = -1;
 
   const PARSE_SNAPSHOT_STORAGE_KEY = "ov_parse_snapshot";
   const LAST_SEGMENTS_STORAGE_KEY = "ov_last_segments";
   const VOICE_LIBRARY_STORAGE_KEY = "ov_voice_library";
+  const INFERENCE_DEVICE_STORAGE_KEY = "ov_inference_device";
+  const LLM_DEFAULTS_STORAGE_KEY = "ov_llm_defaults_loaded";
 
   const progressState = {
     mode: "idle",
@@ -1061,7 +1090,9 @@
 
   const STEP_DEFS = [
     { key: "prepare", title: "准备", desc: "检查参数与任务初始化" },
-    { key: "analyze", title: "文本分析", desc: "调用 LLM 切分角色与段落" },
+    { key: "segment", title: "智能分段", desc: "调用 LLM 规划分析工作块" },
+    { key: "optimize", title: "语音适配", desc: "按 OmniVoice 规则优化文本" },
+    { key: "analyze", title: "角色分析", desc: "并发分析角色、情绪和风格" },
     { key: "synthesize", title: "声音生成", desc: "逐段生成角色语音" },
     { key: "merge", title: "音频拼接", desc: "合并分段并刷新试听" },
   ];
@@ -1262,7 +1293,7 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function computeStepClass(stepKey) {
-    const stageOrder = ["idle", "prepare", "analyze", "synthesize", "merge", "done", "error"];
+    const stageOrder = ["idle", "prepare", "segment", "optimize", "analyze", "synthesize", "merge", "done", "error"];
     const currentIndex = stageOrder.indexOf(progressState.stage);
     const stepIndex = stageOrder.indexOf(stepKey);
 
@@ -1435,6 +1466,19 @@ very high pitch, very low pitch, whisper, young adult
 
   function setStatus(msg) {
     document.getElementById("status").textContent = msg;
+  }
+
+  function renderAnalysisPipelineMeta() {
+    const el = document.getElementById("analysisPipelineMeta");
+    if (!el) return;
+    const plannedCount = plannedChunksState.length;
+    const optimizedCount = optimizedChunksState.length;
+    const segmentCount = segmentsState.length;
+    if (!plannedCount) {
+      el.textContent = "当前尚未执行智能分段。建议先分段，再做语音适配优化，最后分析角色。";
+      return;
+    }
+    el.textContent = `智能分段：${plannedCount} 块；语音适配优化：${optimizedCount || 0} 块；角色分析结果：${segmentCount} 段。`;
   }
 
   function setWorkspaceTab(tab) {
@@ -1658,6 +1702,7 @@ very high pitch, very low pitch, whisper, young adult
       model: document.getElementById("model").value.trim(),
       temperature: parseFloat(document.getElementById("temperature").value || "0.2"),
       max_tokens: parseInt(document.getElementById("maxTokens").value || "2000", 10),
+      workers: parseInt(document.getElementById("llmWorkers").value || "5", 10),
       analysis_mode: document.getElementById("analysisMode").value || "balanced",
       compatibility_mode: document.getElementById("compatibilityMode").value || "strict_json",
       system_prompt: document.getElementById("systemPrompt").value.trim() || null,
@@ -1740,6 +1785,18 @@ very high pitch, very low pitch, whisper, young adult
     return parseInt(document.getElementById("silenceMs").value || "350", 10);
   }
 
+  function getInferenceDevice() {
+    return document.getElementById("inferenceDevice").value || "auto";
+  }
+
+  function getInferenceDeviceLabel(device) {
+    const normalized = String(device || "auto").toLowerCase();
+    if (normalized === "mps") return "MPS";
+    if (normalized === "cpu") return "CPU";
+    if (normalized === "cuda") return "CUDA";
+    return "自动选择";
+  }
+
   function setSourceText(text) {
     document.getElementById("sourceText").value = text;
   }
@@ -1785,6 +1842,7 @@ very high pitch, very low pitch, whisper, young adult
     localStorage.setItem("ov_llm_config", JSON.stringify(getLLMConfig()));
     localStorage.setItem("ov_role_profiles", JSON.stringify(roleProfilesState));
     localStorage.setItem("ov_role_voice_assignments", JSON.stringify(roleVoiceAssignments));
+    localStorage.setItem(INFERENCE_DEVICE_STORAGE_KEY, getInferenceDevice());
     setStatus("已保存配置。");
     setProgress({
       summary: "配置已保存",
@@ -1797,7 +1855,7 @@ very high pitch, very low pitch, whisper, young adult
     }, { log: "已保存当前配置到浏览器本地缓存" });
   }
 
-  function loadConfig() {
+  async function loadConfig() {
     const llmRaw = localStorage.getItem("ov_llm_config");
     if (llmRaw) {
       const cfg = JSON.parse(llmRaw);
@@ -1806,9 +1864,24 @@ very high pitch, very low pitch, whisper, young adult
       document.getElementById("model").value = cfg.model || "";
       document.getElementById("temperature").value = cfg.temperature ?? 0.2;
       document.getElementById("maxTokens").value = cfg.max_tokens ?? 2000;
+      document.getElementById("llmWorkers").value = cfg.workers ?? 5;
       document.getElementById("analysisMode").value = cfg.analysis_mode || "balanced";
       document.getElementById("compatibilityMode").value = cfg.compatibility_mode || "strict_json";
       document.getElementById("systemPrompt").value = cfg.system_prompt || "";
+    } else {
+      try {
+        const resp = await fetch("/api/llm-defaults");
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data.detail || "读取默认 LLM 配置失败");
+        }
+        if (data.llm) {
+          applyLLMConfigToForm(data.llm);
+          localStorage.setItem(LLM_DEFAULTS_STORAGE_KEY, "1");
+        }
+      } catch (err) {
+        console.warn("读取 ai-helper 默认 LLM 配置失败:", err);
+      }
     }
 
     const roleRaw = localStorage.getItem("ov_role_profiles");
@@ -1822,6 +1895,11 @@ very high pitch, very low pitch, whisper, young adult
       roleVoiceAssignments = JSON.parse(assignmentRaw);
     }
 
+    const inferenceDevice = localStorage.getItem(INFERENCE_DEVICE_STORAGE_KEY);
+    if (inferenceDevice) {
+      document.getElementById("inferenceDevice").value = inferenceDevice;
+    }
+
     const lastSegments = getLastSegments();
     if (lastSegments && Array.isArray(lastSegments.segments) && lastSegments.segments.length) {
       applySegmentsState(lastSegments.segments, { persist: false });
@@ -1832,7 +1910,14 @@ very high pitch, very low pitch, whisper, young adult
       setSourceText(snapshot.text);
     }
 
-    setStatus(snapshot ? "已读取本地配置，并恢复到上次中断的分析文本。可点击“继续上次分析”。" : "已读取本地配置。");
+    const defaultLoaded = !llmRaw && localStorage.getItem(LLM_DEFAULTS_STORAGE_KEY) === "1";
+    setStatus(
+      snapshot
+        ? "已读取本地配置，并恢复到上次中断的分析文本。可点击“继续上次分析”。"
+        : defaultLoaded
+          ? "已自动载入 ai-helper 提供的默认 LLM 配置。"
+          : "已读取本地配置。"
+    );
     if (!taskBusy) {
       setProgress({
         summary: "本地配置已恢复",
@@ -1854,6 +1939,7 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("model").value = cfg.model || "";
     document.getElementById("temperature").value = cfg.temperature ?? 0.2;
     document.getElementById("maxTokens").value = cfg.max_tokens ?? 2000;
+    document.getElementById("llmWorkers").value = cfg.workers ?? 5;
     document.getElementById("analysisMode").value = cfg.analysis_mode || "balanced";
     document.getElementById("compatibilityMode").value = cfg.compatibility_mode || "strict_json";
     document.getElementById("systemPrompt").value = cfg.system_prompt || "";
@@ -1908,6 +1994,7 @@ very high pitch, very low pitch, whisper, young adult
     renderSpeakerMergeList();
     renderRoleAssignments();
     renderSegments(segmentsPanelExpanded);
+    renderAnalysisPipelineMeta();
   }
 
   function getExportableSegments() {
@@ -2549,18 +2636,20 @@ very high pitch, very low pitch, whisper, young adult
     beginTask("narrate", `准备试听角色“${speaker}”`, "将随机抽选一条较短台词快速生成试听音频。");
     try {
       const outputName = `preview_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`;
+      const inferenceDevice = getInferenceDevice();
       const resp = await fetchJson("/api/tts", {
         text: segment.text,
         instruct: segment.style || profile.style || null,
         ref_audio: segment.ref_audio || profile.ref_audio || null,
         ref_text: segment.ref_text || profile.ref_text || null,
         output_name: outputName,
+        inference_device: inferenceDevice,
       });
       if (resp.audio_url) {
         await setMediaAssets(resp.audio_url, "");
       }
-      finishTask(`角色“${speaker}”试听生成完成`, `已随机抽选一条较短台词并生成试听音频：${segment.text}`, { total: 1, done: 1 });
-      setStatus(`已为角色“${speaker}”生成试听音频。`);
+      finishTask(`角色“${speaker}”试听生成完成`, `已使用 ${getInferenceDeviceLabel(inferenceDevice)} 生成随机较短台词试听：${segment.text}`, { total: 1, done: 1 });
+      setStatus(`已使用 ${getInferenceDeviceLabel(inferenceDevice)} 为角色“${speaker}”生成试听音频。`);
     } catch (err) {
       if (isTaskCancelledError(err)) return;
       setStatus("角色试听失败，请查看上方任务面板中的详细错误。");
@@ -2836,8 +2925,11 @@ very high pitch, very low pitch, whisper, young adult
 
   function clearSegments() {
     if (taskBusy) return;
+    plannedChunksState = [];
+    optimizedChunksState = [];
     applySegmentsState([], { persist: true });
     clearParseSnapshot();
+    renderAnalysisPipelineMeta();
     setStatus("已清空分段。");
     if (!taskBusy) {
       setProgress({
@@ -3361,7 +3453,129 @@ very high pitch, very low pitch, whisper, young adult
     return segmentsState;
   }
 
-  async function synthesizeSegmentsSequentially(segments, baseName, silenceMs) {
+  async function runSmartSegmentation(text, llm) {
+    setProgress({
+      stage: "segment",
+      summary: "正在进行智能分段",
+      detail: "后端会先用 LLM 规划语义完整的分析工作块，并支持并发处理。",
+      percent: 16,
+      total: 0,
+      done: 0,
+      indeterminate: true,
+    }, { log: "开始进行 LLM 智能分段" });
+    const data = await fetchJson("/api/segment-plan", { text, llm });
+    plannedChunksState = data.chunks || [];
+    optimizedChunksState = [];
+    renderAnalysisPipelineMeta();
+    setStatus(`智能分段完成，共 ${plannedChunksState.length} 块。`);
+    return plannedChunksState;
+  }
+
+  async function runTextOptimization(chunks, llm) {
+    setProgress({
+      stage: "optimize",
+      summary: "正在进行语音适配优化",
+      detail: "将依据 OmniVoice 官方支持的标签、拼音和标点习惯优化文本。",
+      percent: 34,
+      total: chunks.length,
+      done: 0,
+      indeterminate: true,
+    }, { log: `开始对 ${chunks.length} 个工作块做语音适配优化` });
+    const data = await fetchJson("/api/optimize-chunks", { chunks, llm });
+    optimizedChunksState = data.chunks || [];
+    renderAnalysisPipelineMeta();
+    setStatus(`语音适配优化完成，共 ${optimizedChunksState.length} 块。`);
+    return optimizedChunksState;
+  }
+
+  async function runRoleAnalysis(chunks, llm) {
+    setProgress({
+      stage: "analyze",
+      summary: "正在并发分析角色与分段",
+      detail: `当前会使用最多 ${llm.workers || 5} 个并发请求处理 ${chunks.length} 个工作块。`,
+      percent: 58,
+      total: chunks.length,
+      done: 0,
+      indeterminate: true,
+    }, { log: `开始并发分析 ${chunks.length} 个工作块` });
+    const data = await fetchJson("/api/analyze-chunks", { chunks, llm });
+    const segments = data.segments || [];
+    applySegmentsState(segments);
+    renderAnalysisPipelineMeta();
+    setStatus(`角色分析完成，共 ${segments.length} 段。`);
+    return segments;
+  }
+
+  async function smartSegmentText() {
+    if (taskBusy) return;
+    const text = validateSourceText();
+    if (!text) return;
+    const llm = validateLLMConfig();
+    if (!llm) return;
+
+    beginTask("parse", "准备开始智能分段", "正在检查原文和 LLM 配置，准备进行章节/场景级语义分块。");
+    try {
+      const chunks = await runSmartSegmentation(text, llm);
+      finishTask(`智能分段完成，共 ${chunks.length} 块`, "下一步可以继续做语音适配优化，或直接分析角色。", {
+        total: chunks.length,
+        done: chunks.length,
+      });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("智能分段失败，请查看上方任务面板中的详细错误。");
+      failTask("智能分段失败", err.message);
+    }
+  }
+
+  async function optimizePreparedText() {
+    if (taskBusy) return;
+    const text = validateSourceText();
+    if (!text) return;
+    const llm = validateLLMConfig();
+    if (!llm) return;
+
+    beginTask("parse", "准备开始语音适配优化", "会先确认已有分段工作块，再按 OmniVoice 文本规则做优化。");
+    try {
+      const baseChunks = plannedChunksState.length ? plannedChunksState : await runSmartSegmentation(text, llm);
+      const optimized = await runTextOptimization(baseChunks, llm);
+      finishTask(`语音适配优化完成，共 ${optimized.length} 块`, "下一步可以继续分析角色，最终分段文本会采用优化后的版本。", {
+        total: optimized.length,
+        done: optimized.length,
+      });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("语音适配优化失败，请查看上方任务面板中的详细错误。");
+      failTask("语音适配优化失败", err.message);
+    }
+  }
+
+  async function analyzePreparedChunks() {
+    if (taskBusy) return;
+    const text = validateSourceText();
+    if (!text) return;
+    const llm = validateLLMConfig();
+    if (!llm) return;
+
+    beginTask("parse", "准备开始角色分析", "会优先使用已完成语音适配的工作块，并通过并发请求做角色与情绪分析。");
+    try {
+      const baseChunks = optimizedChunksState.length
+        ? optimizedChunksState
+        : plannedChunksState.length
+          ? plannedChunksState
+          : await runSmartSegmentation(text, llm);
+      const segments = await runRoleAnalysis(baseChunks, llm);
+      finishTask(`角色分析完成，共 ${segments.length} 段`, "角色、情绪和风格建议已经更新到右侧分段区域。", {
+        total: segments.length,
+        done: segments.length,
+      });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("角色分析失败，请查看上方任务面板中的详细错误。");
+      failTask("角色分析失败", err.message);
+    }
+  }
+
+  async function synthesizeSegmentsSequentially(segments, baseName, silenceMs, inferenceDevice) {
     const total = segments.length;
     const wavFiles = [];
 
@@ -3397,6 +3611,7 @@ very high pitch, very low pitch, whisper, young adult
         ref_audio: seg.ref_audio || profile.ref_audio || null,
         ref_text: seg.ref_text || profile.ref_text || null,
         output_name: segmentOutputName,
+        inference_device: inferenceDevice,
       });
 
       wavFiles.push(`${segmentOutputName}.wav`);
@@ -3446,13 +3661,15 @@ very high pitch, very low pitch, whisper, young adult
     const llm = validateLLMConfig();
     if (!llm) return;
 
-    beginTask("parse", "准备开始文本分析", "正在检查原文和 LLM 配置，准备发起角色分析任务。");
+    beginTask("parse", "准备开始完整文本分析", "将按“智能分段 -> 语音适配优化 -> 角色分析”的顺序执行完整流程。");
 
     try {
-      const segments = await runParseOnly(text, llm);
-      finishTask(`文本分析完成，共 ${segments.length} 段`, "角色、情绪和风格建议已经更新到右侧分段区域。", {
+      const planned = await runSmartSegmentation(text, llm);
+      const optimized = await runTextOptimization(planned, llm);
+      const segments = await runRoleAnalysis(optimized, llm);
+      finishTask(`文本分析完成，共 ${segments.length} 段`, "智能分段、语音适配优化和角色分析都已完成，结果已经更新到右侧分段区域。", {
         total: segments.length,
-        done: 0,
+        done: segments.length,
       });
     } catch (err) {
       if (isTaskCancelledError(err)) return;
@@ -3580,19 +3797,22 @@ very high pitch, very low pitch, whisper, young adult
 
     const baseName = getOutputName("auto_narration");
     const silenceMs = getSilenceMs();
+    const inferenceDevice = getInferenceDevice();
 
-    beginTask("auto", "准备开始自动分角色与合成", "本次任务会先做文本分析，再按分段逐条生成语音，最后拼接成完整音频。");
+    beginTask("auto", "准备开始自动分角色与合成", `本次任务会先做文本分析，再按分段逐条生成语音，最后拼接成完整音频。当前设备：${getInferenceDeviceLabel(inferenceDevice)}。`);
 
     try {
-      const segments = await runParseOnly(text, llm);
-      const merged = await synthesizeSegmentsSequentially(segments, baseName, silenceMs);
+      const planned = await runSmartSegmentation(text, llm);
+      const optimized = await runTextOptimization(planned, llm);
+      const segments = await runRoleAnalysis(optimized, llm);
+      const merged = await synthesizeSegmentsSequentially(segments, baseName, silenceMs, inferenceDevice);
 
       if (merged.audio_url) {
         await setMediaAssets(merged.audio_url, merged.lrc_url || "");
       }
 
-      setStatus(`自动合成成功，共 ${segments.length} 段。`);
-      finishTask(`自动合成完成，共 ${segments.length} 段`, "最终音频已经生成并加载到播放器，可以直接试听。", {
+      setStatus(`自动合成成功，共 ${segments.length} 段，设备：${getInferenceDeviceLabel(inferenceDevice)}。`);
+      finishTask(`自动合成完成，共 ${segments.length} 段`, `最终音频已经生成并加载到播放器，可以直接试听。当前设备：${getInferenceDeviceLabel(inferenceDevice)}。`, {
         total: segments.length,
         done: segments.length,
       });
@@ -3613,18 +3833,19 @@ very high pitch, very low pitch, whisper, young adult
 
     const baseName = getOutputName("narration");
     const silenceMs = getSilenceMs();
+    const inferenceDevice = getInferenceDevice();
 
-    beginTask("narrate", "准备按当前分段生成音频", "页面将依次调用每一段的语音生成，并把实时结果反馈在顶部。");
+    beginTask("narrate", "准备按当前分段生成音频", `页面将依次调用每一段的语音生成，并把实时结果反馈在顶部。当前设备：${getInferenceDeviceLabel(inferenceDevice)}。`);
 
     try {
-      const merged = await synthesizeSegmentsSequentially(segmentsState, baseName, silenceMs);
+      const merged = await synthesizeSegmentsSequentially(segmentsState, baseName, silenceMs, inferenceDevice);
 
       if (merged.audio_url) {
         await setMediaAssets(merged.audio_url, merged.lrc_url || "");
       }
 
-      setStatus(`合成成功，共 ${segmentsState.length} 段。`);
-      finishTask(`分段合成完成，共 ${segmentsState.length} 段`, "所有段落已经成功合并，播放器已切换到最新音频。", {
+      setStatus(`合成成功，共 ${segmentsState.length} 段，设备：${getInferenceDeviceLabel(inferenceDevice)}。`);
+      finishTask(`分段合成完成，共 ${segmentsState.length} 段`, `所有段落已经成功合并，播放器已切换到最新音频。当前设备：${getInferenceDeviceLabel(inferenceDevice)}。`, {
         total: segmentsState.length,
         done: segmentsState.length,
       });
@@ -3654,6 +3875,7 @@ very high pitch, very low pitch, whisper, young adult
   updateExportButtons();
   setWorkspaceTab("analysis");
   setAnalysisSourceMode("direct");
+  renderAnalysisPipelineMeta();
   refreshExternalPromptView();
   loadVoiceLibrary();
   renderSpeakerMergeList();

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -12,6 +13,7 @@ from audio_utils import ensure_dir, join_wavs
 
 MODEL_NAME = "k2-fsa/OmniVoice"
 OUTPUT_DIR = Path("outputs")
+HF_CACHE_DIR = Path.home() / ".cache" / "huggingface" / "hub"
 
 VALID_INSTRUCT_ITEMS = {
     "american accent",
@@ -51,13 +53,65 @@ class OmniVoicePipeline:
     def __init__(
         self,
         model_name: str = MODEL_NAME,
-        device: str = "cuda:0",
-        dtype: torch.dtype = torch.float16,
+        device: Optional[str] = None,
+        dtype: Optional[torch.dtype] = None,
     ):
-        self.model_name = model_name
-        self.device = device
-        self.dtype = dtype
+        self.model_name = self.resolve_model_name_or_path(model_name)
+        self.device = device or self.detect_device()
+        self.dtype = dtype or self.detect_dtype(self.device)
         self.model: Optional[OmniVoice] = None
+
+    @staticmethod
+    def resolve_model_name_or_path(model_name: str) -> str:
+        explicit = os.getenv("OMNIVOICE_MODEL_PATH", "").strip()
+        if explicit:
+            return explicit
+
+        if model_name != MODEL_NAME:
+            return model_name
+
+        repo_dir = HF_CACHE_DIR / "models--k2-fsa--OmniVoice"
+        refs_main = repo_dir / "refs" / "main"
+        if refs_main.exists():
+            revision = refs_main.read_text(encoding="utf-8").strip()
+            snapshot_dir = repo_dir / "snapshots" / revision
+            if snapshot_dir.exists():
+                return str(snapshot_dir)
+
+        snapshot_root = repo_dir / "snapshots"
+        if snapshot_root.exists():
+            for snapshot_dir in sorted(snapshot_root.iterdir(), reverse=True):
+                if (snapshot_dir / "model.safetensors").exists():
+                    return str(snapshot_dir)
+
+        return model_name
+
+    @staticmethod
+    def detect_device() -> str:
+        preferred = os.getenv("OMNIVOICE_DEVICE", "").strip()
+        if preferred:
+            return preferred
+        if torch.cuda.is_available():
+            return "cuda"
+        if torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
+
+    @staticmethod
+    def detect_dtype(device: str) -> torch.dtype:
+        preferred = os.getenv("OMNIVOICE_DTYPE", "").strip().lower()
+        if preferred:
+            mapping = {
+                "float16": torch.float16,
+                "fp16": torch.float16,
+                "float32": torch.float32,
+                "fp32": torch.float32,
+                "bfloat16": torch.bfloat16,
+                "bf16": torch.bfloat16,
+            }
+            if preferred in mapping:
+                return mapping[preferred]
+        return torch.float16 if str(device).startswith("cuda") else torch.float32
 
     def load(self) -> OmniVoice:
         if self.model is None:

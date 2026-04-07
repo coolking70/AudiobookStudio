@@ -4,6 +4,7 @@ import mimetypes
 import re
 import traceback
 from pathlib import Path
+from threading import Lock
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -13,12 +14,13 @@ from fastapi.staticfiles import StaticFiles
 from audio_utils import build_lrc, join_wavs
 from llm_client import OpenAICompatibleClient
 from pipeline import OmniVoicePipeline
-from role_analyzer import analyze_text_with_llm, sanitize_segments
-from schemas import AutoNarrateRequest, ConnectivityTestRequest, ImportSegmentsRequest, MergeRequest, NarrateRequest, ParseRequest, TTSRequest, UploadRefAudioRequest
+from role_analyzer import analyze_chunks_with_llm, analyze_text_with_llm, intelligent_segment_text, optimize_chunks_for_tts, sanitize_segments
+from schemas import AnalyzeChunksRequest, AutoNarrateRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, MergeRequest, NarrateRequest, ParseRequest, SegmentPlanRequest, TTSRequest, UploadRefAudioRequest
 
 
 app = FastAPI(title="OmniVoice Reader Studio")
-pipeline = OmniVoicePipeline()
+pipeline_cache: dict[str, OmniVoicePipeline] = {}
+pipeline_lock = Lock()
 
 Path("outputs").mkdir(parents=True, exist_ok=True)
 Path("static").mkdir(parents=True, exist_ok=True)
@@ -27,6 +29,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 OUTPUT_DIR = Path("outputs")
 REF_AUDIO_DIR = OUTPUT_DIR / "ref_audio"
+AI_HELPER_CONFIG_PATH = Path(__file__).resolve().parent.parent / "tts_text_parse" / "ai-helper" / "ai-api.md"
 
 
 def sanitize_upload_filename(filename: str) -> str:
@@ -73,6 +76,60 @@ def raise_api_error(exc: Exception) -> None:
     raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 
 
+def load_ai_helper_llm_defaults() -> dict[str, object]:
+    if not AI_HELPER_CONFIG_PATH.exists():
+        raise FileNotFoundError(f"找不到 ai-helper 配置文件: {AI_HELPER_CONFIG_PATH}")
+
+    text = AI_HELPER_CONFIG_PATH.read_text(encoding="utf-8")
+    api_key_match = re.search(r"API Key[：:]\s*(\S+)", text)
+    base_url_match = re.search(r"Base URL[：:]\s*(\S+)", text)
+    models_match = re.search(r"可用model[：:]\s*(.+)", text)
+
+    if not api_key_match or not base_url_match:
+        raise RuntimeError(f"无法从 {AI_HELPER_CONFIG_PATH} 解析 API Key 或 Base URL")
+
+    available_models = []
+    if models_match:
+        available_models = [item.strip() for item in models_match.group(1).split(";") if item.strip()]
+
+    preferred_model = "qwen3-max-2026-01-23"
+    model = preferred_model if preferred_model in available_models else (available_models[0] if available_models else preferred_model)
+
+    return {
+        "base_url": base_url_match.group(1),
+        "api_key": api_key_match.group(1),
+        "model": model,
+        "temperature": 0.3,
+        "max_tokens": 8000,
+        "analysis_mode": "balanced",
+        "compatibility_mode": "chat_compat",
+        "system_prompt": None,
+        "source": str(AI_HELPER_CONFIG_PATH),
+        "available_models": available_models,
+    }
+
+
+def normalize_inference_device(device: str | None) -> str:
+    normalized = str(device or "").strip().lower()
+    if not normalized or normalized == "auto":
+        return OmniVoicePipeline.detect_device()
+    if normalized == "cuda:0":
+        return "cuda"
+    if normalized in {"cuda", "mps", "cpu"}:
+        return normalized
+    raise ValueError(f"不支持的推理设备: {device}")
+
+
+def get_pipeline(device: str | None = None) -> OmniVoicePipeline:
+    resolved_device = normalize_inference_device(device)
+    with pipeline_lock:
+        pipeline = pipeline_cache.get(resolved_device)
+        if pipeline is None:
+            pipeline = OmniVoicePipeline(device=resolved_device)
+            pipeline_cache[resolved_device] = pipeline
+        return pipeline
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     html_path = Path("static/index.html")
@@ -81,11 +138,31 @@ def index():
     return html_path.read_text(encoding="utf-8")
 
 
+@app.get("/api/llm-defaults")
+def llm_defaults():
+    try:
+        return {
+            "ok": True,
+            "llm": load_ai_helper_llm_defaults(),
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.get("/favicon.ico")
+def favicon():
+    icon_path = Path("static/favicon.svg")
+    if not icon_path.exists():
+        raise HTTPException(status_code=404, detail="favicon 不存在")
+    return FileResponse(icon_path, media_type="image/svg+xml", filename="favicon.svg")
+
+
 @app.post("/api/tts")
 def tts(req: TTSRequest):
     try:
         output_name = sanitize_output_name(req.output_name, "tts_result")
         output_path = OUTPUT_DIR / f"{output_name}.wav"
+        pipeline = get_pipeline(req.inference_device)
 
         pipeline.synthesize_segment(
             text=req.text,
@@ -116,12 +193,51 @@ def parse_text(req: ParseRequest):
         raise_api_error(exc)
 
 
+@app.post("/api/segment-plan")
+def segment_plan(req: SegmentPlanRequest):
+    try:
+        chunks = intelligent_segment_text(req.text, req.llm)
+        return {
+            "ok": True,
+            "chunks": chunks,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/optimize-chunks")
+def optimize_chunks(req: ChunkOptimizeRequest):
+    try:
+        chunks = [item.model_dump() for item in req.chunks]
+        optimized = optimize_chunks_for_tts(chunks, req.llm)
+        return {
+            "ok": True,
+            "chunks": optimized,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/analyze-chunks")
+def analyze_chunks(req: AnalyzeChunksRequest):
+    try:
+        chunks = [item.model_dump() for item in req.chunks]
+        segments = analyze_chunks_with_llm(chunks, req.llm)
+        return {
+            "ok": True,
+            "segments": segments,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
 @app.post("/api/narrate")
 def narrate(req: NarrateRequest):
     try:
         output_name = sanitize_output_name(req.output_name, "narration")
         segments = [seg.model_dump() for seg in req.segments]
         role_profiles = {k: v.model_dump() for k, v in (req.role_profiles or {}).items()}
+        pipeline = get_pipeline(req.inference_device)
 
         merged_path = pipeline.synthesize_segments(
             segments=segments,
@@ -149,6 +265,7 @@ def auto_narrate(req: AutoNarrateRequest):
         output_name = sanitize_output_name(req.output_name, "auto_narration")
         segments = analyze_text_with_llm(req.text, req.llm)
         role_profiles = {k: v.model_dump() for k, v in (req.role_profiles or {}).items()}
+        pipeline = get_pipeline(req.inference_device)
 
         merged_path = pipeline.synthesize_segments(
             segments=segments,
@@ -271,10 +388,13 @@ def merge_audio(req: MergeRequest):
 
 @app.get("/api/health")
 def health():
+    loaded_devices = sorted(device for device, pipeline in pipeline_cache.items() if pipeline.model is not None)
     return {
         "ok": True,
         "app": app.title,
-        "model_loaded": pipeline.model is not None,
+        "model_loaded": bool(loaded_devices),
+        "loaded_devices": loaded_devices,
+        "default_device": OmniVoicePipeline.detect_device(),
         "outputs_dir": str(OUTPUT_DIR.resolve()),
     }
 
