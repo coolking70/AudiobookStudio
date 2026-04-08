@@ -5,7 +5,13 @@ python-multipart
 httpx
 numpy
 pydantic>=2,<3
+psutil
+imageio-ffmpeg
 
-# Optional runtime dependencies used by OmniVoice pipeline:
+# System dependency used by Whisper/ASR decoding for mp3/m4a and other formats:
+# ffmpeg
+
+# Optional runtime dependencies used only for local OmniVoice audio synthesis:
 # torch
 # torchaudio
+# omnivoice

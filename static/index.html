@@ -141,12 +141,21 @@
       flex: 1 1 140px;
     }
     .lyrics-panel {
+      position: relative;
       height: 320px;
       overflow: auto;
       padding: 14px;
       border-radius: 16px;
       border: 1px solid rgba(125, 154, 192, 0.16);
       background: rgba(11, 18, 32, 0.68);
+      scroll-behavior: auto;
+      overscroll-behavior: contain;
+    }
+    .lyrics-track {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-height: 100%;
     }
     .lyrics-empty {
       color: var(--sub);
@@ -575,6 +584,11 @@
       background: rgba(7, 14, 26, 0.72);
       border: 1px solid rgba(125, 154, 192, 0.16);
     }
+    .voice-card.needs-style {
+      border-color: rgba(248, 196, 113, 0.42);
+      box-shadow: 0 0 0 1px rgba(248, 196, 113, 0.12) inset;
+      background: linear-gradient(135deg, rgba(7, 14, 26, 0.84), rgba(52, 38, 14, 0.48));
+    }
     .voice-list-row {
       display: flex;
       justify-content: space-between;
@@ -985,12 +999,21 @@
 
           <hr style="border-color:rgba(125,154,192,0.18); margin:18px 0;" />
 
+          <h2>音频识别模型</h2>
+          <div class="mini-note">用于在声音库批量导入参考音频时自动转写并填写 `ref_text`。当前接入的是本地 Whisper ASR 模型，不负责识别 style。</div>
+          <div class="actions">
+            <button type="button" data-busy-lock onclick="loadAudioRecognitionModel()">加载 / 检查音频识别模型</button>
+            <button type="button" class="secondary" data-busy-lock onclick="unloadAudioRecognitionModel()">卸载音频识别模型</button>
+          </div>
+
+          <hr style="border-color:rgba(125,154,192,0.18); margin:18px 0;" />
+
           <h2>硬件状态</h2>
           <div class="mini-note">这里是一次性读取的本机状态，不会实时刷新。你可以在加载模型前后手动点一次，查看内存、显存和 CPU 温度等参考信息。</div>
           <div class="actions">
             <button type="button" class="secondary" data-busy-lock onclick="refreshSystemStatus(true)">刷新硬件状态</button>
           </div>
-          <div id="modelRuntimeStatus" class="import-hint" style="margin-top:10px;">尚未读取当前模型加载状态。</div>
+          <div id="modelRuntimeStatus" class="import-hint" style="margin-top:10px; white-space:pre-line;">尚未读取当前模型加载状态。</div>
           <pre id="systemStatusPanel" class="import-hint" style="white-space:pre-wrap; min-height:140px;">尚未读取硬件状态。</pre>
         </div>
       </div>
@@ -1137,9 +1160,10 @@
           <button type="button" class="secondary" onclick="saveVoiceLibrary()">保存声音库</button>
           <button type="button" class="secondary" onclick="loadVoiceLibrary()">读取声音库</button>
         </div>
-        <div class="mini-note">默认显示简洁列表。批量导入会保留音频路径，名称取文件名，`style/ref_text` 留空，后续可手动编辑。</div>
+        <div class="mini-note">默认显示简洁列表。批量导入会保留音频路径，名称取文件名，并尝试调用已加载的音频识别模型自动填写 `ref_text`。`style` 仍需手动确认。</div>
         <input id="voiceLibraryFileInput" type="file" accept=".wav,.mp3,.flac,.m4a,.ogg,audio/*" style="display:none;" onchange="handleVoiceLibraryFileChange(event)" />
         <input id="voiceLibraryBatchInput" type="file" accept=".wav,.mp3,.flac,.m4a,.ogg,audio/*" multiple style="display:none;" onchange="handleVoiceLibraryBatchChange(event)" />
+        <div id="voiceLibraryMeta" class="import-hint">当前还没有声音模板。</div>
         <div id="voiceLibraryList" class="voice-library-list"></div>
         <div id="voiceLibraryEditor" class="editor-shell" hidden></div>
       </div>
@@ -1715,10 +1739,17 @@ very high pitch, very low pitch, whisper, young adult
       return;
     }
 
-    panel.innerHTML = lyricsState.map((line, index) => {
+    const spacerHeight = Math.max(72, Math.round(panel.clientHeight / 2 - 28));
+    const linesHtml = lyricsState.map((line, index) => {
       const className = index === activeLyricIndex ? "lyrics-line active" : index < activeLyricIndex ? "lyrics-line current-past" : "lyrics-line";
       return `<div class="${className}" data-lyric-index="${index}">${escapeHtml(line.text)}</div>`;
     }).join("");
+
+    panel.innerHTML = `
+      <div class="lyrics-track" style="padding-top:${spacerHeight}px;padding-bottom:${spacerHeight}px;">
+        ${linesHtml}
+      </div>
+    `;
   }
 
   function updateActiveLyricUI(previousIndex, nextIndex) {
@@ -1747,12 +1778,14 @@ very high pitch, very low pitch, whisper, young adult
     const activeNode = panel.querySelector(`[data-lyric-index="${index}"]`);
     if (!activeNode) return;
 
-    const targetTop = activeNode.offsetTop - (panel.clientHeight / 2) + (activeNode.offsetHeight / 2);
+    const panelRect = panel.getBoundingClientRect();
+    const nodeRect = activeNode.getBoundingClientRect();
+    const deltaToCenter = (nodeRect.top + nodeRect.height / 2) - (panelRect.top + panel.clientHeight / 2);
+    const targetTop = panel.scrollTop + deltaToCenter;
     const maxScrollTop = Math.max(0, panel.scrollHeight - panel.clientHeight);
-    panel.scrollTo({
-      top: Math.max(0, Math.min(maxScrollTop, targetTop)),
-      behavior: "auto",
-    });
+    const clampedTop = Math.max(0, Math.min(maxScrollTop, targetTop));
+    if (Math.abs(panel.scrollTop - clampedTop) < 1) return;
+    panel.scrollTop = clampedTop;
   }
 
   function syncLyricsToAudio(currentTime) {
@@ -2161,6 +2194,7 @@ very high pitch, very low pitch, whisper, young adult
       `CUDA: ${gpu.cuda?.available ? `可用，已用 ${gpu.cuda?.used_gb ?? "-"} GB / ${gpu.cuda?.total_gb ?? "-"} GB` : "不可用"}`,
       `MPS: ${gpu.mps?.available ? `可用，当前分配 ${gpu.mps?.current_allocated_gb ?? "-"} GB / 驱动分配 ${gpu.mps?.driver_allocated_gb ?? "-" } GB` : "不可用"}`,
       `音频生成模型: 已加载设备 ${Array.isArray(audio.loaded_devices) && audio.loaded_devices.length ? audio.loaded_devices.join(", ") : "无"}`,
+      `音频识别模型: 已加载设备 ${Array.isArray(audio.asr_loaded_devices) && audio.asr_loaded_devices.length ? audio.asr_loaded_devices.join(", ") : "无"}`,
     ].join("\n");
   }
 
@@ -2173,7 +2207,22 @@ very high pitch, very low pitch, whisper, young adult
       return;
     }
     const audio = status.audio || {};
-    el.textContent = `音频生成已加载设备：${Array.isArray(audio.loaded_devices) && audio.loaded_devices.length ? audio.loaded_devices.join(", ") : "无"}`;
+    const runtimeMissing = Array.isArray(audio.runtime?.missing) && audio.runtime.missing.length ? audio.runtime.missing.join(", ") : "无";
+    const asrRuntimeMissing = Array.isArray(audio.asr_runtime?.missing) && audio.asr_runtime.missing.length ? audio.asr_runtime.missing.join(", ") : "无";
+    const generationReady = audio.runtime?.ready !== false;
+    const asrReady = audio.asr_runtime?.ready !== false;
+    const generationLoaded = Array.isArray(audio.loaded_devices) && audio.loaded_devices.length ? audio.loaded_devices.join(", ") : "无";
+    const asrLoaded = Array.isArray(audio.asr_loaded_devices) && audio.asr_loaded_devices.length ? audio.asr_loaded_devices.join(", ") : "无";
+    const asrModel = Array.isArray(audio.asr_model_names) && audio.asr_model_names.length ? audio.asr_model_names.join(", ") : "未加载";
+    const detectedDevice = audio.detected_device || "未知";
+    el.textContent = [
+      `音频生成运行时：${generationReady ? "就绪" : `缺少依赖（${runtimeMissing}）`}`,
+      `音频识别运行时：${asrReady ? "就绪" : `缺少依赖（${asrRuntimeMissing}）`}`,
+      `默认检测设备：${detectedDevice}`,
+      `音频生成已加载设备：${generationLoaded}`,
+      `音频识别已加载设备：${asrLoaded}`,
+      `音频识别模型：${asrModel}`,
+    ].join("\n");
   }
 
   function renderSystemStatusPanel() {
@@ -2241,6 +2290,44 @@ very high pitch, very low pitch, whisper, young adult
       if (isTaskCancelledError(err)) return;
       setStatus("卸载音频生成模型失败，请查看上方任务面板中的详细错误。");
       failTask("卸载音频生成模型失败", err.message);
+    }
+  }
+
+  async function loadAudioRecognitionModel() {
+    if (taskBusy) return;
+    const backend = validateAudioBackendConfig();
+    if (!backend) return;
+    beginTask("narrate", "准备加载音频识别模型", `当前目标后端：${getAudioBackendLabel(backend)}。`);
+    try {
+      const data = await fetchJson("/api/model/load-asr", { backend });
+      const detail = `本地音频识别模型已就绪，设备：${getInferenceDeviceLabel(data.device || backend.inference_device)}。模型：${data.asr_model_name || "Whisper"}`;
+      await refreshModelRuntimeStatus(true);
+      setStatus(detail);
+      finishTask("音频识别模型已就绪", detail, { total: 1, done: 1 });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("音频识别模型加载失败，请查看上方任务面板中的详细错误。");
+      failTask("音频识别模型加载失败", err.message);
+    }
+  }
+
+  async function unloadAudioRecognitionModel() {
+    if (taskBusy) return;
+    const backend = validateAudioBackendConfig();
+    if (!backend) return;
+    beginTask("narrate", "准备卸载音频识别模型", `当前目标后端：${getAudioBackendLabel(backend)}。`);
+    try {
+      const data = await fetchJson("/api/model/unload-asr", { backend });
+      await refreshModelRuntimeStatus(true);
+      const detail = data.mode === "remote"
+        ? (data.message || "远程模式不在本地卸载。")
+        : `本地音频识别模型已从设备 ${getInferenceDeviceLabel(data.device)} 卸载。`;
+      setStatus(detail);
+      finishTask("音频识别模型已卸载", detail, { total: 1, done: 1 });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("卸载音频识别模型失败，请查看上方任务面板中的详细错误。");
+      failTask("卸载音频识别模型失败", err.message);
     }
   }
 
@@ -2636,13 +2723,15 @@ very high pitch, very low pitch, whisper, young adult
   async function importVoiceLibraryBatch(files) {
     const list = [...(files || [])].filter(Boolean);
     if (!list.length) return;
-    beginTask("parse", "准备批量导入参考音频", `共选中 ${list.length} 个音频文件，系统会先上传音频并创建声音模板。`);
+    const backend = await ensureAudioRecognitionReady();
+    if (!backend) return;
+    beginTask("parse", "准备批量导入参考音频", `共选中 ${list.length} 个音频文件，系统会先上传音频并自动转写参考文本。`);
     try {
       setStatus(`正在批量导入 ${list.length} 个声音文件...`);
       setProgress({
         stage: "analyze",
         summary: "正在上传音频并创建声音模板",
-        detail: "本次不会自动分析 style 或识别 ref_text，导入完成后你可以手动编辑，或直接把它们用作语音克隆参考音频。",
+        detail: "本次会调用已加载的音频识别模型自动转写 ref_text。style 仍需后续手动确认。",
         percent: 24,
         total: list.length,
         done: 0,
@@ -2657,6 +2746,8 @@ very high pitch, very low pitch, whisper, young adult
       }
       const data = await fetchJson("/api/batch-import-voice-library", {
         files: payload,
+        transcribe_ref_text: true,
+        backend,
       });
       const imported = Array.isArray(data.voices) ? data.voices : [];
       imported.forEach((voice) => {
@@ -2674,8 +2765,8 @@ very high pitch, very low pitch, whisper, young adult
       }
       renderVoiceLibrary();
       renderRoleAssignments();
-      setStatus(`已批量导入 ${imported.length} 个声音模板。`);
-      finishTask(`批量导入完成，共 ${imported.length} 个声音模板`, "所有音频都已进入声音库。你可以继续补充 style，或直接将它们用于语音克隆。", {
+      setStatus(`已批量导入 ${imported.length} 个声音模板，并自动填写参考文本。`);
+      finishTask(`批量导入完成，共 ${imported.length} 个声音模板`, "所有音频都已进入声音库，系统已自动转写并填写 ref_text。style 仍建议你手动确认。", {
         total: imported.length,
         done: imported.length,
       });
@@ -2708,6 +2799,36 @@ very high pitch, very low pitch, whisper, young adult
     } catch (err) {
       setStatus("导入参考音频失败，请查看上方任务面板中的详细错误。");
       failTask("导入参考音频失败", err.message || String(err));
+    }
+  }
+
+  async function transcribeVoiceLibraryRefAudio(index) {
+    const voice = voiceLibraryState[index];
+    if (!voice) return;
+    if (!String(voice.ref_audio || "").trim()) {
+      setStatus("请先为当前声音选择或填写参考音频。");
+      return;
+    }
+    const backend = await ensureAudioRecognitionReady();
+    if (!backend) return;
+
+    const voiceLabel = String(voice.name || `#${index + 1}`);
+    beginTask("parse", `准备识别声音“${voiceLabel}”的参考文本`, "将使用当前已加载的音频识别模型读取参考音频并自动填写 ref_text。");
+    try {
+      const data = await fetchJson("/api/transcribe-ref-audio", {
+        ref_audio: voice.ref_audio,
+        backend,
+      });
+      if (!voiceLibraryState[index]) return;
+      voiceLibraryState[index].ref_text = data.ref_text || "";
+      renderVoiceLibrary();
+      renderRoleAssignments();
+      setStatus("已自动识别并填写参考文本。");
+      finishTask("参考文本识别完成", "当前声音的 ref_text 已更新到编辑面板中。", { total: 1, done: 1 });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("参考文本识别失败，请查看上方任务面板中的详细错误。");
+      failTask("参考文本识别失败", err.message || String(err));
     }
   }
 
@@ -2780,24 +2901,44 @@ very high pitch, very low pitch, whisper, young adult
     renderRoleAssignments();
   }
 
+  function voiceNeedsStyle(voice) {
+    return !String(voice?.style || "").trim();
+  }
+
   function renderVoiceLibrary() {
     const container = document.getElementById("voiceLibraryList");
     const editor = document.getElementById("voiceLibraryEditor");
+    const meta = document.getElementById("voiceLibraryMeta");
+    const isEditing = editingVoiceLibraryIndex >= 0 && !!voiceLibraryState[editingVoiceLibraryIndex];
     if (!voiceLibraryState.length) {
+      if (meta) meta.textContent = "当前还没有声音模板。新增后可在音频生成页自动分配给角色。";
+      container.hidden = false;
+      container.style.display = "";
       container.innerHTML = `<div class="voice-card"><div class="mini-note">当前还没有声音模板。新增后可在音频生成页自动分配给角色。</div></div>`;
       editor.hidden = true;
       editor.innerHTML = "";
       return;
     }
 
-    container.innerHTML = voiceLibraryState.map((voice, index) => `
-      <div class="voice-card">
+    const missingStyleCount = voiceLibraryState.filter((voice) => voiceNeedsStyle(voice)).length;
+    if (meta) {
+      meta.textContent = missingStyleCount
+        ? `当前共有 ${voiceLibraryState.length} 个声音模板，其中 ${missingStyleCount} 个还没填写 style，列表中会用“待补 style”标记高亮显示。`
+        : `当前共有 ${voiceLibraryState.length} 个声音模板，style 都已填写。`;
+    }
+    container.hidden = isEditing;
+    container.style.display = isEditing ? "none" : "";
+    if (meta) meta.hidden = isEditing;
+    if (!isEditing) {
+      container.innerHTML = voiceLibraryState.map((voice, index) => `
+      <div class="voice-card ${voiceNeedsStyle(voice) ? "needs-style" : ""}">
         <div class="voice-list-row">
           <div>
             <strong>${escapeHtml(getVoiceLabel(voice))}</strong>
             <div class="voice-list-meta">
               <span class="pill">${escapeHtml(formatStyleDisplay(voice.style || ""))}</span>
               <span class="pill">${voice.ref_audio ? "已配置参考音频" : "无参考音频"}</span>
+              ${voiceNeedsStyle(voice) ? `<span class="pill" style="background:rgba(248,196,113,0.16); border-color:rgba(248,196,113,0.24); color:#fff2c7;">待补 style</span>` : ""}
             </div>
           </div>
           <div class="voice-actions">
@@ -2806,7 +2947,8 @@ very high pitch, very low pitch, whisper, young adult
           </div>
         </div>
       </div>
-    `).join("");
+      `).join("");
+    }
 
     const editIndex = editingVoiceLibraryIndex;
     if (editIndex < 0 || !voiceLibraryState[editIndex]) {
@@ -2826,6 +2968,7 @@ very high pitch, very low pitch, whisper, young adult
       <input value="${escapeHtml(voice.ref_audio || "")}" placeholder="可以填写本地或可访问的音频路径" onchange="updateVoiceLibraryField(${editIndex}, 'ref_audio', this.value)" />
       <div class="voice-actions">
         <button type="button" class="secondary" onclick="triggerVoiceLibraryFilePick(${editIndex})">选择本地音频</button>
+        <button type="button" class="secondary" onclick="transcribeVoiceLibraryRefAudio(${editIndex})">自动识别参考文本</button>
       </div>
       <div id="voiceDropzone_${editIndex}" class="dropzone" ondragover="handleVoiceDropDragOver(event, ${editIndex})" ondragleave="handleVoiceDropDragLeave(event, ${editIndex})" ondrop="handleVoiceDrop(event, ${editIndex})">
         把本地音频文件拖到这里即可自动上传并填入路径
@@ -3831,6 +3974,33 @@ very high pitch, very low pitch, whisper, young adult
       : requestedDevice;
     if (!loadedDevices.includes(expectedDevice)) {
       redirectToModelsWithToast("当前未加载音频生成模型，请到模型配置界面加载或配置。");
+      return null;
+    }
+    return backend;
+  }
+
+  async function ensureAudioRecognitionReady() {
+    const backend = validateAudioBackendConfig();
+    if (!backend) {
+      alert("当前未配置音频后端，请先到“模型配置”标签页处理。");
+      setWorkspaceTab("models");
+      return null;
+    }
+    if (backend.mode === "remote") {
+      alert("当前仅支持本地音频识别模型自动转写 ref_text，请切换到本地 OmniVoice 后端并先加载音频识别模型。");
+      setWorkspaceTab("models");
+      return null;
+    }
+
+    const status = await refreshModelRuntimeStatus(true);
+    const loadedDevices = status.audio?.asr_loaded_devices || [];
+    const requestedDevice = backend.inference_device || "";
+    const expectedDevice = !requestedDevice || requestedDevice === "auto"
+      ? (status.audio?.detected_device || "cpu")
+      : requestedDevice;
+    if (!loadedDevices.includes(expectedDevice)) {
+      alert("批量导入参考音频前，请先在“模型配置”标签页加载音频识别模型。现在将为你自动跳转。");
+      setWorkspaceTab("models");
       return null;
     }
     return backend;

@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -8,10 +8,24 @@ cd "$(dirname "$0")"
 # but clearing these here keeps ad-hoc scripts consistent too.
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 
-if [ ! -x ".venv/bin/python" ]; then
-  echo "Missing virtual environment: .venv"
-  echo "Create it with: /opt/homebrew/bin/python3.11 -m venv .venv"
-  exit 1
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [ -z "$PYTHON_BIN" ] && [ -n "${AUDIOBOOKSTUDIO_PYTHON:-}" ]; then
+  PYTHON_BIN="$AUDIOBOOKSTUDIO_PYTHON"
+fi
+if [ -z "$PYTHON_BIN" ] && [ -n "${CONDA_PREFIX:-}" ] && [ -x "${CONDA_PREFIX}/bin/python" ]; then
+  PYTHON_BIN="${CONDA_PREFIX}/bin/python"
+fi
+if [ -z "$PYTHON_BIN" ]; then
+  if [ -x ".venv/bin/python" ]; then
+    PYTHON_BIN=".venv/bin/python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+  elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python)"
+  else
+    echo "Python not found. Set PYTHON_BIN or install Python 3.10+."
+    exit 1
+  fi
 fi
 
-exec .venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000
+exec "$PYTHON_BIN" start_local.py

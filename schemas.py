@@ -108,6 +108,11 @@ class UploadRefAudioRequest(BaseModel):
     content_base64: str
 
 
+class TranscribeRefAudioRequest(BaseModel):
+    ref_audio: str
+    backend: Optional["AudioBackendConfig"] = None
+
+
 class AudioBackendConfig(BaseModel):
     mode: str = "local"
     remote_base_url: Optional[str] = None
@@ -125,8 +130,11 @@ class VoiceLibraryImportItem(BaseModel):
 
 class BatchImportVoiceLibraryRequest(BaseModel):
     files: List[VoiceLibraryImportItem]
+    transcribe_ref_text: bool = False
+    backend: Optional[AudioBackendConfig] = None
 
 
 TTSRequest.model_rebuild()
 NarrateRequest.model_rebuild()
 AutoNarrateRequest.model_rebuild()
+TranscribeRefAudioRequest.model_rebuild()

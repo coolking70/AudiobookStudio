@@ -4,6 +4,7 @@ import mimetypes
 import os
 import platform
 import re
+import sys
 import traceback
 from pathlib import Path
 from threading import Lock
@@ -11,17 +12,24 @@ from urllib.parse import urljoin
 from uuid import uuid4
 
 import httpx
-import psutil
-import torch
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+try:
+    import torch
+except ImportError:
+    torch = None
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from audio_utils import build_lrc, join_wavs
 from llm_client import OpenAICompatibleClient
-from pipeline import OmniVoicePipeline
+from pipeline import OmniVoicePipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status
 from role_analyzer import analyze_chunks_with_llm, analyze_text_with_llm, intelligent_segment_text, optimize_chunks_for_tts, sanitize_segments
-from schemas import AnalyzeChunksRequest, AutoNarrateRequest, BatchImportVoiceLibraryRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, MergeRequest, ModelLoadRequest, NarrateRequest, ParseRequest, SegmentPlanRequest, TTSRequest, UploadRefAudioRequest
+from schemas import AnalyzeChunksRequest, AutoNarrateRequest, BatchImportVoiceLibraryRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, MergeRequest, ModelLoadRequest, NarrateRequest, ParseRequest, SegmentPlanRequest, TTSRequest, TranscribeRefAudioRequest, UploadRefAudioRequest
 
 
 app = FastAPI(title="OmniVoice Reader Studio")
@@ -35,7 +43,49 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 OUTPUT_DIR = Path("outputs")
 REF_AUDIO_DIR = OUTPUT_DIR / "ref_audio"
-AI_HELPER_CONFIG_PATH = Path(__file__).resolve().parent.parent / "tts_text_parse" / "ai-helper" / "ai-api.md"
+AI_HELPER_CONFIG_CANDIDATES = [
+    Path(os.getenv("AUDIOBOOKSTUDIO_LLM_DEFAULTS", "")).expanduser() if os.getenv("AUDIOBOOKSTUDIO_LLM_DEFAULTS") else None,
+    Path(__file__).resolve().parent / "ai-api.md",
+    Path(__file__).resolve().parent / "config" / "ai-api.md",
+    Path(__file__).resolve().parent.parent / "tts_text_parse" / "ai-helper" / "ai-api.md",
+]
+
+
+def augment_process_path_from_python_env() -> None:
+    python_path = Path(sys.executable).resolve()
+    env_root = python_path.parent.parent if python_path.parent.name.lower() in {"scripts", "bin"} else python_path.parent
+    candidates = [
+        env_root,
+        env_root / "Scripts",
+        env_root / "bin",
+        env_root / "Library" / "bin",
+        env_root / "DLLs",
+    ]
+    current_path = os.environ.get("PATH", "")
+    parts = [part for part in current_path.split(os.pathsep) if part]
+    normalized_parts = {part.lower() for part in parts}
+    prepend = []
+    for candidate in candidates:
+        if candidate.exists():
+            candidate_str = str(candidate)
+            if candidate_str.lower() not in normalized_parts:
+                prepend.append(candidate_str)
+    if prepend:
+        os.environ["PATH"] = os.pathsep.join(prepend + parts)
+
+    try:
+        import imageio_ffmpeg
+
+        ffmpeg_exe = Path(imageio_ffmpeg.get_ffmpeg_exe()).resolve()
+        ffmpeg_dir = str(ffmpeg_exe.parent)
+        current_parts = os.environ.get("PATH", "").split(os.pathsep)
+        if ffmpeg_dir and ffmpeg_dir.lower() not in {part.lower() for part in current_parts if part}:
+            os.environ["PATH"] = os.pathsep.join([ffmpeg_dir] + [part for part in current_parts if part])
+    except Exception:
+        pass
+
+
+augment_process_path_from_python_env()
 
 
 def sanitize_upload_filename(filename: str) -> str:
@@ -96,17 +146,37 @@ def raise_api_error(exc: Exception) -> None:
     raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
 
 
-def load_ai_helper_llm_defaults() -> dict[str, object]:
-    if not AI_HELPER_CONFIG_PATH.exists():
-        raise FileNotFoundError(f"找不到 ai-helper 配置文件: {AI_HELPER_CONFIG_PATH}")
+def find_ai_helper_config_path() -> Path | None:
+    for candidate in AI_HELPER_CONFIG_CANDIDATES:
+        if candidate and candidate.exists():
+            return candidate
+    return None
 
-    text = AI_HELPER_CONFIG_PATH.read_text(encoding="utf-8")
+
+def load_ai_helper_llm_defaults() -> dict[str, object]:
+    config_path = find_ai_helper_config_path()
+    if config_path is None:
+        return {
+            "base_url": "",
+            "api_key": "",
+            "model": "",
+            "temperature": 0.3,
+            "max_tokens": 8000,
+            "analysis_mode": "balanced",
+            "compatibility_mode": "chat_compat",
+            "system_prompt": None,
+            "source": None,
+            "available_models": [],
+            "configured": False,
+        }
+
+    text = config_path.read_text(encoding="utf-8")
     api_key_match = re.search(r"API Key[：:]\s*(\S+)", text)
     base_url_match = re.search(r"Base URL[：:]\s*(\S+)", text)
     models_match = re.search(r"可用model[：:]\s*(.+)", text)
 
     if not api_key_match or not base_url_match:
-        raise RuntimeError(f"无法从 {AI_HELPER_CONFIG_PATH} 解析 API Key 或 Base URL")
+        raise RuntimeError(f"无法从 {config_path} 解析 API Key 或 Base URL")
 
     available_models = []
     if models_match:
@@ -124,8 +194,9 @@ def load_ai_helper_llm_defaults() -> dict[str, object]:
         "analysis_mode": "balanced",
         "compatibility_mode": "chat_compat",
         "system_prompt": None,
-        "source": str(AI_HELPER_CONFIG_PATH),
+        "source": str(config_path),
         "available_models": available_models,
+        "configured": True,
     }
 
 
@@ -290,14 +361,88 @@ def get_audio_model_status() -> dict:
     with pipeline_lock:
         loaded_devices = sorted([device for device, pipeline in pipeline_cache.items() if pipeline.model is not None])
         cached_devices = sorted(list(pipeline_cache.keys()))
+        asr_loaded_devices = sorted([device for device, pipeline in pipeline_cache.items() if pipeline.is_asr_loaded()])
+        asr_model_names = sorted({pipeline.asr_model_name for pipeline in pipeline_cache.values() if pipeline.is_asr_loaded()})
     return {
+        "runtime": get_runtime_dependency_status(),
+        "asr_runtime": get_asr_runtime_dependency_status(),
         "loaded_devices": loaded_devices,
         "cached_devices": cached_devices,
+        "asr_loaded_devices": asr_loaded_devices,
+        "asr_model_names": asr_model_names,
         "detected_device": OmniVoicePipeline.detect_device(),
     }
 
 
+def get_gpu_status() -> dict:
+    if torch is None:
+        return {
+            "cuda": {"available": False, "reason": "torch 未安装"},
+            "mps": {"available": False, "reason": "torch 未安装"},
+        }
+
+    gpu = {
+        "cuda": {
+            "available": torch.cuda.is_available(),
+        },
+        "mps": {
+            "available": bool(hasattr(torch.backends, "mps") and torch.backends.mps.is_available()),
+        },
+    }
+    if gpu["cuda"]["available"]:
+        try:
+            free_bytes, total_bytes = torch.cuda.mem_get_info()
+            gpu["cuda"].update(
+                {
+                    "free_gb": round(free_bytes / (1024 ** 3), 2),
+                    "total_gb": round(total_bytes / (1024 ** 3), 2),
+                    "used_gb": round((total_bytes - free_bytes) / (1024 ** 3), 2),
+                }
+            )
+        except Exception as exc:
+            gpu["cuda"]["error"] = str(exc)
+    if gpu["mps"]["available"] and hasattr(torch, "mps"):
+        try:
+            gpu["mps"].update(
+                {
+                    "current_allocated_gb": round(torch.mps.current_allocated_memory() / (1024 ** 3), 3),
+                    "driver_allocated_gb": round(torch.mps.driver_allocated_memory() / (1024 ** 3), 3),
+                    "recommended_max_gb": round(torch.mps.recommended_max_memory() / (1024 ** 3), 3),
+                }
+            )
+        except Exception as exc:
+            gpu["mps"]["error"] = str(exc)
+    return gpu
+
+
 def get_system_status() -> dict:
+    if psutil is None:
+        return {
+            "platform": {
+                "system": platform.system(),
+                "release": platform.release(),
+                "machine": platform.machine(),
+                "python": platform.python_version(),
+            },
+            "cpu": {
+                "logical_count": os.cpu_count(),
+                "usage_percent": None,
+                "load_avg": [round(x, 2) for x in os.getloadavg()] if hasattr(os, "getloadavg") else None,
+                "temperature_c": None,
+                "temperature_source": None,
+                "reason": "psutil 未安装",
+            },
+            "memory": {
+                "total_gb": None,
+                "used_gb": None,
+                "available_gb": None,
+                "usage_percent": None,
+                "process_rss_gb": None,
+                "reason": "psutil 未安装",
+            },
+            "gpu": get_gpu_status(),
+        }
+
     memory = psutil.virtual_memory()
     process = psutil.Process(os.getpid())
     cpu_temp = None
@@ -314,35 +459,6 @@ def get_system_status() -> dict:
                 break
     except Exception:
         pass
-
-    gpu = {
-        "cuda": {
-            "available": torch.cuda.is_available(),
-        },
-        "mps": {
-            "available": bool(hasattr(torch.backends, "mps") and torch.backends.mps.is_available()),
-        },
-    }
-    if gpu["cuda"]["available"]:
-        free_bytes, total_bytes = torch.cuda.mem_get_info()
-        gpu["cuda"].update(
-            {
-                "free_gb": round(free_bytes / (1024 ** 3), 2),
-                "total_gb": round(total_bytes / (1024 ** 3), 2),
-                "used_gb": round((total_bytes - free_bytes) / (1024 ** 3), 2),
-            }
-        )
-    if gpu["mps"]["available"] and hasattr(torch, "mps"):
-        try:
-            gpu["mps"].update(
-                {
-                    "current_allocated_gb": round(torch.mps.current_allocated_memory() / (1024 ** 3), 3),
-                    "driver_allocated_gb": round(torch.mps.driver_allocated_memory() / (1024 ** 3), 3),
-                    "recommended_max_gb": round(torch.mps.recommended_max_memory() / (1024 ** 3), 3),
-                }
-            )
-        except Exception:
-            pass
 
     return {
         "platform": {
@@ -365,7 +481,7 @@ def get_system_status() -> dict:
             "usage_percent": memory.percent,
             "process_rss_gb": round(process.memory_info().rss / (1024 ** 3), 3),
         },
-        "gpu": gpu,
+        "gpu": get_gpu_status(),
     }
 
 
@@ -659,14 +775,29 @@ def upload_ref_audio(req: UploadRefAudioRequest):
 @app.post("/api/batch-import-voice-library")
 def batch_import_voice_library(req: BatchImportVoiceLibraryRequest):
     try:
+        backend = req.backend.model_dump() if req.backend else {}
+        mode = str(backend.get("mode") or "local").strip().lower()
+        if req.transcribe_ref_text and mode == "remote":
+            raise RuntimeError("当前仅支持本地音频识别模型自动转写 ref_text，远程音频后端暂不支持该流程。")
+
+        inference_device = backend.get("inference_device")
+        pipeline = None
+        if req.transcribe_ref_text:
+            pipeline = get_pipeline(inference_device)
+            if not pipeline.is_asr_loaded():
+                raise RuntimeError("音频识别模型尚未加载。请先在模型配置页加载音频识别模型后再进行批量导入。")
+
         imported = []
         for item in req.files:
             target = save_ref_audio_from_base64(item.filename, item.content_base64)
+            ref_text = ""
+            if req.transcribe_ref_text and pipeline is not None:
+                ref_text = pipeline.transcribe_audio_file(target)
             imported.append(
                 {
                     "name": Path(item.filename).stem,
                     "style": "",
-                    "ref_text": "",
+                    "ref_text": ref_text,
                     "ref_audio": str(target.resolve()),
                     "ref_audio_url": f"/file/{target.relative_to(Path('outputs')).as_posix()}",
                     "file_name": target.name,
@@ -676,6 +807,32 @@ def batch_import_voice_library(req: BatchImportVoiceLibraryRequest):
         return {
             "ok": True,
             "voices": imported,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/transcribe-ref-audio")
+def transcribe_ref_audio(req: TranscribeRefAudioRequest):
+    try:
+        backend = req.backend.model_dump() if req.backend else {}
+        mode = str(backend.get("mode") or "local").strip().lower()
+        if mode == "remote":
+            raise RuntimeError("当前仅支持本地音频识别模型自动转写 ref_text，远程音频后端暂不支持该流程。")
+
+        ref_audio = str(req.ref_audio or "").strip()
+        if not ref_audio:
+            raise RuntimeError("请先提供参考音频路径。")
+
+        inference_device = backend.get("inference_device")
+        pipeline = get_pipeline(inference_device)
+        if not pipeline.is_asr_loaded():
+            raise RuntimeError("音频识别模型尚未加载。请先在模型配置页加载音频识别模型。")
+
+        ref_text = pipeline.transcribe_audio_file(ref_audio)
+        return {
+            "ok": True,
+            "ref_text": ref_text,
         }
     except Exception as exc:
         raise_api_error(exc)
@@ -704,6 +861,27 @@ def load_audio_model(req: ModelLoadRequest):
         raise_api_error(exc)
 
 
+@app.post("/api/model/load-asr")
+def load_asr_model(req: ModelLoadRequest):
+    try:
+        backend = req.backend.model_dump() if req.backend else {}
+        mode = str(backend.get("mode") or "local").strip().lower()
+        if mode == "remote":
+            raise RuntimeError("当前只支持本地加载音频识别模型，远程音频后端暂不支持。")
+
+        inference_device = backend.get("inference_device")
+        pipeline = get_pipeline(inference_device)
+        pipeline.load_asr_model()
+        return {
+            "ok": True,
+            "mode": "local",
+            "device": pipeline.device,
+            "asr_model_name": pipeline.asr_model_name,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
 @app.post("/api/model/unload-audio")
 def unload_audio_model(req: ModelLoadRequest):
     try:
@@ -714,6 +892,27 @@ def unload_audio_model(req: ModelLoadRequest):
 
         inference_device = normalize_inference_device(backend.get("inference_device"))
         unload_all_audio_pipelines()
+        return {
+            "ok": True,
+            "mode": "local",
+            "device": inference_device,
+            "status": get_audio_model_status(),
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/model/unload-asr")
+def unload_asr_model(req: ModelLoadRequest):
+    try:
+        backend = req.backend.model_dump() if req.backend else {}
+        mode = str(backend.get("mode") or "local").strip().lower()
+        if mode == "remote":
+            return {"ok": True, "mode": "remote", "message": "远程模式不在本地卸载音频识别模型。"}
+
+        inference_device = normalize_inference_device(backend.get("inference_device"))
+        pipeline = get_pipeline(inference_device)
+        pipeline.unload_asr_model()
         return {
             "ok": True,
             "mode": "local",
@@ -792,6 +991,7 @@ def health():
         "model_loaded": bool(loaded_devices),
         "loaded_devices": loaded_devices,
         "default_device": OmniVoicePipeline.detect_device(),
+        "audio_runtime": get_runtime_dependency_status(),
         "outputs_dir": str(OUTPUT_DIR.resolve()),
     }
 
