@@ -29,7 +29,7 @@ from audio_utils import build_lrc, join_wavs
 from llm_client import OpenAICompatibleClient
 from pipeline import OmniVoicePipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status
 from role_analyzer import analyze_chunks_with_llm, analyze_text_with_llm, intelligent_segment_text, optimize_chunks_for_tts, sanitize_segments
-from schemas import AnalyzeChunksRequest, AutoNarrateRequest, BatchImportVoiceLibraryRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, MergeRequest, ModelLoadRequest, NarrateRequest, ParseRequest, SegmentPlanRequest, TTSRequest, TranscribeRefAudioRequest, UploadRefAudioRequest
+from schemas import AnalyzeChunksRequest, AutoNarrateRequest, BatchImportVoiceLibraryRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, ListLLMModelsRequest, MergeRequest, ModelLoadRequest, NarrateRequest, ParseRequest, SegmentPlanRequest, TTSRequest, TranscribeRefAudioRequest, UploadRefAudioRequest
 
 
 app = FastAPI(title="OmniVoice Reader Studio")
@@ -752,6 +752,39 @@ def test_connectivity(req: ConnectivityTestRequest):
         return {
             "ok": True,
             "message": content,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/llm/list-models")
+def list_llm_models(req: ListLLMModelsRequest):
+    try:
+        base_url = str(req.base_url or "").strip().rstrip("/")
+        if not base_url:
+            raise ValueError("Base URL 不能为空")
+        models_url = f"{base_url}/models"
+        headers: dict[str, str] = {}
+        if req.api_key:
+            headers["Authorization"] = f"Bearer {req.api_key}"
+        timeout = httpx.Timeout(connect=10.0, read=15.0, write=10.0, pool=10.0)
+        with httpx.Client(timeout=timeout, trust_env=False) as client:
+            resp = client.get(models_url, headers=headers)
+            data = resp.json()
+            if not resp.is_success:
+                raise RuntimeError(data.get("error", {}).get("message", "") or data.get("detail") or str(data))
+        raw_models = data.get("data") or data.get("models") or []
+        if isinstance(raw_models, list):
+            models = [
+                {"id": str(m.get("id", "")), "owned_by": str(m.get("owned_by", ""))}
+                for m in raw_models
+                if isinstance(m, dict) and m.get("id")
+            ]
+        else:
+            models = []
+        return {
+            "ok": True,
+            "models": models,
         }
     except Exception as exc:
         raise_api_error(exc)

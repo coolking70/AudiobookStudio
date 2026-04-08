@@ -134,6 +134,11 @@ class BatchImportVoiceLibraryRequest(BaseModel):
     backend: Optional[AudioBackendConfig] = None
 
 
+class ListLLMModelsRequest(BaseModel):
+    base_url: str
+    api_key: Optional[str] = None
+
+
 TTSRequest.model_rebuild()
 NarrateRequest.model_rebuild()
 AutoNarrateRequest.model_rebuild()
