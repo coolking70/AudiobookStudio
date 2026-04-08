@@ -1,13 +1,51 @@
 from __future__ import annotations
 
 import os
+import gc
 from pathlib import Path
 from typing import Iterable, Optional
 
+import soundfile as sf
 import torch
 import torchaudio
 
-from omnivoice import OmniVoice
+_ORIGINAL_TORCHAUDIO_LOAD = torchaudio.load
+_ORIGINAL_TORCHAUDIO_SAVE = torchaudio.save
+
+
+def _load_with_soundfile_fallback(path, *args, **kwargs):
+    try:
+        return _ORIGINAL_TORCHAUDIO_LOAD(path, *args, **kwargs)
+    except ImportError as exc:
+        if "torchcodec" not in str(exc).lower():
+            raise
+
+    data, sample_rate = sf.read(path, always_2d=True, dtype="float32")
+    waveform = torch.from_numpy(data.T.copy())
+    return waveform, sample_rate
+
+
+torchaudio.load = _load_with_soundfile_fallback
+
+
+def _save_with_soundfile_fallback(path, src, sample_rate, *args, **kwargs):
+    try:
+        return _ORIGINAL_TORCHAUDIO_SAVE(path, src, sample_rate, *args, **kwargs)
+    except ImportError as exc:
+        if "torchcodec" not in str(exc).lower():
+            raise
+
+    tensor = src.detach().cpu()
+    if tensor.ndim == 2:
+        data = tensor.transpose(0, 1).numpy()
+    else:
+        data = tensor.numpy()
+    sf.write(path, data, sample_rate)
+
+
+torchaudio.save = _save_with_soundfile_fallback
+
+from omnivoice import OmniVoice, OmniVoiceGenerationConfig
 from audio_utils import ensure_dir, join_wavs
 
 
@@ -60,6 +98,7 @@ class OmniVoicePipeline:
         self.device = device or self.detect_device()
         self.dtype = dtype or self.detect_dtype(self.device)
         self.model: Optional[OmniVoice] = None
+        self.voice_clone_prompt_cache: dict[tuple[str, str], object] = {}
 
     @staticmethod
     def resolve_model_name_or_path(model_name: str) -> str:
@@ -122,6 +161,18 @@ class OmniVoicePipeline:
             )
         return self.model
 
+    def unload(self) -> None:
+        self.model = None
+        self.voice_clone_prompt_cache.clear()
+        gc.collect()
+        if str(self.device).startswith("cuda") and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if str(self.device) == "mps" and hasattr(torch, "mps"):
+            try:
+                torch.mps.empty_cache()
+            except Exception:
+                pass
+
     def normalize_instruct(self, instruct: Optional[str]) -> Optional[str]:
         if not instruct:
             return None
@@ -162,17 +213,31 @@ class OmniVoicePipeline:
         num_step: int = 32,
     ) -> str:
         model = self.load()
-
+        generation_config = OmniVoiceGenerationConfig(
+            num_step=num_step,
+            guidance_scale=2.0,
+            denoise=True,
+            preprocess_prompt=True,
+            postprocess_output=True,
+        )
         kwargs = {
             "text": text,
             "speed": speed,
-            "num_step": num_step,
+            "generation_config": generation_config,
         }
 
         if ref_audio:
-            kwargs["ref_audio"] = ref_audio
-            if ref_text:
-                kwargs["ref_text"] = ref_text
+            normalized_ref_audio = str(ref_audio).strip()
+            normalized_ref_text = str(ref_text or "").strip()
+            cache_key = (normalized_ref_audio, normalized_ref_text)
+            voice_clone_prompt = self.voice_clone_prompt_cache.get(cache_key)
+            if voice_clone_prompt is None:
+                voice_clone_prompt = model.create_voice_clone_prompt(
+                    ref_audio=normalized_ref_audio,
+                    ref_text=normalized_ref_text or None,
+                )
+                self.voice_clone_prompt_cache[cache_key] = voice_clone_prompt
+            kwargs["voice_clone_prompt"] = voice_clone_prompt
         else:
             normalized_instruct = self.normalize_instruct(instruct)
             if normalized_instruct:
@@ -206,10 +271,10 @@ class OmniVoicePipeline:
 
             profile = self.get_role_profile(speaker, role_profiles)
 
-            # 分段里显式写的优先级最高
-            style = seg.get("style") or profile.get("style")
+            # 有参考音频时按官方 voice clone 路径走，不再混入 style。
             ref_audio = seg.get("ref_audio") or profile.get("ref_audio")
             ref_text = seg.get("ref_text") or profile.get("ref_text")
+            style = None if ref_audio else (seg.get("style") or profile.get("style"))
 
             wav_path = out_dir / f"{base_name}_{idx:03d}.wav"
             self.synthesize_segment(

@@ -25,6 +25,7 @@ class TTSRequest(BaseModel):
     ref_text: Optional[str] = None
     output_name: str = "result"
     inference_device: Optional[str] = None
+    backend: Optional["AudioBackendConfig"] = None
 
 
 class NarrateRequest(BaseModel):
@@ -33,6 +34,7 @@ class NarrateRequest(BaseModel):
     output_name: str = "narration"
     role_profiles: Optional[Dict[str, RoleProfile]] = None
     inference_device: Optional[str] = None
+    backend: Optional["AudioBackendConfig"] = None
 
 
 class LLMConfig(BaseModel):
@@ -78,6 +80,7 @@ class AutoNarrateRequest(BaseModel):
     output_name: str = "auto_narration"
     role_profiles: Optional[Dict[str, RoleProfile]] = None
     inference_device: Optional[str] = None
+    backend: Optional["AudioBackendConfig"] = None
 
 
 class LyricLine(BaseModel):
@@ -103,3 +106,27 @@ class ConnectivityTestRequest(BaseModel):
 class UploadRefAudioRequest(BaseModel):
     filename: str
     content_base64: str
+
+
+class AudioBackendConfig(BaseModel):
+    mode: str = "local"
+    remote_base_url: Optional[str] = None
+    remote_api_key: Optional[str] = None
+    inference_device: Optional[str] = None
+
+class ModelLoadRequest(BaseModel):
+    backend: Optional[AudioBackendConfig] = None
+
+
+class VoiceLibraryImportItem(BaseModel):
+    filename: str
+    content_base64: str
+
+
+class BatchImportVoiceLibraryRequest(BaseModel):
+    files: List[VoiceLibraryImportItem]
+
+
+TTSRequest.model_rebuild()
+NarrateRequest.model_rebuild()
+AutoNarrateRequest.model_rebuild()

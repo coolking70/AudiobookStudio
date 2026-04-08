@@ -74,6 +74,38 @@
       background: var(--accent);
       box-shadow: 0 0 16px rgba(102, 224, 163, 0.7);
     }
+    .toast-container {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      z-index: 1200;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .toast {
+      min-width: 260px;
+      max-width: 420px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(125, 154, 192, 0.22);
+      background: rgba(11, 18, 32, 0.94);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.32);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.55;
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .toast.info {
+      border-color: rgba(83, 184, 255, 0.26);
+    }
     .progress-shell {
       margin-bottom: 20px;
       padding: 18px;
@@ -712,6 +744,7 @@
   </style>
 </head>
 <body>
+<div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 <div class="wrap">
   <div class="topbar">
     <div>
@@ -798,12 +831,13 @@
 
   <div class="workspace-tabs">
     <div class="workspace-tab-switch">
+      <button type="button" id="tabModelsBtn" onclick="setWorkspaceTab('models')">模型配置</button>
       <button type="button" id="tabAnalysisBtn" class="active" onclick="setWorkspaceTab('analysis')">文本分析</button>
       <button type="button" id="tabAudioBtn" onclick="setWorkspaceTab('audio')">音频生成</button>
       <button type="button" id="tabLibraryBtn" onclick="setWorkspaceTab('library')">声音库</button>
     </div>
 
-    <div id="analysisTab" class="workspace-tab-panel">
+    <div id="modelsTab" class="workspace-tab-panel" hidden>
       <div class="analysis-grid">
         <div class="card">
           <div class="mode-switch">
@@ -811,17 +845,17 @@
             <button type="button" id="modeExternalBtn" onclick="setAnalysisSourceMode('external')">外部 Chat AI</button>
           </div>
 
-          <h2>LLM 配置</h2>
+          <h2>文本分析模型</h2>
 
           <div id="directLlmPanel">
             <label>Base URL</label>
-            <input id="baseUrl" placeholder="例如：http://127.0.0.1:11434 或 https://your-api-host.com" />
+            <input id="baseUrl" placeholder="例如：http://127.0.0.1:1234/v1 或 https://your-api-host.com/v1" />
 
             <label>API Key</label>
             <input id="apiKey" placeholder="输入 API Key" type="password" />
 
             <label>Model</label>
-            <input id="model" placeholder="例如：gpt-4o-mini / qwen-max / local-model-name" />
+            <input id="model" placeholder="例如：google/gemma-4-26b-a4b / kimi-k2.5" />
 
             <div class="row">
               <div>
@@ -855,9 +889,9 @@
             <textarea id="systemPrompt" placeholder="留空则使用后端默认提示词"></textarea>
 
             <div class="actions">
-              <button type="button" onclick="saveConfig()">保存配置</button>
+              <button type="button" onclick="saveConfig()">保存全部配置</button>
               <button type="button" class="secondary" onclick="loadConfig()">读取配置</button>
-              <button type="button" data-busy-lock class="secondary" onclick="testLLMAvailability()">测试可用性</button>
+              <button type="button" data-busy-lock class="secondary" onclick="testLLMAvailability()">测试文本分析可用性</button>
             </div>
           </div>
 
@@ -906,8 +940,67 @@
               <button type="button" class="secondary" onclick="clearExternalImportedResults()">清空外部导入结果</button>
             </div>
           </div>
+        </div>
+
+        <div class="card">
+          <h2>音频生成后端</h2>
+          <div class="mini-note">这里决定试听、单段生成、整段合成实际调用哪套 OmniVoice 服务。可以本地加载，也可以走远程 API。</div>
+
+          <label>运行方式</label>
+          <select id="audioBackendMode" onchange="renderBackendPanels()">
+            <option value="local" selected>本地 OmniVoice</option>
+            <option value="remote">远程 API</option>
+          </select>
+
+          <div id="audioBackendLocalPanel">
+            <label>推理设备</label>
+            <select id="inferenceDevice">
+              <option value="auto" selected>自动选择（官方默认）</option>
+              <option value="mps">MPS（Apple Silicon）</option>
+              <option value="cpu">CPU</option>
+              <option value="cuda">CUDA</option>
+            </select>
+            <div class="mini-note">参考 OmniVoice 官方示例：默认自动检测 CUDA &gt; MPS &gt; CPU。这里的设置会作用于试听和完整生成。</div>
+          </div>
+
+          <div id="audioBackendRemotePanel" class="sub-card" hidden>
+            <label>远程 Base URL</label>
+            <input id="audioRemoteBaseUrl" placeholder="例如：http://127.0.0.1:8001" />
+            <label>远程 API Key（可选）</label>
+            <input id="audioRemoteApiKey" type="password" placeholder="如无需鉴权可留空" />
+            <label>远程推理设备（可选）</label>
+            <select id="audioRemoteInferenceDevice">
+              <option value="">由远端自行决定</option>
+              <option value="auto">自动选择</option>
+              <option value="mps">MPS</option>
+              <option value="cpu">CPU</option>
+              <option value="cuda">CUDA</option>
+            </select>
+          </div>
+
+          <div class="actions">
+            <button type="button" data-busy-lock onclick="loadAudioGenerationModel()">加载 / 检查音频生成模型</button>
+            <button type="button" class="secondary" data-busy-lock onclick="unloadAudioGenerationModel()">卸载音频生成模型</button>
+          </div>
 
           <hr style="border-color:rgba(125,154,192,0.18); margin:18px 0;" />
+
+          <h2>硬件状态</h2>
+          <div class="mini-note">这里是一次性读取的本机状态，不会实时刷新。你可以在加载模型前后手动点一次，查看内存、显存和 CPU 温度等参考信息。</div>
+          <div class="actions">
+            <button type="button" class="secondary" data-busy-lock onclick="refreshSystemStatus(true)">刷新硬件状态</button>
+          </div>
+          <div id="modelRuntimeStatus" class="import-hint" style="margin-top:10px;">尚未读取当前模型加载状态。</div>
+          <pre id="systemStatusPanel" class="import-hint" style="white-space:pre-wrap; min-height:140px;">尚未读取硬件状态。</pre>
+        </div>
+      </div>
+    </div>
+
+    <div id="analysisTab" class="workspace-tab-panel">
+      <div class="analysis-grid">
+        <div class="card">
+          <h2>文本分析</h2>
+          <div class="mini-note">模型与后端配置已经移到“模型配置”标签页。这里专注文本输入、分段、优化和角色分析。</div>
 
           <div id="sourceInputPanel">
             <h2>文本输入</h2>
@@ -965,7 +1058,7 @@
     <div id="audioTab" class="workspace-tab-panel" hidden>
       <div class="card">
         <h2>音频生成</h2>
-        <div class="muted">这里会自动接收文本分析结果，也可以手动导入 JSON 后统一分配角色声音、试听和生成完整音频。</div>
+        <div class="muted">这里会自动接收文本分析结果，也可以手动导入 JSON 后统一分配角色声音、试听和生成完整音频。实际使用的本地或远程 OmniVoice 后端，请到“模型配置”标签页中设置。</div>
 
         <label>输出文件名</label>
         <input id="outputName" value="novel_demo" />
@@ -973,30 +1066,42 @@
         <label>段间停顿（毫秒）</label>
         <input id="silenceMs" type="number" value="350" />
 
-        <div class="row">
-          <div>
-            <label>推理设备</label>
-            <select id="inferenceDevice">
-              <option value="auto" selected>自动选择（官方默认）</option>
-              <option value="mps">MPS（Apple Silicon）</option>
-              <option value="cpu">CPU</option>
-              <option value="cuda">CUDA</option>
-            </select>
-          </div>
-          <div>
-            <label>说明</label>
-            <div class="mini-note">参考 OmniVoice 官方示例：默认自动检测 CUDA &gt; MPS &gt; CPU。这里的选择会同时作用于试听和完整生成。</div>
-          </div>
-        </div>
-
         <input id="segmentsJsonFileInput" type="file" accept=".json,text/plain,application/json" style="display:none;" onchange="handleSegmentsJsonFileChange(event)" />
 
         <div class="actions">
           <button type="button" class="secondary" onclick="triggerSegmentsJsonImport()">导入分段 JSON</button>
-          <button type="button" class="secondary" onclick="autoAssignVoices()">自动分配其余角色声音</button>
-          <button type="button" class="secondary" onclick="applyNarratorVoiceToUnassigned()">其余角色套用旁白声音</button>
           <button type="button" class="secondary" onclick="resetAudioAssignments()">清空配置</button>
           <button type="button" data-busy-lock onclick="narrateSegments()">开始生成</button>
+        </div>
+
+        <div class="row" style="margin-top:14px; align-items:flex-end;">
+          <div style="flex:1 1 320px;">
+            <label>自动分配</label>
+            <div class="actions" style="margin-top:8px;">
+              <button type="button" class="secondary" onclick="autoAssignVoices()">按规则自动分配未分配角色</button>
+            </div>
+          </div>
+          <div style="flex:2 1 560px;">
+            <label>分配规则</label>
+            <div class="actions" style="margin-top:8px;">
+              <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                <input id="autoAssignPreferGender" type="checkbox" checked />
+                <span>优先匹配性别</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                <input id="autoAssignDisallowDuplicate" type="checkbox" checked />
+                <span>不允许重复</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                <input id="autoAssignUseNarratorFallback" type="checkbox" />
+                <span>用旁白匹配剩余未分配角色</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                <input id="autoAssignUseDesignForSingleLine" type="checkbox" checked />
+                <span>单句角色优先无参考声音</span>
+              </label>
+            </div>
+          </div>
         </div>
 
         <div class="row" style="margin-top:14px;">
@@ -1009,7 +1114,7 @@
           </div>
           <div>
             <label>说明</label>
-            <div class="mini-note">设置好旁白的声音后，可以一键把旁白声音复制给其余尚未分配的角色。</div>
+            <div class="mini-note">自动分配会先按这里的规则挑选声音；如果勾选“用旁白匹配剩余未分配角色”，则会在常规匹配后用旁白配置兜底。</div>
           </div>
         </div>
 
@@ -1028,11 +1133,13 @@
         </div>
         <div class="actions">
           <button type="button" onclick="addVoiceLibraryEntry()">新增声音</button>
+          <button type="button" class="secondary" onclick="triggerVoiceLibraryBatchImport()">批量导入参考音频</button>
           <button type="button" class="secondary" onclick="saveVoiceLibrary()">保存声音库</button>
           <button type="button" class="secondary" onclick="loadVoiceLibrary()">读取声音库</button>
         </div>
-        <div class="mini-note">默认显示简洁列表。点击“新增声音”或列表里的“编辑”后，再进入单独编辑界面设置名称、style、ref_audio 和 ref_text。</div>
+        <div class="mini-note">默认显示简洁列表。批量导入会保留音频路径，名称取文件名，`style/ref_text` 留空，后续可手动编辑。</div>
         <input id="voiceLibraryFileInput" type="file" accept=".wav,.mp3,.flac,.m4a,.ogg,audio/*" style="display:none;" onchange="handleVoiceLibraryFileChange(event)" />
+        <input id="voiceLibraryBatchInput" type="file" accept=".wav,.mp3,.flac,.m4a,.ogg,audio/*" multiple style="display:none;" onchange="handleVoiceLibraryBatchChange(event)" />
         <div id="voiceLibraryList" class="voice-library-list"></div>
         <div id="voiceLibraryEditor" class="editor-shell" hidden></div>
       </div>
@@ -1067,12 +1174,17 @@
   let optimizedChunksState = [];
   let pendingVoiceLibraryFileIndex = -1;
   let editingVoiceLibraryIndex = -1;
+  let modelRuntimeState = null;
+  let systemStatusState = null;
+  let toastTimerSeed = 0;
 
   const PARSE_SNAPSHOT_STORAGE_KEY = "ov_parse_snapshot";
   const LAST_SEGMENTS_STORAGE_KEY = "ov_last_segments";
   const VOICE_LIBRARY_STORAGE_KEY = "ov_voice_library";
   const INFERENCE_DEVICE_STORAGE_KEY = "ov_inference_device";
   const LLM_DEFAULTS_STORAGE_KEY = "ov_llm_defaults_loaded";
+  const AUDIO_BACKEND_STORAGE_KEY = "ov_audio_backend_config";
+  const DESIGN_VOICE_ID = "__design_voice__";
 
   const progressState = {
     mode: "idle",
@@ -1181,6 +1293,12 @@ very high pitch, very low pitch, whisper, young adult
   const STYLE_TAG_GROUP_MAP = STYLE_TAG_GROUPS.reduce((acc, group) => {
     group.tags.forEach(([tag]) => {
       acc[tag] = group.title;
+    });
+    return acc;
+  }, {});
+  const STYLE_TAG_LABEL_MAP = STYLE_TAG_GROUPS.reduce((acc, group) => {
+    group.tags.forEach(([tag, label]) => {
+      acc[tag] = label;
     });
     return acc;
   }, {});
@@ -1468,6 +1586,33 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("status").textContent = msg;
   }
 
+  function showToast(message, type = "info", durationMs = 2200) {
+    const container = document.getElementById("toastContainer");
+    if (!container || !message) return;
+    const toast = document.createElement("div");
+    const toastId = `toast_${Date.now()}_${toastTimerSeed++}`;
+    toast.className = `toast ${type}`;
+    toast.id = toastId;
+    toast.textContent = message;
+    container.appendChild(toast);
+    requestAnimationFrame(() => {
+      toast.classList.add("show");
+    });
+    window.setTimeout(() => {
+      toast.classList.remove("show");
+      window.setTimeout(() => {
+        const current = document.getElementById(toastId);
+        if (current) current.remove();
+      }, 220);
+    }, durationMs);
+  }
+
+  function redirectToModelsWithToast(message) {
+    setStatus(message);
+    showToast(message);
+    setWorkspaceTab("models");
+  }
+
   function renderAnalysisPipelineMeta() {
     const el = document.getElementById("analysisPipelineMeta");
     if (!el) return;
@@ -1482,10 +1627,12 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function setWorkspaceTab(tab) {
-    activeWorkspaceTab = tab === "audio" || tab === "library" ? tab : "analysis";
+    activeWorkspaceTab = ["models", "analysis", "audio", "library"].includes(tab) ? tab : "analysis";
+    document.getElementById("tabModelsBtn").classList.toggle("active", activeWorkspaceTab === "models");
     document.getElementById("tabAnalysisBtn").classList.toggle("active", activeWorkspaceTab === "analysis");
     document.getElementById("tabAudioBtn").classList.toggle("active", activeWorkspaceTab === "audio");
     document.getElementById("tabLibraryBtn").classList.toggle("active", activeWorkspaceTab === "library");
+    document.getElementById("modelsTab").hidden = activeWorkspaceTab !== "models";
     document.getElementById("analysisTab").hidden = activeWorkspaceTab !== "analysis";
     document.getElementById("audioTab").hidden = activeWorkspaceTab !== "audio";
     document.getElementById("libraryTab").hidden = activeWorkspaceTab !== "library";
@@ -1535,7 +1682,6 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("modeExternalBtn").classList.toggle("active", analysisSourceMode === "external");
     document.getElementById("directLlmPanel").hidden = analysisSourceMode !== "direct";
     document.getElementById("externalLlmPanel").hidden = analysisSourceMode !== "external";
-    document.getElementById("sourceInputPanel").hidden = analysisSourceMode === "external";
     if (analysisSourceMode === "external") {
       document.getElementById("externalAnalysisMode").value = document.getElementById("analysisMode").value || "balanced";
       document.getElementById("externalMaxTokens").value = document.getElementById("maxTokens").value || "2000";
@@ -1789,12 +1935,49 @@ very high pitch, very low pitch, whisper, young adult
     return document.getElementById("inferenceDevice").value || "auto";
   }
 
+  function getAudioBackendConfig() {
+    const mode = document.getElementById("audioBackendMode").value || "local";
+    return {
+      mode,
+      remote_base_url: (document.getElementById("audioRemoteBaseUrl").value || "").trim() || null,
+      remote_api_key: (document.getElementById("audioRemoteApiKey").value || "").trim() || null,
+      inference_device: mode === "remote"
+        ? ((document.getElementById("audioRemoteInferenceDevice").value || "").trim() || null)
+        : getInferenceDevice(),
+    };
+  }
+
   function getInferenceDeviceLabel(device) {
     const normalized = String(device || "auto").toLowerCase();
     if (normalized === "mps") return "MPS";
     if (normalized === "cpu") return "CPU";
     if (normalized === "cuda") return "CUDA";
     return "自动选择";
+  }
+
+  function getAudioBackendLabel(config = getAudioBackendConfig()) {
+    if ((config.mode || "local") === "remote") {
+      return `远程 API（${config.remote_base_url || "未填写地址"}）`;
+    }
+    return `本地 OmniVoice（${getInferenceDeviceLabel(config.inference_device)})`;
+  }
+
+  function renderBackendPanels() {
+    const audioMode = document.getElementById("audioBackendMode").value || "local";
+    document.getElementById("audioBackendLocalPanel").hidden = audioMode !== "local";
+    document.getElementById("audioBackendRemotePanel").hidden = audioMode !== "remote";
+  }
+
+  function applyAudioBackendConfigToForm(cfg) {
+    if (!cfg) return;
+    document.getElementById("audioBackendMode").value = cfg.mode || "local";
+    document.getElementById("audioRemoteBaseUrl").value = cfg.remote_base_url || "";
+    document.getElementById("audioRemoteApiKey").value = cfg.remote_api_key || "";
+    document.getElementById("audioRemoteInferenceDevice").value = cfg.inference_device || "";
+    if ((cfg.mode || "local") !== "remote") {
+      document.getElementById("inferenceDevice").value = cfg.inference_device || "auto";
+    }
+    renderBackendPanels();
   }
 
   function setSourceText(text) {
@@ -1840,13 +2023,14 @@ very high pitch, very low pitch, whisper, young adult
 
   function saveConfig() {
     localStorage.setItem("ov_llm_config", JSON.stringify(getLLMConfig()));
+    localStorage.setItem(AUDIO_BACKEND_STORAGE_KEY, JSON.stringify(getAudioBackendConfig()));
     localStorage.setItem("ov_role_profiles", JSON.stringify(roleProfilesState));
     localStorage.setItem("ov_role_voice_assignments", JSON.stringify(roleVoiceAssignments));
     localStorage.setItem(INFERENCE_DEVICE_STORAGE_KEY, getInferenceDevice());
     setStatus("已保存配置。");
     setProgress({
       summary: "配置已保存",
-      detail: "LLM 配置和角色配置已经写入本地浏览器缓存，刷新页面后仍可恢复。",
+      detail: "文本分析、音频生成和角色配置都已经写入本地浏览器缓存，刷新页面后仍可恢复。",
       stage: taskBusy ? progressState.stage : "idle",
       percent: taskBusy ? progressState.percent : 0,
       total: taskBusy ? progressState.total : 0,
@@ -1900,6 +2084,15 @@ very high pitch, very low pitch, whisper, young adult
       document.getElementById("inferenceDevice").value = inferenceDevice;
     }
 
+    const audioBackendRaw = localStorage.getItem(AUDIO_BACKEND_STORAGE_KEY);
+    if (audioBackendRaw) {
+      applyAudioBackendConfigToForm(JSON.parse(audioBackendRaw));
+    } else if (inferenceDevice) {
+      applyAudioBackendConfigToForm({ mode: "local", inference_device: inferenceDevice });
+    } else {
+      renderBackendPanels();
+    }
+
     const lastSegments = getLastSegments();
     if (lastSegments && Array.isArray(lastSegments.segments) && lastSegments.segments.length) {
       applySegmentsState(lastSegments.segments, { persist: false });
@@ -1911,6 +2104,13 @@ very high pitch, very low pitch, whisper, young adult
     }
 
     const defaultLoaded = !llmRaw && localStorage.getItem(LLM_DEFAULTS_STORAGE_KEY) === "1";
+    try {
+      await refreshModelRuntimeStatus(true);
+    } catch (err) {
+      console.warn("读取模型状态失败:", err);
+      renderModelRuntimeStatus();
+    }
+    renderSystemStatusPanel();
     setStatus(
       snapshot
         ? "已读取本地配置，并恢复到上次中断的分析文本。可点击“继续上次分析”。"
@@ -1943,6 +2143,105 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("analysisMode").value = cfg.analysis_mode || "balanced";
     document.getElementById("compatibilityMode").value = cfg.compatibility_mode || "strict_json";
     document.getElementById("systemPrompt").value = cfg.system_prompt || "";
+  }
+
+  function formatSystemStatus(data) {
+    if (!data || !data.system) return "尚未读取硬件状态。";
+    const cpu = data.system.cpu || {};
+    const memory = data.system.memory || {};
+    const gpu = data.system.gpu || {};
+    const audio = data.models?.audio || {};
+    return [
+      `系统: ${data.system.platform?.system || "-"} ${data.system.platform?.release || ""} / ${data.system.platform?.machine || "-"}`,
+      `Python: ${data.system.platform?.python || "-"}`,
+      `CPU 使用率: ${cpu.usage_percent ?? "-"}%`,
+      `CPU 温度: ${cpu.temperature_c != null ? `${cpu.temperature_c} °C` : "当前环境不可获取"}`,
+      `内存: 已用 ${memory.used_gb ?? "-"} GB / 总计 ${memory.total_gb ?? "-"} GB (${memory.usage_percent ?? "-"}%)`,
+      `进程内存: ${memory.process_rss_gb ?? "-"} GB`,
+      `CUDA: ${gpu.cuda?.available ? `可用，已用 ${gpu.cuda?.used_gb ?? "-"} GB / ${gpu.cuda?.total_gb ?? "-"} GB` : "不可用"}`,
+      `MPS: ${gpu.mps?.available ? `可用，当前分配 ${gpu.mps?.current_allocated_gb ?? "-"} GB / 驱动分配 ${gpu.mps?.driver_allocated_gb ?? "-" } GB` : "不可用"}`,
+      `音频生成模型: 已加载设备 ${Array.isArray(audio.loaded_devices) && audio.loaded_devices.length ? audio.loaded_devices.join(", ") : "无"}`,
+    ].join("\n");
+  }
+
+  function renderModelRuntimeStatus() {
+    const el = document.getElementById("modelRuntimeStatus");
+    const status = modelRuntimeState;
+    if (!el) return;
+    if (!status) {
+      el.textContent = "尚未读取当前模型加载状态。";
+      return;
+    }
+    const audio = status.audio || {};
+    el.textContent = `音频生成已加载设备：${Array.isArray(audio.loaded_devices) && audio.loaded_devices.length ? audio.loaded_devices.join(", ") : "无"}`;
+  }
+
+  function renderSystemStatusPanel() {
+    const el = document.getElementById("systemStatusPanel");
+    if (!el) return;
+    el.textContent = formatSystemStatus(systemStatusState);
+  }
+
+  async function refreshModelRuntimeStatus(silent = true) {
+    const data = await fetchGetJson("/api/model/status");
+    modelRuntimeState = data;
+    renderModelRuntimeStatus();
+    if (!silent) {
+      setStatus("已刷新当前模型加载状态。");
+    }
+    return data;
+  }
+
+  async function refreshSystemStatus(showMessage = false) {
+    const data = await fetchGetJson("/api/system/status");
+    systemStatusState = data;
+    modelRuntimeState = data.models || modelRuntimeState;
+    renderModelRuntimeStatus();
+    renderSystemStatusPanel();
+    if (showMessage) {
+      setStatus("已刷新硬件状态与模型状态。");
+    }
+    return data;
+  }
+
+  async function loadAudioGenerationModel() {
+    if (taskBusy) return;
+    const backend = validateAudioBackendConfig();
+    if (!backend) return;
+    beginTask("narrate", "准备加载音频生成模型", `当前目标后端：${getAudioBackendLabel(backend)}。`);
+    try {
+      const data = await fetchJson("/api/model/load-audio", { backend });
+      const detail = data.mode === "remote"
+        ? `远程后端连通正常：${backend.remote_base_url || "未填写地址"}`
+        : `本地模型已就绪，设备：${getInferenceDeviceLabel(data.device || backend.inference_device)}。`;
+      await refreshModelRuntimeStatus(true);
+      setStatus(`音频生成模型已就绪。${detail}`);
+      finishTask("音频生成模型已就绪", detail, { total: 1, done: 1 });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("音频生成模型加载失败，请查看上方任务面板中的详细错误。");
+      failTask("音频生成模型加载失败", err.message);
+    }
+  }
+
+  async function unloadAudioGenerationModel() {
+    if (taskBusy) return;
+    const backend = validateAudioBackendConfig();
+    if (!backend) return;
+    beginTask("narrate", "准备卸载音频生成模型", `当前目标后端：${getAudioBackendLabel(backend)}。`);
+    try {
+      const data = await fetchJson("/api/model/unload-audio", { backend });
+      await refreshModelRuntimeStatus(true);
+      const detail = data.mode === "remote"
+        ? (data.message || "远程模式不在本地卸载。")
+        : `本地音频生成模型已从设备 ${getInferenceDeviceLabel(data.device)} 卸载。`;
+      setStatus(detail);
+      finishTask("音频生成模型已卸载", detail, { total: 1, done: 1 });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("卸载音频生成模型失败，请查看上方任务面板中的详细错误。");
+      failTask("卸载音频生成模型失败", err.message);
+    }
   }
 
   function countSegmentsBySpeaker() {
@@ -2218,6 +2517,17 @@ very high pitch, very low pitch, whisper, young adult
       .filter(Boolean);
   }
 
+  function getStyleDisplayLabel(tag) {
+    const normalized = String(tag || "").trim().toLowerCase();
+    return STYLE_TAG_LABEL_MAP[normalized] || tag;
+  }
+
+  function formatStyleDisplay(style) {
+    const parts = getStyleParts(style);
+    if (!parts.length) return "未设置 style";
+    return parts.map((part) => getStyleDisplayLabel(part)).join("，");
+  }
+
   function normalizeStyleValue(value) {
     const normalized = [];
     getStyleParts(value)
@@ -2310,6 +2620,72 @@ very high pitch, very low pitch, whisper, young adult
     });
   }
 
+  async function encodeAudioFile(file) {
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("读取音频文件失败"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function triggerVoiceLibraryBatchImport() {
+    document.getElementById("voiceLibraryBatchInput").click();
+  }
+
+  async function importVoiceLibraryBatch(files) {
+    const list = [...(files || [])].filter(Boolean);
+    if (!list.length) return;
+    beginTask("parse", "准备批量导入参考音频", `共选中 ${list.length} 个音频文件，系统会先上传音频并创建声音模板。`);
+    try {
+      setStatus(`正在批量导入 ${list.length} 个声音文件...`);
+      setProgress({
+        stage: "analyze",
+        summary: "正在上传音频并创建声音模板",
+        detail: "本次不会自动分析 style 或识别 ref_text，导入完成后你可以手动编辑，或直接把它们用作语音克隆参考音频。",
+        percent: 24,
+        total: list.length,
+        done: 0,
+        indeterminate: true,
+      }, { log: `开始批量导入 ${list.length} 个声音文件` });
+      const payload = [];
+      for (const file of list) {
+        payload.push({
+          filename: file.name,
+          content_base64: await encodeAudioFile(file),
+        });
+      }
+      const data = await fetchJson("/api/batch-import-voice-library", {
+        files: payload,
+      });
+      const imported = Array.isArray(data.voices) ? data.voices : [];
+      imported.forEach((voice) => {
+        voiceLibraryState.push({
+          id: `voice_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+          name: voice.name || getFileStem(voice.file_name || "") || "",
+          style: normalizeStyleValue(voice.style || ""),
+          ref_audio: voice.ref_audio || "",
+          ref_audio_url: voice.ref_audio_url || "",
+          ref_text: voice.ref_text || "",
+        });
+      });
+      if (imported.length) {
+        editingVoiceLibraryIndex = voiceLibraryState.length - 1;
+      }
+      renderVoiceLibrary();
+      renderRoleAssignments();
+      setStatus(`已批量导入 ${imported.length} 个声音模板。`);
+      finishTask(`批量导入完成，共 ${imported.length} 个声音模板`, "所有音频都已进入声音库。你可以继续补充 style，或直接将它们用于语音克隆。", {
+        total: imported.length,
+        done: imported.length,
+      });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("批量导入声音失败，请查看上方任务面板中的详细错误。");
+      failTask("批量导入声音失败", err.message || String(err));
+    }
+  }
+
   function triggerVoiceLibraryFilePick(index) {
     pendingVoiceLibraryFileIndex = index;
     document.getElementById("voiceLibraryFileInput").click();
@@ -2346,6 +2722,16 @@ very high pitch, very low pitch, whisper, young adult
     }
     try {
       await assignVoiceLibraryFile(targetIndex, file);
+    } finally {
+      input.value = "";
+    }
+  }
+
+  async function handleVoiceLibraryBatchChange(event) {
+    const input = event.target;
+    const files = input.files ? [...input.files] : [];
+    try {
+      await importVoiceLibraryBatch(files);
     } finally {
       input.value = "";
     }
@@ -2410,7 +2796,7 @@ very high pitch, very low pitch, whisper, young adult
           <div>
             <strong>${escapeHtml(getVoiceLabel(voice))}</strong>
             <div class="voice-list-meta">
-              <span class="pill">${escapeHtml(voice.style || "未设置 style")}</span>
+              <span class="pill">${escapeHtml(formatStyleDisplay(voice.style || ""))}</span>
               <span class="pill">${voice.ref_audio ? "已配置参考音频" : "无参考音频"}</span>
             </div>
           </div>
@@ -2553,9 +2939,17 @@ very high pitch, very low pitch, whisper, young adult
   function applyVoiceToRole(speaker, voiceId) {
     roleVoiceAssignments[speaker] = voiceId || "";
     ensureRoleProfile(speaker);
+    if (voiceId === DESIGN_VOICE_ID) {
+      const firstSeg = getSpeakerFirstSegmentMap()[speaker] || {};
+      roleProfilesState[speaker].style = firstSeg.style || roleProfilesState[speaker].style || "";
+      roleProfilesState[speaker].ref_audio = "";
+      roleProfilesState[speaker].ref_text = "";
+      renderRoleAssignments();
+      return;
+    }
     const voice = voiceLibraryState.find((item) => item.id === voiceId);
     if (voice) {
-      roleProfilesState[speaker].style = voice.style || roleProfilesState[speaker].style || "";
+      roleProfilesState[speaker].style = voice.ref_audio ? "" : (voice.style || roleProfilesState[speaker].style || "");
       roleProfilesState[speaker].ref_audio = voice.ref_audio || "";
       roleProfilesState[speaker].ref_text = voice.ref_text || "";
     }
@@ -2564,6 +2958,15 @@ very high pitch, very low pitch, whisper, young adult
 
   function getAudioAssignmentSortMode() {
     return document.getElementById("audioAssignmentSort")?.value || "count";
+  }
+
+  function getAutoAssignRules() {
+    return {
+      preferGender: !!document.getElementById("autoAssignPreferGender")?.checked,
+      disallowDuplicate: !!document.getElementById("autoAssignDisallowDuplicate")?.checked,
+      useNarratorFallback: !!document.getElementById("autoAssignUseNarratorFallback")?.checked,
+      useDesignForSingleLine: !!document.getElementById("autoAssignUseDesignForSingleLine")?.checked,
+    };
   }
 
   function getSpeakerFirstAppearanceMap() {
@@ -2633,10 +3036,12 @@ very high pitch, very low pitch, whisper, young adult
       return;
     }
     const profile = roleProfilesState[speaker] || {};
+    const backend = await ensureAudioBackendReady();
+    if (!backend) return;
     beginTask("narrate", `准备试听角色“${speaker}”`, "将随机抽选一条较短台词快速生成试听音频。");
     try {
       const outputName = `preview_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`;
-      const inferenceDevice = getInferenceDevice();
+      const inferenceDevice = backend.inference_device || getInferenceDevice();
       const resp = await fetchJson("/api/tts", {
         text: segment.text,
         instruct: segment.style || profile.style || null,
@@ -2644,12 +3049,14 @@ very high pitch, very low pitch, whisper, young adult
         ref_text: segment.ref_text || profile.ref_text || null,
         output_name: outputName,
         inference_device: inferenceDevice,
+        backend,
       });
       if (resp.audio_url) {
         await setMediaAssets(resp.audio_url, "");
       }
-      finishTask(`角色“${speaker}”试听生成完成`, `已使用 ${getInferenceDeviceLabel(inferenceDevice)} 生成随机较短台词试听：${segment.text}`, { total: 1, done: 1 });
-      setStatus(`已使用 ${getInferenceDeviceLabel(inferenceDevice)} 为角色“${speaker}”生成试听音频。`);
+      const fallbackNote = resp.fallback_device ? `检测到 ${String(resp.original_device || "mps").toUpperCase()} 显存不足，已自动回退到 ${String(resp.fallback_device).toUpperCase()}。` : "";
+      finishTask(`角色“${speaker}”试听生成完成`, `已使用 ${getAudioBackendLabel(backend)} 生成随机较短台词试听：${segment.text}${fallbackNote ? ` ${fallbackNote}` : ""}`, { total: 1, done: 1 });
+      setStatus(`已使用 ${getAudioBackendLabel(backend)} 为角色“${speaker}”生成试听音频。${fallbackNote}`);
     } catch (err) {
       if (isTaskCancelledError(err)) return;
       setStatus("角色试听失败，请查看上方任务面板中的详细错误。");
@@ -2682,6 +3089,7 @@ very high pitch, very low pitch, whisper, young adult
       const profile = roleProfilesState[speaker] || {};
       const firstSeg = firstSegmentMap[speaker] || {};
       const referenceStyle = firstSeg.style || profile.style || "";
+      const preferClone = speaker === "旁白" || counts[speaker] > 1;
       return `
         <div class="assignment-card">
           <div class="assignment-head">
@@ -2694,9 +3102,10 @@ very high pitch, very low pitch, whisper, young adult
           <label>分配声音</label>
           <select onchange="applyVoiceToRole('${escapeJs(speaker)}', this.value)">
             <option value="">未分配</option>
+            <option value="${DESIGN_VOICE_ID}" ${assignedId === DESIGN_VOICE_ID ? "selected" : ""}>无参考声音（Voice Design）</option>
             ${voiceLibraryState.map((voice) => `<option value="${escapeHtml(voice.id)}" ${assignedId === voice.id ? "selected" : ""}>${escapeHtml(getVoiceLabel(voice))}</option>`).join("")}
           </select>
-          <div class="mini-note">首次出现的参考 style：${escapeHtml(referenceStyle || "未设置")}。当前 ref_audio：${escapeHtml(profile.ref_audio || "未设置")}</div>
+          <div class="mini-note">首次出现的参考 style：${escapeHtml(referenceStyle || "未设置")}。当前 ref_audio：${escapeHtml(profile.ref_audio || "未设置")}。建议模式：${preferClone ? "优先语音克隆" : "优先 design 语音"}。</div>
           <div class="assignment-actions">
             <button type="button" class="secondary" data-busy-lock onclick="previewRoleVoice('${escapeJs(speaker)}')">试听随机短句</button>
           </div>
@@ -2753,6 +3162,7 @@ very high pitch, very low pitch, whisper, young adult
       setStatus("声音库为空，请先在“声音库”标签页中添加声音模板。");
       return;
     }
+    const rules = getAutoAssignRules();
     const firstSegmentMap = getSpeakerFirstSegmentMap();
     const sortedSpeakers = getSortedSpeakersForAssignments();
     const unassignedSpeakers = sortedSpeakers.filter((speaker) => !roleVoiceAssignments[speaker]);
@@ -2764,9 +3174,12 @@ very high pitch, very low pitch, whisper, young adult
 
     const usedVoiceIds = new Set(Object.values(roleVoiceAssignments).filter(Boolean));
     let assignedCount = 0;
+    let designCount = 0;
     let blockedCount = 0;
 
     const getStyleSet = (style) => new Set(getStyleParts(style).map((item) => item.toLowerCase()));
+    const getSpeakerSegmentCount = (speaker) => Number(countSegmentsBySpeaker()[speaker] || 0);
+    const shouldPreferCloneVoice = (speaker) => speaker === "旁白" || getSpeakerSegmentCount(speaker) > 1;
     const scoreVoiceMatch = (speaker, voice) => {
       const referenceStyle = firstSegmentMap[speaker]?.style || roleProfilesState[speaker]?.style || "";
       const speakerTags = getStyleSet(referenceStyle);
@@ -2781,28 +3194,60 @@ very high pitch, very low pitch, whisper, young adult
       return score;
     };
 
-    const findBestVoice = (speaker) => {
+    const buildCandidates = (speaker, requireUnused, requireGender) => {
       const referenceStyle = firstSegmentMap[speaker]?.style || roleProfilesState[speaker]?.style || "";
       const targetGender = inferGenderFromStyle(referenceStyle);
+      const preferClone = shouldPreferCloneVoice(speaker);
+      return voiceLibraryState
+        .filter((voice) => !requireUnused || !usedVoiceIds.has(voice.id))
+        .filter((voice) => !requireGender || !targetGender || inferGenderFromStyle(voice.style) === targetGender)
+        .map((voice) => ({
+          voice,
+          score: scoreVoiceMatch(speaker, voice),
+          sameGender: !targetGender || inferGenderFromStyle(voice.style) === targetGender,
+          unused: !usedVoiceIds.has(voice.id),
+          preferredMode: preferClone ? !!voice.ref_audio : !voice.ref_audio,
+        }))
+        .sort((a, b) => {
+          if (Number(b.preferredMode) !== Number(a.preferredMode)) {
+            return Number(b.preferredMode) - Number(a.preferredMode);
+          }
+          if (Number(b.sameGender) !== Number(a.sameGender)) {
+            return Number(b.sameGender) - Number(a.sameGender);
+          }
+          if (Number(b.unused) !== Number(a.unused)) {
+            return Number(b.unused) - Number(a.unused);
+          }
+          return b.score - a.score;
+        });
+    };
 
-      const exactGenderUnused = voiceLibraryState
-        .filter((voice) => !usedVoiceIds.has(voice.id))
-        .filter((voice) => inferGenderFromStyle(voice.style) === targetGender);
+    const findBestVoice = (speaker) => {
+      const candidateGroups = [];
+      const duplicateOptions = rules.disallowDuplicate ? [true, false] : [false];
+      const genderOptions = rules.preferGender ? [true, false] : [false];
 
-      if (!targetGender) {
-        return null;
+      duplicateOptions.forEach((requireUnused) => {
+        genderOptions.forEach((requireGender) => {
+          candidateGroups.push(buildCandidates(speaker, requireUnused, requireGender));
+        });
+      });
+
+      for (const group of candidateGroups) {
+        if (group.length) {
+          return group[0].voice;
+        }
       }
-
-      if (!exactGenderUnused.length) {
-        return null;
-      }
-
-      return exactGenderUnused
-        .map((voice) => ({ voice, score: scoreVoiceMatch(speaker, voice) }))
-        .sort((a, b) => b.score - a.score)[0]?.voice || null;
+      return null;
     };
 
     unassignedSpeakers.forEach((speaker) => {
+      if (rules.useDesignForSingleLine && getSpeakerSegmentCount(speaker) === 1 && speaker !== "旁白") {
+        applyVoiceToRole(speaker, DESIGN_VOICE_ID);
+        designCount += 1;
+        assignedCount += 1;
+        return;
+      }
       const voice = findBestVoice(speaker);
       if (!voice) {
         blockedCount += 1;
@@ -2813,9 +3258,39 @@ very high pitch, very low pitch, whisper, young adult
       assignedCount += 1;
     });
 
+    let narratorAppliedCount = 0;
+    if (rules.useNarratorFallback) {
+      const narrator = "旁白";
+      ensureRoleProfile(narrator);
+      const narratorProfile = roleProfilesState[narrator] || {};
+      const narratorVoiceId = roleVoiceAssignments[narrator] || "";
+      const hasNarratorVoice = narratorVoiceId || narratorProfile.style || narratorProfile.ref_audio || narratorProfile.ref_text;
+      if (hasNarratorVoice) {
+        Object.keys(countSegmentsBySpeaker()).forEach((speaker) => {
+          if (speaker === narrator || roleVoiceAssignments[speaker]) return;
+          ensureRoleProfile(speaker);
+          roleVoiceAssignments[speaker] = narratorVoiceId;
+          roleProfilesState[speaker].style = narratorProfile.style || roleProfilesState[speaker].style || "";
+          roleProfilesState[speaker].ref_audio = narratorProfile.ref_audio || roleProfilesState[speaker].ref_audio || "";
+          roleProfilesState[speaker].ref_text = narratorProfile.ref_text || roleProfilesState[speaker].ref_text || "";
+          narratorAppliedCount += 1;
+        });
+        blockedCount = Object.keys(countSegmentsBySpeaker()).filter((speaker) => !roleVoiceAssignments[speaker]).length;
+      }
+    }
+
+    renderRoleAssignments();
+
+    const ruleSummary = [
+      rules.preferGender ? "优先匹配性别" : "不强制性别优先",
+      rules.disallowDuplicate ? "优先不重复" : "允许重复",
+      rules.useDesignForSingleLine ? "单句角色优先 design" : "单句角色也分配参考声音",
+      rules.useNarratorFallback ? "旁白兜底已开启" : "旁白兜底已关闭",
+    ].join("，");
+
     const message = blockedCount > 0
-      ? `已为 ${assignedCount} 个未分配角色自动分配声音。另有 ${blockedCount} 个角色未分配成功：当前声音库中没有满足性别且未被占用的声音。`
-      : `已为 ${assignedCount} 个未分配角色自动分配声音。已按当前排序顺序强制匹配性别且不重复，并在满足性别后尽量贴近其余 style 标签。`;
+      ? `已自动分配 ${assignedCount} 个角色，其中无参考声音 ${designCount} 个，旁白兜底 ${narratorAppliedCount} 个；仍有 ${blockedCount} 个角色未分配成功。当前规则：${ruleSummary}。`
+      : `已自动分配 ${assignedCount} 个角色，其中无参考声音 ${designCount} 个${narratorAppliedCount ? `，旁白兜底 ${narratorAppliedCount} 个` : ""}。当前规则：${ruleSummary}。`;
     setStatus(message);
   }
 
@@ -3096,6 +3571,15 @@ very high pitch, very low pitch, whisper, young adult
     }
   }
 
+  async function fetchGetJson(url) {
+    const resp = await fetch(url, { method: "GET" });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.detail || JSON.stringify(data));
+    }
+    return data;
+  }
+
   function normalizeSourceText(text) {
     return String(text || "").replace(/\r\n/g, "\n").trim();
   }
@@ -3313,10 +3797,43 @@ very high pitch, very low pitch, whisper, young adult
   function validateLLMConfig() {
     const llm = getLLMConfig();
     if (!llm.base_url || !llm.api_key || !llm.model) {
-      setStatus("请先填写完整的 LLM 配置。");
+      setStatus("当前未配置文本分析模型，请到“模型配置”标签页填写并保存 LLM 配置。");
       return null;
     }
     return llm;
+  }
+
+  function validateAudioBackendConfig() {
+    const backend = getAudioBackendConfig();
+    if (backend.mode === "remote" && !backend.remote_base_url) {
+      setStatus("当前未配置音频生成远程 API，请到“模型配置”标签页填写并加载或检查。");
+      return null;
+    }
+    return backend;
+  }
+
+  async function ensureAudioBackendReady() {
+    const backend = validateAudioBackendConfig();
+    if (!backend) {
+      showToast("当前未配置或加载音频模型，请到模型配置界面处理。");
+      setWorkspaceTab("models");
+      return null;
+    }
+    if (backend.mode === "remote") {
+      return backend;
+    }
+
+    const status = await refreshModelRuntimeStatus(true);
+    const loadedDevices = status.audio?.loaded_devices || [];
+    const requestedDevice = backend.inference_device || "";
+    const expectedDevice = !requestedDevice || requestedDevice === "auto"
+      ? (status.audio?.detected_device || "cpu")
+      : requestedDevice;
+    if (!loadedDevices.includes(expectedDevice)) {
+      redirectToModelsWithToast("当前未加载音频生成模型，请到模型配置界面加载或配置。");
+      return null;
+    }
+    return backend;
   }
 
   async function runParseOnly(text, llm, resumeSnapshot = null) {
@@ -3575,7 +4092,7 @@ very high pitch, very low pitch, whisper, young adult
     }
   }
 
-  async function synthesizeSegmentsSequentially(segments, baseName, silenceMs, inferenceDevice) {
+  async function synthesizeSegmentsSequentially(segments, baseName, silenceMs, inferenceDevice, backend) {
     const total = segments.length;
     const wavFiles = [];
 
@@ -3612,6 +4129,7 @@ very high pitch, very low pitch, whisper, young adult
         ref_text: seg.ref_text || profile.ref_text || null,
         output_name: segmentOutputName,
         inference_device: inferenceDevice,
+        backend,
       });
 
       wavFiles.push(`${segmentOutputName}.wav`);
@@ -3797,22 +4315,34 @@ very high pitch, very low pitch, whisper, young adult
 
     const baseName = getOutputName("auto_narration");
     const silenceMs = getSilenceMs();
-    const inferenceDevice = getInferenceDevice();
+    const backend = await ensureAudioBackendReady();
+    if (!backend) return;
+    const inferenceDevice = backend.inference_device || getInferenceDevice();
 
-    beginTask("auto", "准备开始自动分角色与合成", `本次任务会先做文本分析，再按分段逐条生成语音，最后拼接成完整音频。当前设备：${getInferenceDeviceLabel(inferenceDevice)}。`);
+    beginTask("auto", "准备开始自动分角色与合成", `本次任务会先做文本分析，再按分段生成语音并输出完整音频。当前音频后端：${getAudioBackendLabel(backend)}。`);
 
     try {
       const planned = await runSmartSegmentation(text, llm);
       const optimized = await runTextOptimization(planned, llm);
       const segments = await runRoleAnalysis(optimized, llm);
-      const merged = await synthesizeSegmentsSequentially(segments, baseName, silenceMs, inferenceDevice);
+      const merged = backend.mode === "local"
+        ? await synthesizeSegmentsSequentially(segments, baseName, silenceMs, inferenceDevice, backend)
+        : await fetchJson("/api/narrate", {
+            segments,
+            silence_ms: silenceMs,
+            output_name: baseName,
+            role_profiles: roleProfilesState,
+            inference_device: inferenceDevice,
+            backend,
+          });
 
       if (merged.audio_url) {
         await setMediaAssets(merged.audio_url, merged.lrc_url || "");
       }
 
-      setStatus(`自动合成成功，共 ${segments.length} 段，设备：${getInferenceDeviceLabel(inferenceDevice)}。`);
-      finishTask(`自动合成完成，共 ${segments.length} 段`, `最终音频已经生成并加载到播放器，可以直接试听。当前设备：${getInferenceDeviceLabel(inferenceDevice)}。`, {
+      const fallbackNote = merged.fallback_device ? `检测到 ${String(merged.original_device || "mps").toUpperCase()} 显存不足，已自动回退到 ${String(merged.fallback_device).toUpperCase()}。` : "";
+      setStatus(`自动合成成功，共 ${segments.length} 段，音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}`);
+      finishTask(`自动合成完成，共 ${segments.length} 段`, `最终音频已经生成并加载到播放器，可以直接试听。当前音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}`, {
         total: segments.length,
         done: segments.length,
       });
@@ -3833,19 +4363,31 @@ very high pitch, very low pitch, whisper, young adult
 
     const baseName = getOutputName("narration");
     const silenceMs = getSilenceMs();
-    const inferenceDevice = getInferenceDevice();
+    const backend = await ensureAudioBackendReady();
+    if (!backend) return;
+    const inferenceDevice = backend.inference_device || getInferenceDevice();
 
-    beginTask("narrate", "准备按当前分段生成音频", `页面将依次调用每一段的语音生成，并把实时结果反馈在顶部。当前设备：${getInferenceDeviceLabel(inferenceDevice)}。`);
+    beginTask("narrate", "准备按当前分段生成音频", `页面将把当前分段提交给后端统一生成。当前音频后端：${getAudioBackendLabel(backend)}。`);
 
     try {
-      const merged = await synthesizeSegmentsSequentially(segmentsState, baseName, silenceMs, inferenceDevice);
+      const merged = backend.mode === "local"
+        ? await synthesizeSegmentsSequentially(segmentsState, baseName, silenceMs, inferenceDevice, backend)
+        : await fetchJson("/api/narrate", {
+            segments: segmentsState,
+            silence_ms: silenceMs,
+            output_name: baseName,
+            role_profiles: roleProfilesState,
+            inference_device: inferenceDevice,
+            backend,
+          });
 
       if (merged.audio_url) {
         await setMediaAssets(merged.audio_url, merged.lrc_url || "");
       }
 
-      setStatus(`合成成功，共 ${segmentsState.length} 段，设备：${getInferenceDeviceLabel(inferenceDevice)}。`);
-      finishTask(`分段合成完成，共 ${segmentsState.length} 段`, `所有段落已经成功合并，播放器已切换到最新音频。当前设备：${getInferenceDeviceLabel(inferenceDevice)}。`, {
+      const fallbackNote = merged.fallback_device ? `检测到 ${String(merged.original_device || "mps").toUpperCase()} 显存不足，已自动回退到 ${String(merged.fallback_device).toUpperCase()}。` : "";
+      setStatus(`合成成功，共 ${segmentsState.length} 段，音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}`);
+      finishTask(`分段合成完成，共 ${segmentsState.length} 段`, `所有段落已经成功合并，播放器已切换到最新音频。当前音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}`, {
         total: segmentsState.length,
         done: segmentsState.length,
       });

@@ -1,12 +1,18 @@
 import base64
 import json
 import mimetypes
+import os
+import platform
 import re
 import traceback
 from pathlib import Path
 from threading import Lock
+from urllib.parse import urljoin
 from uuid import uuid4
 
+import httpx
+import psutil
+import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,7 +21,7 @@ from audio_utils import build_lrc, join_wavs
 from llm_client import OpenAICompatibleClient
 from pipeline import OmniVoicePipeline
 from role_analyzer import analyze_chunks_with_llm, analyze_text_with_llm, intelligent_segment_text, optimize_chunks_for_tts, sanitize_segments
-from schemas import AnalyzeChunksRequest, AutoNarrateRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, MergeRequest, NarrateRequest, ParseRequest, SegmentPlanRequest, TTSRequest, UploadRefAudioRequest
+from schemas import AnalyzeChunksRequest, AutoNarrateRequest, BatchImportVoiceLibraryRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, MergeRequest, ModelLoadRequest, NarrateRequest, ParseRequest, SegmentPlanRequest, TTSRequest, UploadRefAudioRequest
 
 
 app = FastAPI(title="OmniVoice Reader Studio")
@@ -44,6 +50,20 @@ def build_unique_upload_filename(filename: str) -> str:
     stem = re.sub(r"[^A-Za-z0-9._-]+", "_", path.stem) or "ref_audio"
     suffix = path.suffix or ".wav"
     return f"{stem}_{uuid4().hex[:10]}{suffix}"
+
+
+def save_ref_audio_from_base64(filename: str, content_base64: str) -> Path:
+    REF_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = build_unique_upload_filename(filename)
+    target = REF_AUDIO_DIR / safe_name
+
+    raw = content_base64
+    if "," in raw:
+        raw = raw.split(",", 1)[1]
+
+    content = base64.b64decode(raw)
+    target.write_bytes(content)
+    return target
 
 
 def build_lyric_lines(segments: list[dict]) -> list[str]:
@@ -109,6 +129,49 @@ def load_ai_helper_llm_defaults() -> dict[str, object]:
     }
 
 
+def normalize_remote_base_url(base_url: str | None) -> str:
+    normalized = str(base_url or "").strip().rstrip("/")
+    if not normalized:
+        raise ValueError("远程 API Base URL 不能为空")
+    return normalized
+
+
+def absolutize_remote_file_url(base_url: str, file_url: str | None) -> str | None:
+    if not file_url:
+        return file_url
+    if file_url.startswith("http://") or file_url.startswith("https://"):
+        return file_url
+    return urljoin(f"{base_url}/", file_url.lstrip("/"))
+
+
+def remote_post_json(base_url: str, path: str, payload: dict, api_key: str | None = None) -> dict:
+    url = f"{normalize_remote_base_url(base_url)}{path}"
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    timeout = httpx.Timeout(connect=30.0, read=300.0, write=60.0, pool=30.0)
+    with httpx.Client(timeout=timeout, trust_env=False) as client:
+        resp = client.post(url, headers=headers, json=payload)
+        data = resp.json()
+        if not resp.is_success:
+            raise RuntimeError(data.get("detail") or data)
+        return data
+
+
+def remote_get_json(base_url: str, path: str, api_key: str | None = None) -> dict:
+    url = f"{normalize_remote_base_url(base_url)}{path}"
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    timeout = httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
+    with httpx.Client(timeout=timeout, trust_env=False) as client:
+        resp = client.get(url, headers=headers)
+        data = resp.json()
+        if not resp.is_success:
+            raise RuntimeError(data.get("detail") or data)
+        return data
+
+
 def normalize_inference_device(device: str | None) -> str:
     normalized = str(device or "").strip().lower()
     if not normalized or normalized == "auto":
@@ -128,6 +191,182 @@ def get_pipeline(device: str | None = None) -> OmniVoicePipeline:
             pipeline = OmniVoicePipeline(device=resolved_device)
             pipeline_cache[resolved_device] = pipeline
         return pipeline
+
+
+def unload_all_audio_pipelines() -> None:
+    with pipeline_lock:
+        pipelines = list(pipeline_cache.values())
+    for pipeline in pipelines:
+        pipeline.unload()
+
+
+def resolve_audio_backend(req_backend, fallback_device: str | None = None) -> tuple[str, str | None, str | None, str | None]:
+    backend = req_backend or {}
+    mode = str(backend.get("mode") or "local").strip().lower()
+    remote_base_url = backend.get("remote_base_url")
+    remote_api_key = backend.get("remote_api_key")
+    inference_device = backend.get("inference_device") or fallback_device
+    return mode, remote_base_url, remote_api_key, inference_device
+
+
+def is_mps_oom_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    return "mps backend out of memory" in message or ("out of memory" in message and "mps" in message)
+
+
+def synthesize_local_tts_with_fallback(
+    *,
+    inference_device: str | None,
+    text: str,
+    output_path: Path,
+    instruct: str | None = None,
+    ref_audio: str | None = None,
+    ref_text: str | None = None,
+) -> dict:
+    resolved_device = normalize_inference_device(inference_device)
+    pipeline = get_pipeline(resolved_device)
+    try:
+        pipeline.synthesize_segment(
+            text=text,
+            output_path=output_path,
+            instruct=instruct,
+            ref_audio=ref_audio,
+            ref_text=ref_text,
+        )
+        return {"device": resolved_device, "fallback_device": None}
+    except Exception as exc:
+        if resolved_device != "mps" or not is_mps_oom_error(exc):
+            raise
+        pipeline.unload()
+        cpu_pipeline = get_pipeline("cpu")
+        cpu_pipeline.synthesize_segment(
+            text=text,
+            output_path=output_path,
+            instruct=instruct,
+            ref_audio=ref_audio,
+            ref_text=ref_text,
+        )
+        return {"device": "cpu", "fallback_device": "cpu", "original_device": resolved_device}
+
+
+def synthesize_local_narration_with_fallback(
+    *,
+    inference_device: str | None,
+    segments: list[dict],
+    output_name: str,
+    silence_ms: int,
+    role_profiles: dict,
+) -> dict:
+    resolved_device = normalize_inference_device(inference_device)
+    pipeline = get_pipeline(resolved_device)
+    try:
+        merged_path = pipeline.synthesize_segments(
+            segments=segments,
+            base_name=output_name,
+            silence_ms=silence_ms,
+            role_profiles=role_profiles,
+        )
+        return {"merged_path": merged_path, "device": resolved_device, "fallback_device": None}
+    except Exception as exc:
+        if resolved_device != "mps" or not is_mps_oom_error(exc):
+            raise
+        pipeline.unload()
+        cpu_pipeline = get_pipeline("cpu")
+        merged_path = cpu_pipeline.synthesize_segments(
+            segments=segments,
+            base_name=output_name,
+            silence_ms=silence_ms,
+            role_profiles=role_profiles,
+        )
+        return {
+            "merged_path": merged_path,
+            "device": "cpu",
+            "fallback_device": "cpu",
+            "original_device": resolved_device,
+        }
+
+
+def get_audio_model_status() -> dict:
+    with pipeline_lock:
+        loaded_devices = sorted([device for device, pipeline in pipeline_cache.items() if pipeline.model is not None])
+        cached_devices = sorted(list(pipeline_cache.keys()))
+    return {
+        "loaded_devices": loaded_devices,
+        "cached_devices": cached_devices,
+        "detected_device": OmniVoicePipeline.detect_device(),
+    }
+
+
+def get_system_status() -> dict:
+    memory = psutil.virtual_memory()
+    process = psutil.Process(os.getpid())
+    cpu_temp = None
+    cpu_temp_source = None
+    try:
+        temps = psutil.sensors_temperatures()
+        for name, entries in (temps or {}).items():
+            if not entries:
+                continue
+            entry = entries[0]
+            cpu_temp = getattr(entry, "current", None)
+            cpu_temp_source = name
+            if cpu_temp is not None:
+                break
+    except Exception:
+        pass
+
+    gpu = {
+        "cuda": {
+            "available": torch.cuda.is_available(),
+        },
+        "mps": {
+            "available": bool(hasattr(torch.backends, "mps") and torch.backends.mps.is_available()),
+        },
+    }
+    if gpu["cuda"]["available"]:
+        free_bytes, total_bytes = torch.cuda.mem_get_info()
+        gpu["cuda"].update(
+            {
+                "free_gb": round(free_bytes / (1024 ** 3), 2),
+                "total_gb": round(total_bytes / (1024 ** 3), 2),
+                "used_gb": round((total_bytes - free_bytes) / (1024 ** 3), 2),
+            }
+        )
+    if gpu["mps"]["available"] and hasattr(torch, "mps"):
+        try:
+            gpu["mps"].update(
+                {
+                    "current_allocated_gb": round(torch.mps.current_allocated_memory() / (1024 ** 3), 3),
+                    "driver_allocated_gb": round(torch.mps.driver_allocated_memory() / (1024 ** 3), 3),
+                    "recommended_max_gb": round(torch.mps.recommended_max_memory() / (1024 ** 3), 3),
+                }
+            )
+        except Exception:
+            pass
+
+    return {
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+            "python": platform.python_version(),
+        },
+        "cpu": {
+            "logical_count": psutil.cpu_count(logical=True),
+            "usage_percent": psutil.cpu_percent(interval=0.2),
+            "load_avg": [round(x, 2) for x in os.getloadavg()] if hasattr(os, "getloadavg") else None,
+            "temperature_c": cpu_temp,
+            "temperature_source": cpu_temp_source,
+        },
+        "memory": {
+            "total_gb": round(memory.total / (1024 ** 3), 2),
+            "used_gb": round(memory.used / (1024 ** 3), 2),
+            "available_gb": round(memory.available / (1024 ** 3), 2),
+            "usage_percent": memory.percent,
+            "process_rss_gb": round(process.memory_info().rss / (1024 ** 3), 3),
+        },
+        "gpu": gpu,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -161,10 +400,31 @@ def favicon():
 def tts(req: TTSRequest):
     try:
         output_name = sanitize_output_name(req.output_name, "tts_result")
-        output_path = OUTPUT_DIR / f"{output_name}.wav"
-        pipeline = get_pipeline(req.inference_device)
+        mode, remote_base_url, remote_api_key, inference_device = resolve_audio_backend(
+            req.backend.model_dump() if req.backend else None,
+            req.inference_device,
+        )
 
-        pipeline.synthesize_segment(
+        if mode == "remote":
+            remote_resp = remote_post_json(
+                remote_base_url,
+                "/api/tts",
+                {
+                    "text": req.text,
+                    "instruct": req.instruct,
+                    "ref_audio": req.ref_audio,
+                    "ref_text": req.ref_text,
+                    "output_name": output_name,
+                    "inference_device": inference_device,
+                },
+                remote_api_key,
+            )
+            remote_resp["audio_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("audio_url"))
+            return remote_resp
+
+        output_path = OUTPUT_DIR / f"{output_name}.wav"
+        result = synthesize_local_tts_with_fallback(
+            inference_device=inference_device,
             text=req.text,
             output_path=output_path,
             instruct=req.instruct,
@@ -176,6 +436,9 @@ def tts(req: TTSRequest):
             "ok": True,
             "file": str(output_path),
             "audio_url": f"/file/{output_path.name}",
+            "device": result.get("device"),
+            "fallback_device": result.get("fallback_device"),
+            "original_device": result.get("original_device"),
         }
     except Exception as exc:
         raise_api_error(exc)
@@ -237,14 +500,36 @@ def narrate(req: NarrateRequest):
         output_name = sanitize_output_name(req.output_name, "narration")
         segments = [seg.model_dump() for seg in req.segments]
         role_profiles = {k: v.model_dump() for k, v in (req.role_profiles or {}).items()}
-        pipeline = get_pipeline(req.inference_device)
+        mode, remote_base_url, remote_api_key, inference_device = resolve_audio_backend(
+            req.backend.model_dump() if req.backend else None,
+            req.inference_device,
+        )
 
-        merged_path = pipeline.synthesize_segments(
+        if mode == "remote":
+            remote_resp = remote_post_json(
+                remote_base_url,
+                "/api/narrate",
+                {
+                    "segments": segments,
+                    "silence_ms": req.silence_ms,
+                    "output_name": output_name,
+                    "role_profiles": role_profiles,
+                    "inference_device": inference_device,
+                },
+                remote_api_key,
+            )
+            remote_resp["audio_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("audio_url"))
+            remote_resp["lrc_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("lrc_url"))
+            return remote_resp
+
+        result = synthesize_local_narration_with_fallback(
+            inference_device=inference_device,
             segments=segments,
-            base_name=output_name,
+            output_name=output_name,
             silence_ms=req.silence_ms,
             role_profiles=role_profiles,
         )
+        merged_path = result["merged_path"]
         wav_paths = build_segment_wav_paths(output_name, len(segments))
         lrc_path = OUTPUT_DIR / f"{output_name}_merged.lrc"
         build_lrc(wav_paths, build_lyric_lines(segments), lrc_path, silence_ms=req.silence_ms)
@@ -254,6 +539,9 @@ def narrate(req: NarrateRequest):
             "file": merged_path,
             "audio_url": f"/file/{Path(merged_path).name}",
             "lrc_url": f"/file/{lrc_path.name}",
+            "device": result.get("device"),
+            "fallback_device": result.get("fallback_device"),
+            "original_device": result.get("original_device"),
         }
     except Exception as exc:
         raise_api_error(exc)
@@ -265,14 +553,37 @@ def auto_narrate(req: AutoNarrateRequest):
         output_name = sanitize_output_name(req.output_name, "auto_narration")
         segments = analyze_text_with_llm(req.text, req.llm)
         role_profiles = {k: v.model_dump() for k, v in (req.role_profiles or {}).items()}
-        pipeline = get_pipeline(req.inference_device)
+        mode, remote_base_url, remote_api_key, inference_device = resolve_audio_backend(
+            req.backend.model_dump() if req.backend else None,
+            req.inference_device,
+        )
 
-        merged_path = pipeline.synthesize_segments(
+        if mode == "remote":
+            remote_resp = remote_post_json(
+                remote_base_url,
+                "/api/narrate",
+                {
+                    "segments": segments,
+                    "silence_ms": req.silence_ms,
+                    "output_name": output_name,
+                    "role_profiles": role_profiles,
+                    "inference_device": inference_device,
+                },
+                remote_api_key,
+            )
+            remote_resp["segments"] = segments
+            remote_resp["audio_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("audio_url"))
+            remote_resp["lrc_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("lrc_url"))
+            return remote_resp
+
+        result = synthesize_local_narration_with_fallback(
+            inference_device=inference_device,
             segments=segments,
-            base_name=output_name,
+            output_name=output_name,
             silence_ms=req.silence_ms,
             role_profiles=role_profiles,
         )
+        merged_path = result["merged_path"]
         wav_paths = build_segment_wav_paths(output_name, len(segments))
         lrc_path = OUTPUT_DIR / f"{output_name}_merged.lrc"
         build_lrc(wav_paths, build_lyric_lines(segments), lrc_path, silence_ms=req.silence_ms)
@@ -282,6 +593,9 @@ def auto_narrate(req: AutoNarrateRequest):
             "file": merged_path,
             "audio_url": f"/file/{Path(merged_path).name}",
             "lrc_url": f"/file/{lrc_path.name}",
+            "device": result.get("device"),
+            "fallback_device": result.get("fallback_device"),
+            "original_device": result.get("original_device"),
         }
     except Exception as exc:
         raise_api_error(exc)
@@ -330,22 +644,105 @@ def test_connectivity(req: ConnectivityTestRequest):
 @app.post("/api/upload-ref-audio")
 def upload_ref_audio(req: UploadRefAudioRequest):
     try:
-        REF_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-        safe_name = build_unique_upload_filename(req.filename)
-        target = REF_AUDIO_DIR / safe_name
-
-        raw = req.content_base64
-        if "," in raw:
-            raw = raw.split(",", 1)[1]
-
-        content = base64.b64decode(raw)
-        target.write_bytes(content)
+        target = save_ref_audio_from_base64(req.filename, req.content_base64)
 
         return {
             "ok": True,
             "saved_path": str(target.resolve()),
             "audio_url": f"/file/{target.relative_to(Path('outputs')).as_posix()}",
             "file_name": target.name,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/batch-import-voice-library")
+def batch_import_voice_library(req: BatchImportVoiceLibraryRequest):
+    try:
+        imported = []
+        for item in req.files:
+            target = save_ref_audio_from_base64(item.filename, item.content_base64)
+            imported.append(
+                {
+                    "name": Path(item.filename).stem,
+                    "style": "",
+                    "ref_text": "",
+                    "ref_audio": str(target.resolve()),
+                    "ref_audio_url": f"/file/{target.relative_to(Path('outputs')).as_posix()}",
+                    "file_name": target.name,
+                }
+            )
+
+        return {
+            "ok": True,
+            "voices": imported,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/model/load-audio")
+def load_audio_model(req: ModelLoadRequest):
+    try:
+        backend = req.backend.model_dump() if req.backend else {}
+        mode = str(backend.get("mode") or "local").strip().lower()
+        if mode == "remote":
+            data = remote_get_json(backend.get("remote_base_url"), "/api/health", backend.get("remote_api_key"))
+            return {"ok": True, "mode": "remote", "health": data}
+
+        unload_all_audio_pipelines()
+        inference_device = backend.get("inference_device")
+        pipeline = get_pipeline(inference_device)
+        pipeline.load()
+        return {
+            "ok": True,
+            "mode": "local",
+            "device": pipeline.device,
+            "model_name": pipeline.model_name,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/model/unload-audio")
+def unload_audio_model(req: ModelLoadRequest):
+    try:
+        backend = req.backend.model_dump() if req.backend else {}
+        mode = str(backend.get("mode") or "local").strip().lower()
+        if mode == "remote":
+            return {"ok": True, "mode": "remote", "message": "远程 API 模式由远端自行管理，当前不会在本地卸载。"}
+
+        inference_device = normalize_inference_device(backend.get("inference_device"))
+        unload_all_audio_pipelines()
+        return {
+            "ok": True,
+            "mode": "local",
+            "device": inference_device,
+            "status": get_audio_model_status(),
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+@app.get("/api/model/status")
+def model_status():
+    try:
+        return {
+            "ok": True,
+            "audio": get_audio_model_status(),
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.get("/api/system/status")
+def system_status():
+    try:
+        return {
+            "ok": True,
+            "system": get_system_status(),
+            "models": {
+                "audio": get_audio_model_status(),
+            },
         }
     except Exception as exc:
         raise_api_error(exc)
