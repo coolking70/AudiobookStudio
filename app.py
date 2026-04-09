@@ -1,9 +1,11 @@
 import base64
+import asyncio
 import json
 import mimetypes
 import os
 import platform
 import re
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -21,6 +23,19 @@ try:
     import torch
 except ImportError:
     torch = None
+try:
+    import pythoncom
+    import win32com.client
+except ImportError:
+    pythoncom = None
+    win32com = None
+try:
+    from winsdk.windows.media.speechsynthesis import SpeechSynthesizer as WinSpeechSynthesizer
+    from winsdk.windows.storage.streams import DataReader, InputStreamOptions
+except ImportError:
+    WinSpeechSynthesizer = None
+    DataReader = None
+    InputStreamOptions = None
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -50,6 +65,8 @@ AI_HELPER_CONFIG_CANDIDATES = [
     Path(__file__).resolve().parent / "config" / "ai-api.md",
     Path(__file__).resolve().parent.parent / "tts_text_parse" / "ai-helper" / "ai-api.md",
 ]
+
+MICROSOFT_TTS_SUPPORTED_CULTURES = {"zh-CN", "en-US", "ja-JP"}
 
 
 def augment_process_path_from_python_env() -> None:
@@ -87,6 +104,239 @@ def augment_process_path_from_python_env() -> None:
 
 
 augment_process_path_from_python_env()
+
+
+def _normalize_voice_name(name: str | None) -> str:
+    normalized = str(name or "").strip().lower()
+    normalized = normalized.replace(" desktop", "")
+    return re.sub(r"\s+", " ", normalized)
+
+
+def _matches_sapi_voice_description(description: str, requested: str) -> bool:
+    actual = str(description or "").strip()
+    target = str(requested or "").strip()
+    if not actual or not target:
+        return False
+    return actual == target or actual.startswith(f"{target} -")
+
+
+def build_microsoft_voice_style(gender: str | None, locale: str | None) -> str:
+    tags = []
+    gender_normalized = str(gender or "").strip().lower()
+    locale_normalized = str(locale or "").strip()
+    if gender_normalized == "female":
+        tags.append("female")
+    elif gender_normalized == "male":
+        tags.append("male")
+    if locale_normalized == "zh-CN":
+        tags.append("chinese accent")
+    elif locale_normalized == "ja-JP":
+        tags.append("japanese accent")
+    elif locale_normalized == "en-US":
+        tags.append("english accent")
+    tags.append("moderate pitch")
+    deduped: list[str] = []
+    for item in tags:
+        if item not in deduped:
+            deduped.append(item)
+    return ", ".join(deduped)
+
+
+def _run_powershell_json(command: str) -> object:
+    completed = subprocess.run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            command,
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=True,
+    )
+    stdout = (completed.stdout or "").strip()
+    if not stdout:
+        return []
+    return json.loads(stdout)
+
+
+def get_microsoft_tts_catalog() -> dict[str, object]:
+    if platform.system() != "Windows":
+        return {
+            "desktop_voices": [],
+            "browser_like_voices": [],
+            "importable_voices": [],
+            "available_languages": [],
+        }
+
+    desktop_command = (
+        "Add-Type -AssemblyName System.Speech; "
+        "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+        "$s.GetInstalledVoices() | ForEach-Object { "
+        "$v = $_.VoiceInfo; "
+        "[PSCustomObject]@{ "
+        "name = $v.Name; "
+        "display_name = $v.Name; "
+        "locale = $v.Culture.Name; "
+        "gender = $v.Gender.ToString(); "
+        "description = $v.Description "
+        "} "
+        "} | ConvertTo-Json -Depth 4"
+    )
+    onecore_command = (
+        "Get-ChildItem 'HKLM:\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens' -ErrorAction SilentlyContinue | "
+        "ForEach-Object { "
+        "$p = Get-ItemProperty $_.PSPath; "
+        "$gender = if ($_.PSChildName -match '([A-Za-z]+)M$') { "
+        "switch ($Matches[1]) { 'David' {'Male'} 'Mark' {'Male'} 'Kangkang' {'Male'} 'Ichiro' {'Male'} default {'Female'} } "
+        "} else { '' }; "
+        "[PSCustomObject]@{ "
+        "name = $p.'(default)'; "
+        "display_name = ($p.'(default)' -replace ' - .+$',''); "
+        "locale = if ($_.PSChildName -match '_([a-z]{2}[A-Z]{2})_') { ($Matches[1] -replace '([a-z]{2})([A-Z]{2})','$1-$2') } else { '' }; "
+        "gender = $gender; "
+        "token = $_.PSChildName "
+        "} "
+        "} | ConvertTo-Json -Depth 4"
+    )
+
+    desktop_raw = _run_powershell_json(desktop_command)
+    onecore_raw = _run_powershell_json(onecore_command)
+    desktop_voices = desktop_raw if isinstance(desktop_raw, list) else ([desktop_raw] if desktop_raw else [])
+    browser_like_voices = onecore_raw if isinstance(onecore_raw, list) else ([onecore_raw] if onecore_raw else [])
+
+    browser_like_map = {
+        _normalize_voice_name(item.get("display_name") or item.get("name")): item
+        for item in browser_like_voices
+        if item.get("display_name") or item.get("name")
+    }
+
+    importable_source = browser_like_voices if WinSpeechSynthesizer is not None else desktop_voices
+    importable_voices = []
+    seen_importable: set[tuple[str, str]] = set()
+    for item in importable_source:
+        locale = str(item.get("locale") or "").strip()
+        if locale not in MICROSOFT_TTS_SUPPORTED_CULTURES:
+            continue
+        display_name = item.get("display_name") or item.get("name")
+        normalized_name = _normalize_voice_name(display_name)
+        dedupe_key = (normalized_name, locale.lower())
+        if dedupe_key in seen_importable:
+            continue
+        seen_importable.add(dedupe_key)
+        browser_match = browser_like_map.get(normalized_name)
+        importable_voices.append(
+            {
+                "name": display_name,
+                "system_voice_name": display_name,
+                "locale": locale,
+                "gender": item.get("gender"),
+                "style": build_microsoft_voice_style(item.get("gender"), locale),
+                "preview_available": bool(browser_match) or WinSpeechSynthesizer is not None,
+                "generation_available": True,
+                "browser_display_name": browser_match.get("display_name") if browser_match else None,
+            }
+        )
+
+    languages = sorted(
+        {
+            str(item.get("locale") or "").strip()
+            for item in [*desktop_voices, *browser_like_voices]
+            if str(item.get("locale") or "").strip()
+        }
+    )
+    return {
+        "desktop_voices": desktop_voices,
+        "browser_like_voices": browser_like_voices,
+        "importable_voices": importable_voices,
+        "available_languages": languages,
+    }
+
+
+def _infer_microsoft_tts_rate(style: str | None) -> int:
+    normalized = str(style or "").lower()
+    rate = 0
+    if "child" in normalized or "teenager" in normalized or "young adult" in normalized:
+        rate += 1
+    if "elderly" in normalized:
+        rate -= 1
+    return max(-3, min(3, rate))
+
+
+def synthesize_microsoft_tts(text: str, output_path: Path, voice_name: str, style: str | None = None) -> str:
+    if platform.system() != "Windows":
+        raise RuntimeError("微软系统 TTS 目前仅支持 Windows。")
+    safe_voice_name = str(voice_name or "").strip()
+    if not safe_voice_name:
+        raise RuntimeError("微软 TTS 缺少 voice_name。")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_output_path = output_path.parent / f"ms_tmp_{uuid4().hex[:10]}.wav"
+    if WinSpeechSynthesizer is not None and DataReader is not None and InputStreamOptions is not None:
+        async def _synthesize_with_winrt() -> None:
+            synth = WinSpeechSynthesizer()
+            selected_voice = None
+            normalized_target = _normalize_voice_name(safe_voice_name)
+            for voice in WinSpeechSynthesizer.all_voices:
+                display_name = str(getattr(voice, "display_name", "") or "").strip()
+                if _normalize_voice_name(display_name) == normalized_target:
+                    selected_voice = voice
+                    break
+            if selected_voice is None:
+                raise RuntimeError(f"找不到微软 WinRT 语音：{safe_voice_name}")
+            synth.voice = selected_voice
+            stream = await synth.synthesize_text_to_stream_async(text)
+            input_stream = stream.get_input_stream_at(0)
+            reader = DataReader(input_stream)
+            reader.input_stream_options = InputStreamOptions.READ_AHEAD
+            await reader.load_async(stream.size)
+            buffer = reader.read_buffer(stream.size)
+            temp_output_path.write_bytes(bytes(buffer))
+
+        asyncio.run(_synthesize_with_winrt())
+    elif pythoncom is not None and win32com is not None:
+        rate = _infer_microsoft_tts_rate(style)
+        pythoncom.CoInitialize()
+        stream = None
+        try:
+            speaker = win32com.client.Dispatch("SAPI.SpVoice")
+            stream = win32com.client.Dispatch("SAPI.SpFileStream")
+            selected = False
+            for token in speaker.GetVoices():
+                description = str(token.GetDescription() or "").strip()
+                if _matches_sapi_voice_description(description, safe_voice_name):
+                    speaker.Voice = token
+                    selected = True
+                    break
+            if not selected:
+                raise RuntimeError(f"找不到微软系统语音：{safe_voice_name}")
+            speaker.Rate = rate
+            if temp_output_path.exists():
+                temp_output_path.unlink()
+            stream.Open(str(temp_output_path), 3)
+            speaker.AudioOutputStream = stream
+            speaker.Speak(text)
+        finally:
+            try:
+                if stream is not None:
+                    stream.Close()
+            except Exception:
+                pass
+            pythoncom.CoUninitialize()
+    else:
+        raise RuntimeError("当前环境缺少 winsdk 或 pywin32，无法调用微软系统 TTS。")
+    if not temp_output_path.exists():
+        raise RuntimeError("微软 TTS 未生成输出音频文件。")
+    if temp_output_path.stat().st_size <= 46:
+        raise RuntimeError("微软 TTS 生成了空音频文件，请检查语音名称和文本内容。")
+    if output_path.exists():
+        output_path.unlink()
+    temp_output_path.replace(output_path)
+    return str(output_path)
 
 
 def sanitize_upload_filename(filename: str) -> str:
@@ -886,6 +1136,23 @@ def favicon():
 def tts(req: TTSRequest):
     try:
         output_name = sanitize_output_name(req.output_name, "tts_result")
+        if str(req.voice_engine or "").strip().lower() == "microsoft":
+            output_path = (OUTPUT_DIR / f"{output_name}.wav").resolve()
+            file_path = synthesize_microsoft_tts(
+                text=req.text,
+                output_path=output_path,
+                voice_name=req.voice_name or "",
+                style=req.instruct,
+            )
+            return {
+                "ok": True,
+                "file": file_path,
+                "audio_url": f"/file/{output_path.name}",
+                "engine": "microsoft",
+                "voice_name": req.voice_name,
+                "voice_locale": req.voice_locale,
+            }
+
         backend_data = req.backend.model_dump() if req.backend else None
         mode, remote_base_url, remote_api_key, inference_device = resolve_audio_backend(
             backend_data,
@@ -1238,6 +1505,17 @@ def scan_local_models(req: ScanLocalModelsRequest):
         return {
             "ok": True,
             "models": models,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.get("/api/microsoft-voices")
+def microsoft_voices():
+    try:
+        return {
+            "ok": True,
+            "voices": get_microsoft_tts_catalog(),
         }
     except Exception as exc:
         raise_api_error(exc)

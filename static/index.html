@@ -1764,12 +1764,13 @@
           <h2 style="margin-bottom:0;">声音库</h2>
           <div class="section-meta">本地缓存角色声音模板，可复用到不同文本</div>
         </div>
-        <div class="actions">
-          <button type="button" onclick="addVoiceLibraryEntry()">新增声音</button>
-          <button type="button" class="secondary" onclick="triggerVoiceLibraryBatchImport()">批量导入参考音频</button>
-          <button type="button" class="secondary" onclick="saveVoiceLibrary()">保存声音库</button>
-          <button type="button" class="secondary" onclick="loadVoiceLibrary()">读取声音库</button>
-        </div>
+          <div class="actions">
+            <button type="button" onclick="addVoiceLibraryEntry()">新增声音</button>
+            <button type="button" class="secondary" data-busy-lock onclick="importMicrosoftVoices()">导入微软语音</button>
+            <button type="button" class="secondary" onclick="triggerVoiceLibraryBatchImport()">批量导入参考音频</button>
+            <button type="button" class="secondary" onclick="saveVoiceLibrary()">保存声音库</button>
+            <button type="button" class="secondary" onclick="loadVoiceLibrary()">读取声音库</button>
+          </div>
         <div class="mini-note">批量导入会自动转写 ref_text，style 需手动确认</div>
         <input id="voiceLibraryFileInput" type="file" accept=".wav,.mp3,.flac,.m4a,.ogg,audio/*" style="display:none;" onchange="handleVoiceLibraryFileChange(event)" />
         <input id="voiceLibraryBatchInput" type="file" accept=".wav,.mp3,.flac,.m4a,.ogg,audio/*" multiple style="display:none;" onchange="handleVoiceLibraryBatchChange(event)" />
@@ -1813,6 +1814,7 @@
   let editingVoiceLibraryIndex = -1;
   let modelRuntimeState = null;
   let systemStatusState = null;
+  let microsoftVoiceCatalogCache = null;
   let toastTimerSeed = 0;
   let pendingDirectorySelectionTarget = "";
   let localPathPresetsCache = null;
@@ -1824,6 +1826,7 @@
   const LLM_DEFAULTS_STORAGE_KEY = "ov_llm_defaults_loaded";
   const AUDIO_BACKEND_STORAGE_KEY = "ov_audio_backend_config";
   const DESIGN_VOICE_ID = "__design_voice__";
+  const MICROSOFT_VOICE_ENGINE = "microsoft";
   const TASK_AUTO_EXPAND_DELAY_MS = 3000;
   const MODELS_CONFIG_VIEW_STORAGE_KEY = "ov_models_config_view";
 
@@ -1911,6 +1914,14 @@ very high pitch, very low pitch, whisper, young adult
       title: "风格",
       tags: [
         ["whisper", "耳语"],
+      ],
+    },
+    {
+      title: "语言口音",
+      tags: [
+        ["chinese accent", "中文口音"],
+        ["japanese accent", "日文口音"],
+        ["english accent", "英文口音"],
       ],
     },
   ];
@@ -3730,8 +3741,38 @@ very high pitch, very low pitch, whisper, young adult
     setStatus(`已切换到音频生成标签页，当前共 ${segmentsState.length} 段文本。`);
   }
 
+  function normalizeVoiceLibraryEntry(voice) {
+    const raw = voice || {};
+    return {
+      id: raw.id || `voice_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+      name: raw.name || "",
+      style: normalizeStyleValue(raw.style || ""),
+      ref_audio: raw.ref_audio || "",
+      ref_audio_url: raw.ref_audio_url || "",
+      ref_text: raw.ref_text || "",
+      voice_engine: raw.voice_engine || "",
+      voice_name: raw.voice_name || "",
+      voice_locale: raw.voice_locale || "",
+    };
+  }
+
+  function isMicrosoftVoice(voice) {
+    return String(voice?.voice_engine || "").toLowerCase() === MICROSOFT_VOICE_ENGINE && !!String(voice?.voice_name || "").trim();
+  }
+
+  function getVoiceBadgeLabel(voice) {
+    if (isMicrosoftVoice(voice)) {
+      return `微软 TTS${voice.voice_locale ? ` / ${voice.voice_locale}` : ""}`;
+    }
+    return voice.ref_audio ? "参考音频" : "Voice Design";
+  }
+
   function getVoiceLabel(voice) {
-    return voice.name || "未命名声音";
+    const name = voice.name || "未命名声音";
+    if (isMicrosoftVoice(voice)) {
+      return `${name}${voice.voice_locale ? ` (${voice.voice_locale})` : ""}`;
+    }
+    return name;
   }
 
   function getFileStem(filename) {
@@ -3743,7 +3784,7 @@ very high pitch, very low pitch, whisper, young adult
     const raw = localStorage.getItem(VOICE_LIBRARY_STORAGE_KEY);
     if (raw) {
       try {
-        voiceLibraryState = JSON.parse(raw);
+        voiceLibraryState = JSON.parse(raw).map(normalizeVoiceLibraryEntry);
       } catch {
         voiceLibraryState = [];
       }
@@ -3760,13 +3801,7 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function addVoiceLibraryEntry() {
-    voiceLibraryState.push({
-      id: `voice_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
-      name: "",
-      style: "",
-      ref_audio: "",
-      ref_text: "",
-    });
+    voiceLibraryState.push(normalizeVoiceLibraryEntry({}));
     editingVoiceLibraryIndex = voiceLibraryState.length - 1;
     renderVoiceLibrary();
   }
@@ -3778,6 +3813,85 @@ very high pitch, very low pitch, whisper, young adult
       renderVoiceLibrary();
     }
     renderRoleAssignments();
+  }
+
+  async function getMicrosoftVoiceCatalog(forceRefresh = false) {
+    if (!forceRefresh && microsoftVoiceCatalogCache) {
+      return microsoftVoiceCatalogCache;
+    }
+    const data = await fetchGetJson("/api/microsoft-voices");
+    microsoftVoiceCatalogCache = data.voices || {};
+    return microsoftVoiceCatalogCache;
+  }
+
+  async function importMicrosoftVoices() {
+    if (taskBusy) return;
+    beginTask("narrate", "准备导入微软系统语音", "将读取当前 Windows / 浏览器兼容的微软语音，并把可生成音频的条目加入声音库。");
+    try {
+      const catalog = await getMicrosoftVoiceCatalog(true);
+      const localePriority = {
+        "zh-cn": 0,
+        "ja-jp": 1,
+        "en-us": 2,
+      };
+      const genderPriority = {
+        female: 0,
+        male: 1,
+      };
+      const importable = (Array.isArray(catalog.importable_voices) ? catalog.importable_voices : [])
+        .slice()
+        .sort((a, b) => {
+          const localeA = String(a.locale || "").trim().toLowerCase();
+          const localeB = String(b.locale || "").trim().toLowerCase();
+          const localeRankA = localePriority[localeA] ?? 99;
+          const localeRankB = localePriority[localeB] ?? 99;
+          if (localeRankA !== localeRankB) {
+            return localeRankA - localeRankB;
+          }
+          const genderA = String(a.gender || "").trim().toLowerCase();
+          const genderB = String(b.gender || "").trim().toLowerCase();
+          const genderRankA = genderPriority[genderA] ?? 99;
+          const genderRankB = genderPriority[genderB] ?? 99;
+          if (genderRankA !== genderRankB) {
+            return genderRankA - genderRankB;
+          }
+          return String(a.name || a.system_voice_name || "").localeCompare(String(b.name || b.system_voice_name || ""), "zh-CN");
+        });
+      const existing = new Set(
+        voiceLibraryState
+          .filter(isMicrosoftVoice)
+          .map((voice) => `${String(voice.voice_name || "").trim().toLowerCase()}__${String(voice.voice_locale || "").trim().toLowerCase()}`)
+      );
+      let added = 0;
+      importable.forEach((item) => {
+        const key = `${String(item.system_voice_name || "").trim().toLowerCase()}__${String(item.locale || "").trim().toLowerCase()}`;
+        if (existing.has(key)) return;
+        existing.add(key);
+        voiceLibraryState.push(normalizeVoiceLibraryEntry({
+          name: item.name || item.system_voice_name || "",
+          style: item.style || "",
+          voice_engine: MICROSOFT_VOICE_ENGINE,
+          voice_name: item.system_voice_name || item.name || "",
+          voice_locale: item.locale || "",
+        }));
+        added += 1;
+      });
+      if (added) {
+        editingVoiceLibraryIndex = voiceLibraryState.length - 1;
+      }
+      renderVoiceLibrary();
+      renderRoleAssignments();
+      const languages = Array.isArray(catalog.available_languages) ? catalog.available_languages.join(", ") : "";
+      setStatus(`已导入 ${added} 个微软语音。当前检测到的微软语音语言：${languages || "未识别"}`);
+      finishTask(`微软语音导入完成`, `已新增 ${added} 个可生成音频的微软语音。当前检测到的浏览器/OneCore 语言：${languages || "未识别"}`, {
+        total: Math.max(importable.length, 1),
+        done: added,
+      });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("导入微软语音失败，请查看上方任务面板中的详细错误。");
+      failTask("导入微软语音失败", err.message || String(err));
+    }
   }
 
   function openVoiceLibraryEditor(index) {
@@ -3985,14 +4099,13 @@ very high pitch, very low pitch, whisper, young adult
       });
       const imported = Array.isArray(data.voices) ? data.voices : [];
       imported.forEach((voice) => {
-        voiceLibraryState.push({
-          id: `voice_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+        voiceLibraryState.push(normalizeVoiceLibraryEntry({
           name: voice.name || getFileStem(voice.file_name || "") || "",
           style: normalizeStyleValue(voice.style || ""),
           ref_audio: voice.ref_audio || "",
           ref_audio_url: voice.ref_audio_url || "",
           ref_text: voice.ref_text || "",
-        });
+        }));
       });
       if (imported.length) {
         editingVoiceLibraryIndex = voiceLibraryState.length - 1;
@@ -4171,6 +4284,7 @@ very high pitch, very low pitch, whisper, young adult
             <strong>${escapeHtml(getVoiceLabel(voice))}</strong>
             <div class="voice-list-meta">
               <span class="pill">${escapeHtml(formatStyleDisplay(voice.style || ""))}</span>
+              <span class="pill">${escapeHtml(getVoiceBadgeLabel(voice))}</span>
               <span class="pill">${voice.ref_audio ? "已配置参考音频" : "无参考音频"}</span>
               ${voiceNeedsStyle(voice) ? `<span class="pill" style="background:rgba(248,196,113,0.16); border-color:rgba(248,196,113,0.24); color:#fff2c7;">待补 style</span>` : ""}
             </div>
@@ -4192,12 +4306,22 @@ very high pitch, very low pitch, whisper, young adult
     }
 
     const voice = voiceLibraryState[editIndex];
+    const isMicrosoft = isMicrosoftVoice(voice);
     editor.hidden = false;
     editor.innerHTML = `
       <div class="voice-head">
         <strong>编辑声音：${escapeHtml(getVoiceLabel(voice))}</strong>
         <button type="button" class="secondary" onclick="closeVoiceLibraryEditor()">完成编辑</button>
       </div>
+      <label>声音类型</label>
+      <input value="${escapeHtml(isMicrosoft ? "微软 TTS" : "自定义声音")}" readonly />
+      ${isMicrosoft ? `
+      <label>微软语音标识</label>
+      <input value="${escapeHtml(voice.voice_name || "")}" readonly />
+      <label>语言 / 区域</label>
+      <input value="${escapeHtml(voice.voice_locale || "")}" readonly />
+      <div class="mini-note">这类声音预览会优先调用浏览器微软语音，生成音频时会走 Windows 微软 TTS 后端。</div>
+      ` : `
       <label>ref_audio</label>
       <input value="${escapeHtml(voice.ref_audio || "")}" placeholder="可以填写本地或可访问的音频路径" onchange="updateVoiceLibraryField(${editIndex}, 'ref_audio', this.value)" />
       <div class="voice-actions">
@@ -4208,13 +4332,16 @@ very high pitch, very low pitch, whisper, young adult
         把本地音频文件拖到这里即可自动上传并填入路径
       </div>
       ${(voice.ref_audio_url || voice.ref_audio) ? `<audio class="inline-audio" controls src="${escapeHtml(voice.ref_audio_url || voice.ref_audio)}"></audio>` : ""}
+      `}
       <label>声音名称</label>
       <input value="${escapeHtml(voice.name || "")}" onchange="updateVoiceLibraryField(${editIndex}, 'name', this.value)" />
       <label>style</label>
       <input value="${escapeHtml(voice.style || "")}" placeholder="例如：female, moderate pitch" onchange="updateVoiceLibraryField(${editIndex}, 'style', this.value)" />
       ${renderStylePicker("voice", editIndex)}
+      ${isMicrosoft ? "" : `
       <label>ref_text</label>
       <textarea onchange="updateVoiceLibraryField(${editIndex}, 'ref_text', this.value)">${escapeHtml(voice.ref_text || "")}</textarea>
+      `}
     `;
     if (taskBusy) {
       editor.querySelectorAll("[data-busy-lock]").forEach((btn) => { btn.disabled = true; });
@@ -4232,6 +4359,9 @@ very high pitch, very low pitch, whisper, young adult
         style: speaker === "旁白" ? "female, moderate pitch" : "male, moderate pitch",
         ref_audio: "",
         ref_text: "",
+        voice_engine: "",
+        voice_name: "",
+        voice_locale: "",
       };
     }
   }
@@ -4303,6 +4433,11 @@ very high pitch, very low pitch, whisper, young adult
   function updateRoleField(speaker, field, value) {
     ensureRoleProfile(speaker);
     roleProfilesState[speaker][field] = field === "style" ? normalizeStyleValue(value) : value;
+    if (field === "ref_audio" && String(value || "").trim()) {
+      roleProfilesState[speaker].voice_engine = "";
+      roleProfilesState[speaker].voice_name = "";
+      roleProfilesState[speaker].voice_locale = "";
+    }
     if (field === "style") {
       renderRoles();
     }
@@ -4324,14 +4459,20 @@ very high pitch, very low pitch, whisper, young adult
       roleProfilesState[speaker].style = firstSeg.style || roleProfilesState[speaker].style || "";
       roleProfilesState[speaker].ref_audio = "";
       roleProfilesState[speaker].ref_text = "";
+      roleProfilesState[speaker].voice_engine = "";
+      roleProfilesState[speaker].voice_name = "";
+      roleProfilesState[speaker].voice_locale = "";
       renderRoleAssignments();
       return;
     }
     const voice = voiceLibraryState.find((item) => item.id === voiceId);
     if (voice) {
-      roleProfilesState[speaker].style = voice.ref_audio ? "" : (voice.style || roleProfilesState[speaker].style || "");
-      roleProfilesState[speaker].ref_audio = voice.ref_audio || "";
-      roleProfilesState[speaker].ref_text = voice.ref_text || "";
+      roleProfilesState[speaker].style = voice.style || roleProfilesState[speaker].style || "";
+      roleProfilesState[speaker].ref_audio = isMicrosoftVoice(voice) ? "" : (voice.ref_audio || "");
+      roleProfilesState[speaker].ref_text = isMicrosoftVoice(voice) ? "" : (voice.ref_text || "");
+      roleProfilesState[speaker].voice_engine = voice.voice_engine || "";
+      roleProfilesState[speaker].voice_name = voice.voice_name || "";
+      roleProfilesState[speaker].voice_locale = voice.voice_locale || "";
     }
     renderRoleAssignments();
   }
@@ -4367,9 +4508,11 @@ very high pitch, very low pitch, whisper, young adult
       if (!(speaker in result)) {
         result[speaker] = {
           index,
+          text: seg.text || "",
           style: seg.style || "",
           ref_audio: seg.ref_audio || "",
           ref_text: seg.ref_text || "",
+          voice_locale: seg.voice_locale || "",
         };
       }
     });
@@ -4381,6 +4524,33 @@ very high pitch, very low pitch, whisper, young adult
     if (normalized.includes("female")) return "female";
     if (normalized.includes("male")) return "male";
     return "";
+  }
+
+  function inferLocaleFromStyle(style) {
+    const normalized = String(style || "").toLowerCase();
+    if (normalized.includes("chinese accent")) return "zh-CN";
+    if (normalized.includes("japanese accent")) return "ja-JP";
+    if (normalized.includes("english accent")) return "en-US";
+    return "";
+  }
+
+  function inferLocaleFromText(text) {
+    const value = String(text || "");
+    if (!value) return "";
+    if (/[\u3040-\u30ff]/.test(value)) return "ja-JP";
+    if (/[\u4e00-\u9fff]/.test(value)) return "zh-CN";
+    if (/[A-Za-z]/.test(value)) return "en-US";
+    return "";
+  }
+
+  function getPreferredLocaleForSpeaker(speaker, firstSegment, profile) {
+    const explicitLocale = String(profile?.voice_locale || firstSegment?.voice_locale || "").trim();
+    if (explicitLocale) return explicitLocale;
+    const styleLocale = inferLocaleFromStyle(firstSegment?.style || profile?.style || "");
+    if (styleLocale) return styleLocale;
+    const textLocale = inferLocaleFromText(firstSegment?.text || "");
+    if (textLocale) return textLocale;
+    return speaker === "旁白" ? "zh-CN" : "";
   }
 
   function getSortedSpeakersForAssignments() {
@@ -4408,6 +4578,54 @@ very high pitch, very low pitch, whisper, young adult
     return shortlist[Math.floor(Math.random() * shortlist.length)];
   }
 
+  function resolveBrowserSpeechVoice(profile) {
+    if (!window.speechSynthesis || !isMicrosoftVoice(profile)) return null;
+    const voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
+    if (!voices.length) return null;
+    const targetName = String(profile.voice_name || "").trim().toLowerCase().replace(" desktop", "");
+    const targetLocale = String(profile.voice_locale || "").trim().toLowerCase();
+    return voices.find((voice) => String(voice.name || "").trim().toLowerCase().replace(" desktop", "") === targetName)
+      || voices.find((voice) => {
+        const voiceName = String(voice.name || "").toLowerCase();
+        const voiceLocale = String(voice.lang || "").toLowerCase();
+        return voiceName.includes("microsoft") && (!targetLocale || voiceLocale === targetLocale) && voiceName.includes(targetName.replace("microsoft ", ""));
+      })
+      || null;
+  }
+
+  async function previewMicrosoftVoiceInBrowser(profile, text) {
+    const synth = window.speechSynthesis;
+    if (!synth) {
+      throw new Error("当前浏览器不支持 speechSynthesis。");
+    }
+    let voice = resolveBrowserSpeechVoice(profile);
+    if (!voice) {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 900);
+        synth.onvoiceschanged = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+      voice = resolveBrowserSpeechVoice(profile);
+    }
+    if (!voice) {
+      throw new Error(`当前浏览器里找不到微软语音“${profile.voice_name || profile.name || ""}”。`);
+    }
+
+    await new Promise((resolve, reject) => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.voice = voice;
+      utterance.lang = voice.lang || profile.voice_locale || "zh-CN";
+      utterance.rate = 1;
+      utterance.onend = () => resolve();
+      utterance.onerror = (event) => reject(new Error(event.error || "浏览器语音预览失败"));
+      synth.cancel();
+      synth.speak(utterance);
+    });
+    return voice;
+  }
+
   async function previewRoleVoice(speaker) {
     if (taskBusy) return;
     const segment = choosePreviewTextForSpeaker(speaker);
@@ -4416,10 +4634,21 @@ very high pitch, very low pitch, whisper, young adult
       return;
     }
     const profile = roleProfilesState[speaker] || {};
-    const backend = await ensureAudioBackendReady();
-    if (!backend) return;
     beginTask("narrate", `准备试听角色“${speaker}”`, "将随机抽选一条较短台词快速生成试听音频。");
     try {
+      if (isMicrosoftVoice(profile)) {
+        try {
+          const browserVoice = await previewMicrosoftVoiceInBrowser(profile, segment.text);
+          finishTask(`角色“${speaker}”试听完成`, `已通过浏览器微软语音 ${browserVoice?.name || profile.voice_name || ""} 播放随机短句：${segment.text}`, { total: 1, done: 1 });
+          setStatus(`已通过浏览器微软语音为角色“${speaker}”播放试听。`);
+          return;
+        } catch (browserErr) {
+          console.warn(browserErr);
+        }
+      }
+
+      const backend = isMicrosoftVoice(profile) ? validateAudioBackendConfig() : await ensureAudioBackendReady();
+      if (!backend) return;
       const outputName = `preview_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`;
       const inferenceDevice = backend.inference_device || getInferenceDevice();
       const resp = await fetchJson("/api/tts", {
@@ -4427,6 +4656,9 @@ very high pitch, very low pitch, whisper, young adult
         instruct: segment.style || profile.style || null,
         ref_audio: segment.ref_audio || profile.ref_audio || null,
         ref_text: segment.ref_text || profile.ref_text || null,
+        voice_engine: segment.voice_engine || profile.voice_engine || null,
+        voice_name: segment.voice_name || profile.voice_name || null,
+        voice_locale: segment.voice_locale || profile.voice_locale || null,
         output_name: outputName,
         inference_device: inferenceDevice,
         backend,
@@ -4516,6 +4748,9 @@ very high pitch, very low pitch, whisper, young adult
       roleProfilesState[speaker].style = narratorProfile.style || roleProfilesState[speaker].style || "";
       roleProfilesState[speaker].ref_audio = narratorProfile.ref_audio || roleProfilesState[speaker].ref_audio || "";
       roleProfilesState[speaker].ref_text = narratorProfile.ref_text || roleProfilesState[speaker].ref_text || "";
+      roleProfilesState[speaker].voice_engine = narratorProfile.voice_engine || roleProfilesState[speaker].voice_engine || "";
+      roleProfilesState[speaker].voice_name = narratorProfile.voice_name || roleProfilesState[speaker].voice_name || "";
+      roleProfilesState[speaker].voice_locale = narratorProfile.voice_locale || roleProfilesState[speaker].voice_locale || "";
       appliedCount += 1;
     });
 
@@ -4532,6 +4767,9 @@ very high pitch, very low pitch, whisper, young adult
       roleProfilesState[speaker].style = firstSeg.style || "";
       roleProfilesState[speaker].ref_audio = firstSeg.ref_audio || "";
       roleProfilesState[speaker].ref_text = firstSeg.ref_text || "";
+      roleProfilesState[speaker].voice_engine = firstSeg.voice_engine || "";
+      roleProfilesState[speaker].voice_name = firstSeg.voice_name || "";
+      roleProfilesState[speaker].voice_locale = firstSeg.voice_locale || "";
     });
     renderRoleAssignments();
     setStatus("已清空当前音频生成配置，所有角色都恢复为导入 JSON 后的未分配状态。");
@@ -4561,16 +4799,40 @@ very high pitch, very low pitch, whisper, young adult
     const getSpeakerSegmentCount = (speaker) => Number(countSegmentsBySpeaker()[speaker] || 0);
     const shouldPreferCloneVoice = (speaker) => speaker === "旁白" || getSpeakerSegmentCount(speaker) > 1;
     const scoreVoiceMatch = (speaker, voice) => {
-      const referenceStyle = firstSegmentMap[speaker]?.style || roleProfilesState[speaker]?.style || "";
+      const firstSegment = firstSegmentMap[speaker] || {};
+      const profile = roleProfilesState[speaker] || {};
+      const referenceStyle = firstSegment.style || profile.style || "";
       const speakerTags = getStyleSet(referenceStyle);
       const voiceTags = getStyleSet(voice.style || "");
       let score = 0;
       speakerTags.forEach((tag) => {
-        if (tag === "female" || tag === "male") return;
+        if (tag === "female" || tag === "male" || tag.endsWith(" accent")) return;
         if (voiceTags.has(tag)) {
           score += 1;
         }
       });
+      const preferredLocale = getPreferredLocaleForSpeaker(speaker, firstSegment, profile).toLowerCase();
+      const voiceLocale = String(voice.voice_locale || inferLocaleFromStyle(voice.style || "") || "").trim().toLowerCase();
+      if (preferredLocale && voiceLocale) {
+        if (preferredLocale === voiceLocale) {
+          score += 4;
+        } else if (preferredLocale.split("-")[0] === voiceLocale.split("-")[0]) {
+          score += 2;
+        } else {
+          score -= 1;
+        }
+      } else if (!voiceLocale && isMicrosoftVoice(voice)) {
+        score -= 1;
+      }
+      if (speaker === "旁白" && voiceLocale === "zh-cn") {
+        score += 2;
+        if (inferGenderFromStyle(voice.style || "") === "female") {
+          score += 2;
+        }
+      }
+      if (preferredLocale === "zh-cn" && voiceLocale === "zh-cn" && isMicrosoftVoice(voice)) {
+        score += 2;
+      }
       return score;
     };
 
@@ -5201,6 +5463,26 @@ very high pitch, very low pitch, whisper, young adult
     return backend;
   }
 
+  function segmentUsesMicrosoftVoice(segment) {
+    return isMicrosoftVoice(segment);
+  }
+
+  function effectiveVoiceForSegment(segment) {
+    const speaker = segment.speaker || "旁白";
+    const profile = roleProfilesState[speaker] || {};
+    if (segmentUsesMicrosoftVoice(segment)) return segment;
+    if (isMicrosoftVoice(profile)) return profile;
+    return null;
+  }
+
+  function segmentsRequireAudioModel(segments) {
+    return (segments || []).some((segment) => !effectiveVoiceForSegment(segment));
+  }
+
+  function segmentsContainMicrosoftVoices(segments) {
+    return (segments || []).some((segment) => !!effectiveVoiceForSegment(segment));
+  }
+
   async function ensureAudioBackendReady() {
     const backend = validateAudioBackendConfig();
     if (!backend) {
@@ -5567,6 +5849,9 @@ very high pitch, very low pitch, whisper, young adult
         instruct: seg.style || profile.style || null,
         ref_audio: seg.ref_audio || profile.ref_audio || null,
         ref_text: seg.ref_text || profile.ref_text || null,
+        voice_engine: seg.voice_engine || profile.voice_engine || null,
+        voice_name: seg.voice_name || profile.voice_name || null,
+        voice_locale: seg.voice_locale || profile.voice_locale || null,
         output_name: segmentOutputName,
         inference_device: inferenceDevice,
         backend,
@@ -5758,7 +6043,7 @@ very high pitch, very low pitch, whisper, young adult
 
     const baseName = getOutputName("auto_narration");
     const silenceMs = getSilenceMs();
-    const backend = await ensureAudioBackendReady();
+    const backend = validateAudioBackendConfig();
     if (!backend) return;
     const inferenceDevice = backend.inference_device || getInferenceDevice();
 
@@ -5768,7 +6053,13 @@ very high pitch, very low pitch, whisper, young adult
       const planned = await runSmartSegmentation(text, llm);
       const optimized = await runTextOptimization(planned, llm);
       const segments = await runRoleAnalysis(optimized, llm);
-      const merged = backend.mode === "local"
+      const useSequentialSynthesis = backend.mode === "local" || segmentsContainMicrosoftVoices(segments);
+      if (segmentsRequireAudioModel(segments)) {
+        const readyBackend = await ensureAudioBackendReady();
+        if (!readyBackend) return;
+        Object.assign(backend, readyBackend);
+      }
+      const merged = useSequentialSynthesis
         ? await synthesizeSegmentsSequentially(segments, baseName, silenceMs, inferenceDevice, backend)
         : await fetchJson("/api/narrate", {
             segments,
@@ -5806,14 +6097,20 @@ very high pitch, very low pitch, whisper, young adult
 
     const baseName = getOutputName("narration");
     const silenceMs = getSilenceMs();
-    const backend = await ensureAudioBackendReady();
+    const backend = validateAudioBackendConfig();
     if (!backend) return;
     const inferenceDevice = backend.inference_device || getInferenceDevice();
 
     beginTask("narrate", "准备按当前分段生成音频", `页面将把当前分段提交给后端统一生成。当前音频后端：${getAudioBackendLabel(backend)}。`);
 
     try {
-      const merged = backend.mode === "local"
+      const useSequentialSynthesis = backend.mode === "local" || segmentsContainMicrosoftVoices(segmentsState);
+      if (segmentsRequireAudioModel(segmentsState)) {
+        const readyBackend = await ensureAudioBackendReady();
+        if (!readyBackend) return;
+        Object.assign(backend, readyBackend);
+      }
+      const merged = useSequentialSynthesis
         ? await synthesizeSegmentsSequentially(segmentsState, baseName, silenceMs, inferenceDevice, backend)
         : await fetchJson("/api/narrate", {
             segments: segmentsState,

@@ -1,5 +1,8 @@
 @echo off
-setlocal
+setlocal EnableExtensions
+
+cd /d "%~dp0"
+title OmniVoice Reader Local Server
 
 set HTTP_PROXY=
 set HTTPS_PROXY=
@@ -8,28 +11,91 @@ set http_proxy=
 set https_proxy=
 set all_proxy=
 
-set PYTHON_BIN=%AUDIOBOOKSTUDIO_PYTHON%
+set "PYTHON_BIN=%AUDIOBOOKSTUDIO_PYTHON%"
 
 if not defined PYTHON_BIN (
-  if defined CONDA_PREFIX if exist "%CONDA_PREFIX%\\python.exe" (
-    set PYTHON_BIN=%CONDA_PREFIX%\\python.exe
+  if defined CONDA_PREFIX if exist "%CONDA_PREFIX%\python.exe" (
+    set "PYTHON_BIN=%CONDA_PREFIX%\python.exe"
   )
 )
 
 if not defined PYTHON_BIN (
-  if exist I:\conda_envs\omnivoice\python.exe (
-    set PYTHON_BIN=I:\conda_envs\omnivoice\python.exe
+  if exist "I:\conda_envs\omnivoice\python.exe" (
+    set "PYTHON_BIN=I:\conda_envs\omnivoice\python.exe"
   )
 )
 
 if not defined PYTHON_BIN (
-  if exist .venv\Scripts\python.exe (
-    set PYTHON_BIN=.venv\Scripts\python.exe
+  if exist ".venv\Scripts\python.exe" (
+    set "PYTHON_BIN=%CD%\.venv\Scripts\python.exe"
   )
 )
 
 if not defined PYTHON_BIN (
-  set PYTHON_BIN=python
+  set "PYTHON_BIN=python"
 )
 
-"%PYTHON_BIN%" start_local.py
+set "HOST=%HOST%"
+if not defined HOST set "HOST=127.0.0.1"
+set "PORT=%PORT%"
+if not defined PORT set "PORT=8000"
+set "ORIGINAL_PORT=%PORT%"
+
+call :find_available_port "%PORT%"
+if errorlevel 1 (
+  echo [Error] Could not find an available port starting from %ORIGINAL_PORT%.
+  echo.
+  pause
+  exit /b 1
+)
+
+echo [OmniVoice Reader]
+echo Workspace: %CD%
+echo Python: %PYTHON_BIN%
+echo Host: %HOST%
+echo Port: %PORT%
+echo.
+
+where "%PYTHON_BIN%" >nul 2>nul
+if errorlevel 1 (
+  if not exist "%PYTHON_BIN%" (
+    echo [Error] Python not found: %PYTHON_BIN%
+    echo Set AUDIOBOOKSTUDIO_PYTHON or install the omnivoice conda environment.
+    echo.
+    pause
+    exit /b 1
+  )
+)
+
+if not "%PORT%"=="%ORIGINAL_PORT%" (
+  echo [Info] Port %ORIGINAL_PORT% was busy. Switched to %PORT% automatically.
+  echo.
+)
+
+"%PYTHON_BIN%" -X utf8 start_local.py
+set "EXIT_CODE=%ERRORLEVEL%"
+
+echo.
+if "%EXIT_CODE%"=="0" (
+  echo Service exited normally.
+  pause
+  exit /b 0
+)
+
+echo [Error] start_local.py exited with code %EXIT_CODE%.
+echo If you see "address already in use", change PORT or stop the existing process.
+echo.
+pause
+exit /b %EXIT_CODE%
+
+:find_available_port
+set "PORT=%~1"
+set /a ATTEMPTS=0
+:find_available_port_loop
+set "PORT_PID="
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":%PORT% .*LISTENING"') do set "PORT_PID=%%a"
+if not defined PORT_PID exit /b 0
+set /a PORT+=1
+set /a ATTEMPTS+=1
+if %ATTEMPTS% GEQ 20 exit /b 1
+goto :find_available_port_loop

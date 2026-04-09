@@ -3,9 +3,38 @@ from __future__ import annotations
 import gc
 import json
 import os
+import sys
 from pathlib import Path
 from threading import Lock, RLock
 from typing import Any
+
+
+def augment_process_path_from_python_env() -> None:
+    python_path = Path(sys.executable).resolve()
+    env_root = python_path.parent.parent if python_path.parent.name.lower() in {"scripts", "bin"} else python_path.parent
+    candidates = [
+        env_root,
+        env_root / "Scripts",
+        env_root / "bin",
+        env_root / "Library" / "bin",
+        env_root / "DLLs",
+        env_root / "Lib" / "site-packages" / "torch" / "lib",
+        env_root / "lib" / "site-packages" / "torch" / "lib",
+    ]
+    current_path = os.environ.get("PATH", "")
+    parts = [part for part in current_path.split(os.pathsep) if part]
+    normalized_parts = {part.lower() for part in parts}
+    prepend = []
+    for candidate in candidates:
+        if candidate.exists():
+            candidate_str = str(candidate)
+            if candidate_str.lower() not in normalized_parts:
+                prepend.append(candidate_str)
+    if prepend:
+        os.environ["PATH"] = os.pathsep.join(prepend + parts)
+
+
+augment_process_path_from_python_env()
 
 try:
     import torch
@@ -39,6 +68,7 @@ def get_local_llm_runtime_status() -> dict[str, object]:
         "mlx_ready": mlx_load is not None and mlx_generate is not None,
         "gguf_ready": Llama is not None,
         "torch_available": torch is not None,
+        "cuda_available": bool(torch is not None and torch.cuda.is_available()),
         "mps_available": bool(torch is not None and hasattr(torch.backends, "mps") and torch.backends.mps.is_available()),
     }
 
@@ -158,6 +188,8 @@ class LocalLLMRunner:
 
     @staticmethod
     def detect_device() -> str:
+        if torch is not None and torch.cuda.is_available():
+            return "cuda"
         if torch is not None and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             return "mps"
         return "cpu"
@@ -249,6 +281,11 @@ class LocalLLMRunner:
             self.model = None
             self.tokenizer = None
         gc.collect()
+        if torch is not None and self.device == "cuda" and torch.cuda.is_available():
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
         if torch is not None and self.device == "mps" and hasattr(torch, "mps"):
             try:
                 torch.mps.empty_cache()

@@ -9,6 +9,9 @@ class Segment(BaseModel):
     style: Optional[str] = None
     ref_audio: Optional[str] = None
     ref_text: Optional[str] = None
+    voice_engine: Optional[str] = None
+    voice_name: Optional[str] = None
+    voice_locale: Optional[str] = None
 
 
 class RoleProfile(BaseModel):
@@ -16,6 +19,9 @@ class RoleProfile(BaseModel):
     style: Optional[str] = None
     ref_audio: Optional[str] = None
     ref_text: Optional[str] = None
+    voice_engine: Optional[str] = None
+    voice_name: Optional[str] = None
+    voice_locale: Optional[str] = None
 
 
 class TTSRequest(BaseModel):
@@ -23,6 +29,9 @@ class TTSRequest(BaseModel):
     instruct: Optional[str] = None
     ref_audio: Optional[str] = None
     ref_text: Optional[str] = None
+    voice_engine: Optional[str] = None
+    voice_name: Optional[str] = None
+    voice_locale: Optional[str] = None
     output_name: str = "result"
     inference_device: Optional[str] = None
     backend: Optional["AudioBackendConfig"] = None
