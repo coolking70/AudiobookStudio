@@ -27,13 +27,14 @@ from fastapi.staticfiles import StaticFiles
 
 from audio_utils import build_lrc, join_wavs
 from llm_client import OpenAICompatibleClient
-from pipeline import OmniVoicePipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status
-from role_analyzer import analyze_chunks_with_llm, analyze_text_with_llm, intelligent_segment_text, optimize_chunks_for_tts, sanitize_segments
-from schemas import AnalyzeChunksRequest, AutoNarrateRequest, BatchImportVoiceLibraryRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, ListLLMModelsRequest, MergeRequest, ModelLoadRequest, NarrateRequest, ParseRequest, SegmentPlanRequest, TTSRequest, TranscribeRefAudioRequest, UploadRefAudioRequest
+from local_llm import get_local_llm_runner, get_local_llm_status, unload_all_local_llm_runners
+from pipeline import ASR_MODEL_NAME, HF_CACHE_DIRS, MODEL_NAME, OmniVoicePipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status
+from role_analyzer import analyze_chunks_with_llm, analyze_text_with_llm, intelligent_segment_text, intelligent_segment_text_with_info, optimize_chunks_for_tts, sanitize_segments
+from schemas import AnalyzeChunksRequest, AutoNarrateRequest, BatchImportVoiceLibraryRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, ListLLMModelsRequest, MergeRequest, ModelLoadRequest, NarrateRequest, ParseRequest, ScanLocalModelsRequest, SegmentPlanRequest, TTSRequest, TranscribeRefAudioRequest, UploadRefAudioRequest
 
 
 app = FastAPI(title="OmniVoice Reader Studio")
-pipeline_cache: dict[str, OmniVoicePipeline] = {}
+pipeline_cache: dict[tuple[str, str, str], OmniVoicePipeline] = {}
 pipeline_lock = Lock()
 
 Path("outputs").mkdir(parents=True, exist_ok=True)
@@ -254,13 +255,24 @@ def normalize_inference_device(device: str | None) -> str:
     raise ValueError(f"不支持的推理设备: {device}")
 
 
-def get_pipeline(device: str | None = None) -> OmniVoicePipeline:
+def get_pipeline(
+    device: str | None = None,
+    model_name: str | None = None,
+    asr_model_name: str | None = None,
+) -> OmniVoicePipeline:
     resolved_device = normalize_inference_device(device)
+    resolved_model_name = OmniVoicePipeline.resolve_model_name_or_path(model_name or MODEL_NAME)
+    resolved_asr_model_name = OmniVoicePipeline.resolve_asr_model_name_or_path(asr_model_name or ASR_MODEL_NAME)
+    cache_key = (resolved_device, resolved_model_name, resolved_asr_model_name)
     with pipeline_lock:
-        pipeline = pipeline_cache.get(resolved_device)
+        pipeline = pipeline_cache.get(cache_key)
         if pipeline is None:
-            pipeline = OmniVoicePipeline(device=resolved_device)
-            pipeline_cache[resolved_device] = pipeline
+            pipeline = OmniVoicePipeline(
+                model_name=resolved_model_name,
+                asr_model_name=resolved_asr_model_name,
+                device=resolved_device,
+            )
+            pipeline_cache[cache_key] = pipeline
         return pipeline
 
 
@@ -280,6 +292,346 @@ def resolve_audio_backend(req_backend, fallback_device: str | None = None) -> tu
     return mode, remote_base_url, remote_api_key, inference_device
 
 
+def resolve_local_audio_model_path(req_backend) -> str | None:
+    backend = req_backend or {}
+    value = str(backend.get("local_audio_model_path") or "").strip()
+    return value or None
+
+
+def resolve_local_asr_model_path(req_backend) -> str | None:
+    backend = req_backend or {}
+    value = str(backend.get("local_asr_model_path") or "").strip()
+    return value or None
+
+
+def build_local_path_preset_catalog() -> dict[str, dict[str, object]]:
+    home = Path.home()
+    workspace_root = Path(__file__).resolve().parent.parent
+    workspace_models = workspace_root / "tts_text_parse" / "models"
+    hf_roots = list(HF_CACHE_DIRS or [])
+
+    def first_existing(paths: list[Path]) -> Path | None:
+        for path in paths:
+            if path.exists():
+                return path
+        return None
+
+    def build_entry(label: str, paths: list[Path], note: str) -> dict[str, object]:
+        selected = first_existing(paths) or (paths[0] if paths else None)
+        resolved = str(selected.expanduser()) if selected else ""
+        return {
+            "label": label,
+            "path": resolved,
+            "exists": bool(selected and selected.exists()),
+            "is_dir": bool(selected and selected.is_dir()),
+            "note": note,
+            "candidates": [str(path.expanduser()) for path in paths],
+        }
+
+    omnivoice_candidates = [root / "models--k2-fsa--OmniVoice" for root in hf_roots]
+    whisper_candidates = [root / "models--openai--whisper-large-v3-turbo" for root in hf_roots]
+
+    return {
+        "llm_root_lmstudio": build_entry(
+            "LM Studio 模型目录",
+            [
+                home / ".lmstudio" / "models",
+                home / ".cache" / "lm-studio" / "models",
+            ],
+            "优先查找当前用户目录下的 LM Studio 模型缓存。",
+        ),
+        "llm_root_workspace_models": build_entry(
+            "工作区模型目录",
+            [workspace_models],
+            "优先查找当前工作区内的本地模型目录。",
+        ),
+        "audio_omnivoice_cache": build_entry(
+            "OmniVoice 缓存目录",
+            omnivoice_candidates or [home / ".cache" / "huggingface" / "hub" / "models--k2-fsa--OmniVoice"],
+            "会按当前环境的 Hugging Face 缓存根目录自动检测 OmniVoice 模型仓库。",
+        ),
+        "audio_whisper_cache": build_entry(
+            "Whisper 缓存目录",
+            whisper_candidates or [home / ".cache" / "huggingface" / "hub" / "models--openai--whisper-large-v3-turbo"],
+            "会按当前环境的 Hugging Face 缓存根目录自动检测 Whisper 模型仓库。",
+        ),
+    }
+
+
+def detect_local_llm_engine(path: Path) -> tuple[str, bool, str | None]:
+    expanded = path.expanduser()
+    if expanded.is_file() and expanded.suffix.lower() == ".gguf":
+        return "gguf", True, None
+
+    if expanded.is_dir():
+        config_path = expanded / "config.json"
+        if config_path.exists():
+            try:
+                config = json.loads(config_path.read_text(encoding="utf-8"))
+            except Exception:
+                config = {}
+            quantization = config.get("quantization") or config.get("quantization_config") or {}
+            if isinstance(quantization, dict) and quantization.get("bits") and not quantization.get("quant_method"):
+                return "mlx", True, None
+            return "transformers", True, None
+
+        gguf_files = [item for item in sorted(expanded.glob("*.gguf")) if "mmproj" not in item.name.lower()]
+        if gguf_files:
+            if len(gguf_files) == 1:
+                return "gguf", True, None
+            return "gguf", False, "目录中存在多个 GGUF 文件，请直接选择其中一个主模型文件。"
+
+    return "unknown", False, "未识别到可直接加载的模型目录。"
+
+
+def scan_local_llm_models(root_path: str) -> list[dict[str, object]]:
+    root = Path(str(root_path or "")).expanduser()
+    if not root.exists():
+        raise FileNotFoundError(f"目录不存在：{root}")
+    if not root.is_dir():
+        raise NotADirectoryError(f"请提供目录路径：{root}")
+
+    candidates: dict[str, dict[str, object]] = {}
+    for current in [root, *root.rglob("*")]:
+        try:
+            relative_parts = len(current.relative_to(root).parts)
+        except Exception:
+            relative_parts = 0
+        if relative_parts > 4:
+            continue
+        if not current.is_dir():
+            continue
+
+        has_config = (current / "config.json").exists()
+        gguf_files = [item for item in sorted(current.glob("*.gguf")) if "mmproj" not in item.name.lower()]
+        if not has_config and not gguf_files:
+            continue
+
+        target_path = current if has_config else (gguf_files[0] if len(gguf_files) == 1 else current)
+        engine, supported, note = detect_local_llm_engine(target_path)
+        key = str(target_path.resolve())
+        candidates[key] = {
+            "name": target_path.name,
+            "path": key,
+            "engine": engine,
+            "supported": supported,
+            "note": note,
+        }
+
+    return sorted(
+        candidates.values(),
+        key=lambda item: (
+            0 if item.get("supported") else 1,
+            str(item.get("name", "")).lower(),
+        ),
+    )
+
+
+def resolve_local_model_size_gb(model_path: str) -> float | None:
+    path = Path(str(model_path or "")).expanduser()
+    if not path.exists():
+        return None
+    if path.is_file():
+        return round(path.stat().st_size / (1024 ** 3), 2)
+
+    total_bytes = 0
+    for pattern in ("*.gguf", "*.safetensors", "*.bin"):
+        for item in path.glob(pattern):
+            try:
+                total_bytes += item.stat().st_size
+            except Exception:
+                pass
+    if not total_bytes:
+        return None
+    return round(total_bytes / (1024 ** 3), 2)
+
+
+def build_llm_hardware_summary(system: dict) -> str:
+    platform_info = system.get("platform", {})
+    memory = system.get("memory", {})
+    cpu = system.get("cpu", {})
+    gpu = system.get("gpu", {})
+
+    parts = []
+    machine = str(platform_info.get("machine") or "").strip()
+    system_name = str(platform_info.get("system") or "").strip()
+    if system_name or machine:
+        parts.append(" / ".join(item for item in [system_name, machine] if item))
+
+    total_mem_gb = memory.get("total_gb")
+    available_mem_gb = memory.get("available_gb")
+    if total_mem_gb is not None:
+        mem_text = f"内存 {total_mem_gb} GB"
+        if available_mem_gb is not None:
+            mem_text += f"（可用约 {available_mem_gb} GB）"
+        parts.append(mem_text)
+
+    logical_count = cpu.get("logical_count")
+    cpu_usage = cpu.get("usage_percent")
+    if logical_count:
+        cpu_text = f"CPU 线程 {logical_count}"
+        if cpu_usage is not None:
+            cpu_text += f"（当前占用 {cpu_usage}%）"
+        parts.append(cpu_text)
+
+    if gpu.get("cuda", {}).get("available"):
+        cuda = gpu["cuda"]
+        gpu_text = "CUDA 可用"
+        if cuda.get("total_gb") is not None:
+            gpu_text += f"（总 {cuda.get('total_gb')} GB"
+            if cuda.get("free_gb") is not None:
+                gpu_text += f"，空闲 {cuda.get('free_gb')} GB"
+            gpu_text += "）"
+        parts.append(gpu_text)
+    elif gpu.get("mps", {}).get("available"):
+        mps = gpu["mps"]
+        gpu_text = "MPS 可用"
+        if mps.get("recommended_max_gb") is not None:
+            gpu_text += f"（建议上限约 {mps.get('recommended_max_gb')} GB）"
+        parts.append(gpu_text)
+    else:
+        parts.append("仅 CPU 推理")
+
+    return "；".join(part for part in parts if part)
+
+
+def normalize_llm_load_profile(profile: str | None) -> str:
+    normalized = str(profile or "").strip().lower()
+    if normalized in {"conservative", "balanced", "aggressive"}:
+        return normalized
+    return "balanced"
+
+
+def recommend_direct_llm_load_params(llm_cfg) -> dict[str, object]:
+    model_path = str(llm_cfg.local_model_path or llm_cfg.model or "").strip()
+    if not model_path:
+        raise ValueError("请先提供本地模型路径。")
+
+    engine = str(llm_cfg.local_engine or detect_local_llm_engine(Path(model_path))[0] or "auto").lower()
+    profile = normalize_llm_load_profile(getattr(llm_cfg, "local_load_profile", None))
+    system = get_system_status()
+    gpu = system.get("gpu", {})
+    memory = system.get("memory", {})
+    cpu = system.get("cpu", {})
+    total_mem_gb = float(memory.get("total_gb") or 16)
+    available_mem_gb = float(memory.get("available_gb") or total_mem_gb)
+    logical_count = int(cpu.get("logical_count") or os.cpu_count() or 8)
+    model_size_gb = resolve_local_model_size_gb(model_path)
+    mps_recommended_gb = float(gpu.get("mps", {}).get("recommended_max_gb") or 0)
+    cuda_free_gb = float(gpu.get("cuda", {}).get("free_gb") or 0)
+
+    preferred_device = "cpu"
+    if gpu.get("cuda", {}).get("available"):
+        preferred_device = "cuda"
+    elif gpu.get("mps", {}).get("available"):
+        preferred_device = "mps"
+
+    memory_budget_gb = available_mem_gb
+    if preferred_device == "cuda" and cuda_free_gb > 0:
+        memory_budget_gb = min(memory_budget_gb, cuda_free_gb)
+    elif preferred_device == "mps" and mps_recommended_gb > 0:
+        memory_budget_gb = min(memory_budget_gb, mps_recommended_gb)
+
+    recommended = {
+        "engine": engine,
+        "device": preferred_device,
+        "ctx_tokens": 8192,
+        "gpu_layers": None,
+        "threads": max(2, min(8, logical_count // 2 or 1)),
+        "batch_size": 512,
+        "workers": 1,
+        "profile": profile,
+        "note": "",
+        "model_size_gb": model_size_gb,
+        "hardware_summary": build_llm_hardware_summary(system),
+        "reasoning": [],
+    }
+
+    reasoning: list[str] = []
+    if model_size_gb is not None:
+        reasoning.append(f"检测到模型体积约 {model_size_gb} GB。")
+    reasoning.append(
+        f"当前优先设备为 {preferred_device.upper() if preferred_device != 'cpu' else 'CPU'}，可用于推理的保守内存预算约 {round(memory_budget_gb, 2)} GB。"
+    )
+    profile_label = {"conservative": "保守", "balanced": "平衡", "aggressive": "激进"}[profile]
+    reasoning.append(f"已按“{profile_label}”档位生成参数。")
+
+    if engine == "gguf":
+        if preferred_device == "cpu":
+            recommended["gpu_layers"] = 0
+            recommended["batch_size"] = 256
+            recommended["ctx_tokens"] = 4096 if (model_size_gb or 0) > 8 else 8192
+            recommended["threads"] = max(2, min(10, logical_count - 1))
+            reasoning.append("GGUF 在 CPU 模式下优先降低 batch，避免首轮加载和推理峰值过高。")
+        else:
+            if model_size_gb is not None and memory_budget_gb < model_size_gb * 1.8:
+                recommended["gpu_layers"] = 24 if preferred_device == "mps" else 35
+                recommended["batch_size"] = 128 if preferred_device == "mps" and (model_size_gb or 0) >= 12 else 256
+                recommended["ctx_tokens"] = 4096
+                reasoning.append("当前显存或统一内存偏紧，先用部分 GPU layers 和较小上下文更稳。")
+            else:
+                recommended["gpu_layers"] = -1
+                if preferred_device == "mps" and (model_size_gb or 0) >= 12:
+                    recommended["batch_size"] = 128
+                else:
+                    recommended["batch_size"] = 512 if total_mem_gb < 48 else 1024
+                recommended["ctx_tokens"] = 8192 if total_mem_gb < 48 else 16384
+                reasoning.append("当前硬件适合优先尝试全量 GPU layers。")
+    elif engine == "mlx":
+        recommended["gpu_layers"] = None
+        recommended["batch_size"] = 512
+        recommended["ctx_tokens"] = 8192 if total_mem_gb < 48 else 16384
+        recommended["threads"] = max(2, min(6, logical_count // 2 or 1))
+        reasoning.append("MLX 通常由框架自动处理分层，重点控制上下文长度和并发更有效。")
+    elif engine == "transformers":
+        recommended["gpu_layers"] = None
+        recommended["batch_size"] = 256
+        recommended["ctx_tokens"] = 4096 if total_mem_gb < 32 else 8192
+        recommended["threads"] = max(2, min(6, logical_count // 2 or 1))
+        reasoning.append("Transformers 直载更吃内存，默认优先保证稳定启动。")
+
+    if profile == "conservative":
+        recommended["ctx_tokens"] = max(2048, int(recommended["ctx_tokens"]) // 2)
+        recommended["batch_size"] = max(128, int(recommended["batch_size"]) // 2)
+        recommended["workers"] = 1
+        if engine == "gguf" and recommended["gpu_layers"] == -1:
+            recommended["gpu_layers"] = 40 if preferred_device == "cuda" else 16
+        reasoning.append("保守档位会主动压缩上下文和 batch，优先减少 OOM 风险。")
+    elif profile == "aggressive":
+        recommended["ctx_tokens"] = min(32768, int(recommended["ctx_tokens"]) * 2)
+        recommended["batch_size"] = min(2048, int(recommended["batch_size"]) * 2)
+        if engine == "gguf" and preferred_device != "cpu":
+            recommended["gpu_layers"] = -1
+        if (model_size_gb or 0) <= 4 and memory_budget_gb >= 24:
+            recommended["workers"] = 2
+        reasoning.append("激进档位会提高吞吐和上下文长度，更适合在内存余量充足时尝试。")
+    else:
+        reasoning.append("平衡档位优先兼顾稳定性和速度，适合作为首轮默认值。")
+
+    if engine == "transformers" and profile == "aggressive" and memory_budget_gb < 20:
+        recommended["ctx_tokens"] = min(int(recommended["ctx_tokens"]), 8192)
+        recommended["batch_size"] = min(int(recommended["batch_size"]), 512)
+        reasoning.append("Transformers 在当前内存预算下不建议过于激进，已自动收回一档。")
+
+    if engine == "gguf" and preferred_device == "mps" and memory_budget_gb < 10:
+        recommended["gpu_layers"] = 0 if profile == "conservative" else 16
+        recommended["batch_size"] = min(int(recommended["batch_size"]), 256)
+        reasoning.append("MPS 可用预算较小，已进一步降低 GPU layers 和 batch。")
+
+    if engine == "gguf" and preferred_device == "mps" and (model_size_gb or 0) >= 12:
+        recommended["ctx_tokens"] = min(int(recommended["ctx_tokens"]), 4096 if profile != "aggressive" else 8192)
+        recommended["batch_size"] = min(int(recommended["batch_size"]), 128 if profile != "aggressive" else 192)
+        recommended["workers"] = 1
+        if recommended["gpu_layers"] == -1 and profile != "aggressive":
+            recommended["gpu_layers"] = 24
+        reasoning.append("大体积 GGUF 在 Apple Silicon 上更容易触发解码失败，已额外压低 batch 并关闭并发。")
+
+    recommended["note"] = " ".join(reasoning[-2:]).strip()
+    recommended["reasoning"] = reasoning
+
+    return recommended
+
+
 def is_mps_oom_error(exc: Exception) -> bool:
     message = str(exc or "").lower()
     return "mps backend out of memory" in message or ("out of memory" in message and "mps" in message)
@@ -288,6 +640,8 @@ def is_mps_oom_error(exc: Exception) -> bool:
 def synthesize_local_tts_with_fallback(
     *,
     inference_device: str | None,
+    model_name: str | None,
+    asr_model_name: str | None,
     text: str,
     output_path: Path,
     instruct: str | None = None,
@@ -295,7 +649,7 @@ def synthesize_local_tts_with_fallback(
     ref_text: str | None = None,
 ) -> dict:
     resolved_device = normalize_inference_device(inference_device)
-    pipeline = get_pipeline(resolved_device)
+    pipeline = get_pipeline(resolved_device, model_name=model_name, asr_model_name=asr_model_name)
     try:
         pipeline.synthesize_segment(
             text=text,
@@ -309,7 +663,7 @@ def synthesize_local_tts_with_fallback(
         if resolved_device != "mps" or not is_mps_oom_error(exc):
             raise
         pipeline.unload()
-        cpu_pipeline = get_pipeline("cpu")
+        cpu_pipeline = get_pipeline("cpu", model_name=model_name, asr_model_name=asr_model_name)
         cpu_pipeline.synthesize_segment(
             text=text,
             output_path=output_path,
@@ -323,13 +677,15 @@ def synthesize_local_tts_with_fallback(
 def synthesize_local_narration_with_fallback(
     *,
     inference_device: str | None,
+    model_name: str | None,
+    asr_model_name: str | None,
     segments: list[dict],
     output_name: str,
     silence_ms: int,
     role_profiles: dict,
 ) -> dict:
     resolved_device = normalize_inference_device(inference_device)
-    pipeline = get_pipeline(resolved_device)
+    pipeline = get_pipeline(resolved_device, model_name=model_name, asr_model_name=asr_model_name)
     try:
         merged_path = pipeline.synthesize_segments(
             segments=segments,
@@ -342,7 +698,7 @@ def synthesize_local_narration_with_fallback(
         if resolved_device != "mps" or not is_mps_oom_error(exc):
             raise
         pipeline.unload()
-        cpu_pipeline = get_pipeline("cpu")
+        cpu_pipeline = get_pipeline("cpu", model_name=model_name, asr_model_name=asr_model_name)
         merged_path = cpu_pipeline.synthesize_segments(
             segments=segments,
             base_name=output_name,
@@ -359,16 +715,19 @@ def synthesize_local_narration_with_fallback(
 
 def get_audio_model_status() -> dict:
     with pipeline_lock:
-        loaded_devices = sorted([device for device, pipeline in pipeline_cache.items() if pipeline.model is not None])
-        cached_devices = sorted(list(pipeline_cache.keys()))
-        asr_loaded_devices = sorted([device for device, pipeline in pipeline_cache.items() if pipeline.is_asr_loaded()])
+        pipelines = list(pipeline_cache.values())
+        loaded_devices = sorted({pipeline.device for pipeline in pipelines if pipeline.model is not None})
+        cached_devices = sorted({pipeline.device for pipeline in pipelines})
+        asr_loaded_devices = sorted({pipeline.device for pipeline in pipelines if pipeline.is_asr_loaded()})
         asr_model_names = sorted({pipeline.asr_model_name for pipeline in pipeline_cache.values() if pipeline.is_asr_loaded()})
+        audio_model_names = sorted({pipeline.model_name for pipeline in pipeline_cache.values() if pipeline.model is not None})
     return {
         "runtime": get_runtime_dependency_status(),
         "asr_runtime": get_asr_runtime_dependency_status(),
         "loaded_devices": loaded_devices,
         "cached_devices": cached_devices,
         "asr_loaded_devices": asr_loaded_devices,
+        "audio_model_names": audio_model_names,
         "asr_model_names": asr_model_names,
         "detected_device": OmniVoicePipeline.detect_device(),
     }
@@ -493,6 +852,17 @@ def index():
     return html_path.read_text(encoding="utf-8")
 
 
+@app.get("/api/local-path-presets")
+def list_local_path_presets():
+    try:
+        return {
+            "ok": True,
+            "presets": build_local_path_preset_catalog(),
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
 @app.get("/api/llm-defaults")
 def llm_defaults():
     try:
@@ -516,8 +886,9 @@ def favicon():
 def tts(req: TTSRequest):
     try:
         output_name = sanitize_output_name(req.output_name, "tts_result")
+        backend_data = req.backend.model_dump() if req.backend else None
         mode, remote_base_url, remote_api_key, inference_device = resolve_audio_backend(
-            req.backend.model_dump() if req.backend else None,
+            backend_data,
             req.inference_device,
         )
 
@@ -541,6 +912,8 @@ def tts(req: TTSRequest):
         output_path = OUTPUT_DIR / f"{output_name}.wav"
         result = synthesize_local_tts_with_fallback(
             inference_device=inference_device,
+            model_name=resolve_local_audio_model_path(backend_data),
+            asr_model_name=resolve_local_asr_model_path(backend_data),
             text=req.text,
             output_path=output_path,
             instruct=req.instruct,
@@ -575,10 +948,11 @@ def parse_text(req: ParseRequest):
 @app.post("/api/segment-plan")
 def segment_plan(req: SegmentPlanRequest):
     try:
-        chunks = intelligent_segment_text(req.text, req.llm)
+        chunks, info = intelligent_segment_text_with_info(req.text, req.llm)
         return {
             "ok": True,
             "chunks": chunks,
+            "info": info,
         }
     except Exception as exc:
         raise_api_error(exc)
@@ -616,8 +990,9 @@ def narrate(req: NarrateRequest):
         output_name = sanitize_output_name(req.output_name, "narration")
         segments = [seg.model_dump() for seg in req.segments]
         role_profiles = {k: v.model_dump() for k, v in (req.role_profiles or {}).items()}
+        backend_data = req.backend.model_dump() if req.backend else None
         mode, remote_base_url, remote_api_key, inference_device = resolve_audio_backend(
-            req.backend.model_dump() if req.backend else None,
+            backend_data,
             req.inference_device,
         )
 
@@ -640,6 +1015,8 @@ def narrate(req: NarrateRequest):
 
         result = synthesize_local_narration_with_fallback(
             inference_device=inference_device,
+            model_name=resolve_local_audio_model_path(backend_data),
+            asr_model_name=resolve_local_asr_model_path(backend_data),
             segments=segments,
             output_name=output_name,
             silence_ms=req.silence_ms,
@@ -669,8 +1046,9 @@ def auto_narrate(req: AutoNarrateRequest):
         output_name = sanitize_output_name(req.output_name, "auto_narration")
         segments = analyze_text_with_llm(req.text, req.llm)
         role_profiles = {k: v.model_dump() for k, v in (req.role_profiles or {}).items()}
+        backend_data = req.backend.model_dump() if req.backend else None
         mode, remote_base_url, remote_api_key, inference_device = resolve_audio_backend(
-            req.backend.model_dump() if req.backend else None,
+            backend_data,
             req.inference_device,
         )
 
@@ -694,6 +1072,8 @@ def auto_narrate(req: AutoNarrateRequest):
 
         result = synthesize_local_narration_with_fallback(
             inference_device=inference_device,
+            model_name=resolve_local_audio_model_path(backend_data),
+            asr_model_name=resolve_local_asr_model_path(backend_data),
             segments=segments,
             output_name=output_name,
             silence_ms=req.silence_ms,
@@ -757,6 +1137,67 @@ def test_connectivity(req: ConnectivityTestRequest):
         raise_api_error(exc)
 
 
+@app.post("/api/model/load-llm")
+def load_llm_model(req: ConnectivityTestRequest):
+    try:
+        if (req.llm.local_runtime or "").strip().lower() != "direct":
+            client = OpenAICompatibleClient(req.llm)
+            content = client.chat_text(
+                [
+                    {"role": "system", "content": "Reply in one short sentence."},
+                    {"role": "user", "content": "Say hello briefly."},
+                ]
+            )
+            return {
+                "ok": True,
+                "mode": "openai_compat",
+                "message": content,
+                "model_name": req.llm.local_model_path or req.llm.model,
+            }
+
+        unload_all_local_llm_runners()
+        runner = get_local_llm_runner(
+            model_path=req.llm.local_model_path or req.llm.model,
+            engine=req.llm.local_engine,
+            device=req.llm.local_device,
+            ctx_tokens=req.llm.local_ctx_tokens,
+            gpu_layers=req.llm.local_gpu_layers,
+            threads=req.llm.local_threads,
+            batch_size=req.llm.local_batch_size,
+        )
+        loaded = runner.load()
+        return {
+            "ok": True,
+            "mode": "direct",
+            **loaded,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/llm/recommend-load-config")
+def recommend_llm_load_config(req: ConnectivityTestRequest):
+    try:
+        return {
+            "ok": True,
+            "recommendation": recommend_direct_llm_load_params(req.llm),
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/model/unload-llm")
+def unload_llm_model():
+    try:
+        unload_all_local_llm_runners()
+        return {
+            "ok": True,
+            "status": get_local_llm_status(),
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
 @app.post("/api/llm/list-models")
 def list_llm_models(req: ListLLMModelsRequest):
     try:
@@ -782,6 +1223,18 @@ def list_llm_models(req: ListLLMModelsRequest):
             ]
         else:
             models = []
+        return {
+            "ok": True,
+            "models": models,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/llm/scan-local-models")
+def scan_local_models(req: ScanLocalModelsRequest):
+    try:
+        models = scan_local_llm_models(req.root_path)
         return {
             "ok": True,
             "models": models,
@@ -816,7 +1269,11 @@ def batch_import_voice_library(req: BatchImportVoiceLibraryRequest):
         inference_device = backend.get("inference_device")
         pipeline = None
         if req.transcribe_ref_text:
-            pipeline = get_pipeline(inference_device)
+            pipeline = get_pipeline(
+                inference_device,
+                model_name=resolve_local_audio_model_path(backend),
+                asr_model_name=resolve_local_asr_model_path(backend),
+            )
             if not pipeline.is_asr_loaded():
                 raise RuntimeError("音频识别模型尚未加载。请先在模型配置页加载音频识别模型后再进行批量导入。")
 
@@ -858,7 +1315,11 @@ def transcribe_ref_audio(req: TranscribeRefAudioRequest):
             raise RuntimeError("请先提供参考音频路径。")
 
         inference_device = backend.get("inference_device")
-        pipeline = get_pipeline(inference_device)
+        pipeline = get_pipeline(
+            inference_device,
+            model_name=resolve_local_audio_model_path(backend),
+            asr_model_name=resolve_local_asr_model_path(backend),
+        )
         if not pipeline.is_asr_loaded():
             raise RuntimeError("音频识别模型尚未加载。请先在模型配置页加载音频识别模型。")
 
@@ -882,7 +1343,11 @@ def load_audio_model(req: ModelLoadRequest):
 
         unload_all_audio_pipelines()
         inference_device = backend.get("inference_device")
-        pipeline = get_pipeline(inference_device)
+        pipeline = get_pipeline(
+            inference_device,
+            model_name=resolve_local_audio_model_path(backend),
+            asr_model_name=resolve_local_asr_model_path(backend),
+        )
         pipeline.load()
         return {
             "ok": True,
@@ -903,7 +1368,11 @@ def load_asr_model(req: ModelLoadRequest):
             raise RuntimeError("当前只支持本地加载音频识别模型，远程音频后端暂不支持。")
 
         inference_device = backend.get("inference_device")
-        pipeline = get_pipeline(inference_device)
+        pipeline = get_pipeline(
+            inference_device,
+            model_name=resolve_local_audio_model_path(backend),
+            asr_model_name=resolve_local_asr_model_path(backend),
+        )
         pipeline.load_asr_model()
         return {
             "ok": True,
@@ -944,7 +1413,11 @@ def unload_asr_model(req: ModelLoadRequest):
             return {"ok": True, "mode": "remote", "message": "远程模式不在本地卸载音频识别模型。"}
 
         inference_device = normalize_inference_device(backend.get("inference_device"))
-        pipeline = get_pipeline(inference_device)
+        pipeline = get_pipeline(
+            inference_device,
+            model_name=resolve_local_audio_model_path(backend),
+            asr_model_name=resolve_local_asr_model_path(backend),
+        )
         pipeline.unload_asr_model()
         return {
             "ok": True,
@@ -960,6 +1433,7 @@ def model_status():
     try:
         return {
             "ok": True,
+            "llm": get_local_llm_status(),
             "audio": get_audio_model_status(),
         }
     except Exception as exc:
@@ -973,6 +1447,7 @@ def system_status():
             "ok": True,
             "system": get_system_status(),
             "models": {
+                "llm": get_local_llm_status(),
                 "audio": get_audio_model_status(),
             },
         }
@@ -1017,10 +1492,11 @@ def merge_audio(req: MergeRequest):
 
 @app.get("/api/health")
 def health():
-    loaded_devices = sorted(device for device, pipeline in pipeline_cache.items() if pipeline.model is not None)
+    loaded_devices = sorted({pipeline.device for pipeline in pipeline_cache.values() if pipeline.model is not None})
     return {
         "ok": True,
         "app": app.title,
+        "llm_loaded": get_local_llm_status().get("loaded", False),
         "model_loaded": bool(loaded_devices),
         "loaded_devices": loaded_devices,
         "default_device": OmniVoicePipeline.detect_device(),

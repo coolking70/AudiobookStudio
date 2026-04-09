@@ -15,3 +15,11 @@ imageio-ffmpeg
 # torch
 # torchaudio
 # omnivoice
+
+# Optional runtime dependencies used for direct local text-model loading:
+# transformers
+# accelerate
+# sentencepiece
+# mlx
+# mlx-lm
+# llama-cpp-python

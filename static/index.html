@@ -144,12 +144,91 @@
     /* ===== Progress Shell ===== */
     .progress-shell {
       margin-bottom: 16px;
-      padding: 16px;
       border-radius: var(--radius);
       border: 1px solid var(--line);
       background: var(--panel);
       box-shadow: var(--shadow);
       transition: all var(--transition);
+      overflow: hidden;
+    }
+    .progress-collapse-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      cursor: pointer;
+      user-select: none;
+      transition: background var(--transition);
+    }
+    .progress-collapse-bar:hover {
+      background: rgba(125, 154, 192, 0.06);
+    }
+    .progress-collapse-bar .collapse-arrow {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      font-size: 12px;
+      color: var(--sub);
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+    }
+    .progress-shell.collapsed .collapse-arrow {
+      transform: rotate(-90deg);
+    }
+    .progress-collapse-bar .collapse-summary-text {
+      flex: 1;
+      font-size: 13px;
+      color: var(--sub);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .progress-collapse-bar .collapse-phase {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(77, 176, 247, 0.1);
+      border: 1px solid rgba(77, 176, 247, 0.18);
+      color: #b8deff;
+      font-size: 11px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .progress-collapse-bar .collapse-options {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .progress-collapse-bar .collapse-options label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin: 0;
+      font-size: 11px;
+      color: var(--sub);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .progress-collapse-bar .collapse-options input[type="checkbox"] {
+      margin: 0;
+      accent-color: var(--accent);
+    }
+    .progress-body {
+      padding: 0 16px 16px;
+      transition: max-height 0.35s ease, opacity 0.25s ease, padding 0.3s ease;
+      max-height: 2000px;
+      opacity: 1;
+    }
+    .progress-shell.collapsed .progress-body {
+      max-height: 0;
+      opacity: 0;
+      padding: 0 16px;
+      pointer-events: none;
+      overflow: hidden;
     }
     .progress-player {
       margin-top: 14px;
@@ -636,6 +715,52 @@
       grid-template-columns: 1fr 1fr;
       gap: 10px;
     }
+    .model-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .model-section {
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      background: rgba(8, 14, 26, 0.46);
+      border: 1px solid var(--line);
+    }
+    .model-section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .model-section-head h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+    .model-actions-compact {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .path-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .status-box {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius-xs);
+      border: 1px solid rgba(125, 154, 192, 0.16);
+      background: rgba(8, 14, 26, 0.52);
+      color: var(--sub);
+      font-size: 12.5px;
+      line-height: 1.55;
+      white-space: pre-line;
+    }
     /* ===== Workspace Tabs ===== */
     .workspace-tabs {
       margin-top: 16px;
@@ -675,6 +800,113 @@
     }
     .workspace-tab-panel {
       animation: fadeIn 0.2s ease;
+    }
+    .models-dashboard {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .model-config-nav {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .model-config-nav button {
+      justify-content: flex-start;
+      text-align: left;
+      min-height: 68px;
+      padding: 12px 14px;
+      background: rgba(8, 14, 26, 0.62);
+      border: 1px solid var(--line);
+    }
+    .model-config-nav button.active {
+      background: rgba(77, 176, 247, 0.12);
+      border-color: rgba(77, 176, 247, 0.24);
+      box-shadow: 0 1px 4px rgba(77, 176, 247, 0.08);
+    }
+    .model-config-nav strong {
+      display: block;
+      font-size: 14px;
+      color: var(--text);
+    }
+    .model-config-nav span {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--sub);
+      line-height: 1.5;
+    }
+    .model-config-view[hidden] {
+      display: none;
+    }
+    .model-panel-card {
+      margin-top: 16px;
+      padding: 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: rgba(8, 14, 26, 0.62);
+    }
+    .model-quick-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .model-field-group {
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(125, 154, 192, 0.12);
+      background: rgba(12, 20, 35, 0.54);
+    }
+    .model-field-group h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+    }
+    .model-field-group .mini-note:first-of-type {
+      margin-top: 0;
+    }
+    .advanced-toggle {
+      margin-top: 14px;
+      border: 1px solid rgba(125, 154, 192, 0.12);
+      border-radius: var(--radius-sm);
+      background: rgba(8, 14, 26, 0.44);
+      overflow: hidden;
+    }
+    .advanced-toggle summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 12px 14px;
+      color: var(--text);
+      font-weight: 500;
+      user-select: none;
+    }
+    .advanced-toggle summary::-webkit-details-marker {
+      display: none;
+    }
+    .advanced-toggle[open] summary {
+      border-bottom: 1px solid rgba(125, 154, 192, 0.1);
+    }
+    .advanced-body {
+      padding: 14px;
+    }
+    .model-footer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .status-pre {
+      margin-top: 14px;
+      padding: 14px;
+      white-space: pre-wrap;
+      min-height: 220px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(125, 154, 192, 0.12);
+      background: rgba(8, 14, 26, 0.52);
+      color: var(--sub);
+      font-size: 12.5px;
+      line-height: 1.6;
     }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(4px); }
@@ -876,7 +1108,7 @@
       .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .player-grid { grid-template-columns: 1fr; }
-      .analysis-grid, .audio-layout { grid-template-columns: 1fr; }
+      .analysis-grid, .audio-layout, .model-quick-grid, .model-config-nav { grid-template-columns: 1fr; }
     }
     @media (max-width: 1000px) {
       .grid { grid-template-columns: 1fr; }
@@ -898,6 +1130,7 @@
 </head>
 <body>
 <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+<input id="directoryPickerInput" type="file" webkitdirectory directory multiple style="display:none;" onchange="handleDirectorySelection(event)" />
 <div class="wrap">
   <div class="topbar">
     <div>
@@ -907,7 +1140,17 @@
     <div class="hero-tag">任务面板就绪</div>
   </div>
 
-  <div class="progress-shell">
+  <div id="progressShell" class="progress-shell collapsed">
+    <div class="progress-collapse-bar" onclick="toggleProgressPanel(event)">
+      <span class="collapse-arrow">&#9660;</span>
+      <span id="collapseSummaryText" class="collapse-summary-text">就绪，等待任务</span>
+      <span id="collapsePhase" class="collapse-phase">空闲</span>
+      <span class="collapse-options">
+        <label title="任务开始时自动展开面板并滚动到此处" onclick="event.stopPropagation()"><input type="checkbox" id="autoExpandCheck" checked onchange="saveAutoExpandPref()">自动展开</label>
+        <label title="任务完成时发送浏览器通知" onclick="event.stopPropagation()"><input type="checkbox" id="notifyOnDoneCheck" onchange="saveNotifyPref()">完成通知</label>
+      </span>
+    </div>
+    <div class="progress-body">
     <div class="progress-top">
       <div class="summary-card">
         <div class="summary-head">
@@ -980,254 +1223,417 @@
         </div>
       </div>
     </div>
+    </div><!-- /progress-body -->
   </div>
 
   <div class="workspace-tabs">
     <div class="workspace-tab-switch">
-      <button type="button" id="tabModelsBtn" onclick="setWorkspaceTab('models')">模型配置</button>
-      <button type="button" id="tabAnalysisBtn" class="active" onclick="setWorkspaceTab('analysis')">文本分析</button>
+      <button type="button" id="tabModelsBtn" class="active" onclick="setWorkspaceTab('models')">模型配置</button>
+      <button type="button" id="tabAnalysisBtn" onclick="setWorkspaceTab('analysis')">文本分析</button>
       <button type="button" id="tabAudioBtn" onclick="setWorkspaceTab('audio')">音频生成</button>
       <button type="button" id="tabLibraryBtn" onclick="setWorkspaceTab('library')">声音库</button>
     </div>
 
-    <div id=”modelsTab” class=”workspace-tab-panel” hidden>
-      <div class=”analysis-grid”>
-        <div class=”card”>
-          <h2>文本分析模型</h2>
-          <div class=”mini-note”>选择本地 OpenAI 兼容服务或远程 API 用于角色分析</div>
+    <div id="modelsTab" class="workspace-tab-panel">
+      <div class="models-dashboard">
+        <div class="card">
+          <h2>模型配置工作台</h2>
+          <div class="mini-note">把文本模型、语音生成模型、语音识别模型拆成独立工作区。默认只显示必要配置，详细参数放在高级配置里。</div>
 
-          <label>运行方式</label>
-          <select id=”llmBackendMode” onchange=”setAnalysisSourceMode(this.value)”>
-            <option value=”local”>本地模型（OpenAI 兼容）</option>
-            <option value=”remote” selected>远程 API</option>
-            <option value=”external”>外部 Chat AI</option>
-          </select>
-
-          <!-- 本地模型面板 -->
-          <div id=”localLlmPanel” class=”sub-card” hidden>
-            <label>本地服务地址</label>
-            <input id=”localLlmBaseUrl” placeholder=”例如：http://127.0.0.1:1234/v1” value=”http://127.0.0.1:1234/v1” />
-            <div class=”mini-note”>LM Studio / Ollama / vLLM 等本地推理框架的 OpenAI 兼容端点</div>
-
-            <label>API Key（可选）</label>
-            <input id=”localLlmApiKey” type=”password” placeholder=”大部分本地服务无需填写” />
-
-            <label>模型路径 / 名称</label>
-            <div style=”display:flex; gap:8px; align-items:stretch;”>
-              <input id=”localLlmModelPath” style=”flex:1;” placeholder=”点击右侧按钮自动获取，或手动填写模型路径” />
-              <button type=”button” class=”secondary” data-busy-lock onclick=”fetchLocalLlmModels()” style=”white-space:nowrap;”>获取模型列表</button>
-            </div>
-            <select id=”localLlmModelSelect” style=”margin-top:6px;” onchange=”applyLocalLlmModelSelection()”>
-              <option value=””>-- 点击「获取模型列表」后选择 --</option>
-            </select>
-
-            <div class=”row” style=”margin-top:8px;”>
-              <div>
-                <label>Temperature</label>
-                <input id=”localLlmTemperature” type=”number” step=”0.1” value=”0.2” />
-              </div>
-              <div>
-                <label>Max Tokens</label>
-                <input id=”localLlmMaxTokens” type=”number” value=”2000” />
-              </div>
-              <div>
-                <label>并发数</label>
-                <input id=”localLlmWorkers” type=”number” min=”1” max=”12” value=”3” />
-              </div>
-            </div>
-
-            <label>调用方式</label>
-            <select id=”localLlmCompatMode”>
-              <option value=”chat_compat” selected>Chat 兼容模式</option>
-              <option value=”strict_json”>严格 JSON</option>
-            </select>
-
-            <label>分析模式</label>
-            <select id=”localLlmAnalysisMode”>
-              <option value=”stable” selected>稳定模式</option>
-              <option value=”balanced”>标准模式</option>
-              <option value=”fast”>快速模式</option>
-            </select>
-
-            <label>系统提示词（可选）</label>
-            <textarea id=”localLlmSystemPrompt” placeholder=”留空则使用后端默认提示词”></textarea>
-
-            <div class=”actions”>
-              <button type=”button” data-busy-lock onclick=”loadLocalLlmModel()”>加载 / 检查本地模型</button>
-              <button type=”button” class=”secondary” data-busy-lock onclick=”testLLMAvailability()”>测试可用性</button>
-            </div>
-            <div id=”localLlmStatus” class=”import-hint” style=”margin-top:8px;”>尚未连接本地模型服务</div>
+          <div class="model-config-nav">
+            <button type="button" id="modelViewTextBtn" class="active" onclick="setModelsConfigView('text')">
+              <strong>文本模型</strong>
+              <span>配置文本分析的 LLM，支持 OpenAI 兼容、应用直载和外部 Chat AI。</span>
+            </button>
+            <button type="button" id="modelViewAudioGenBtn" onclick="setModelsConfigView('audio_gen')">
+              <strong>语音生成模型</strong>
+              <span>配置 OmniVoice 或远程语音后端，优先展示常用加载参数。</span>
+            </button>
+            <button type="button" id="modelViewAudioRecBtn" onclick="setModelsConfigView('audio_rec')">
+              <strong>语音识别模型</strong>
+              <span>配置参考音频转写所需的识别模型，路径和加载动作独立管理。</span>
+            </button>
+            <button type="button" id="modelViewRuntimeBtn" onclick="setModelsConfigView('runtime')">
+              <strong>运行状态</strong>
+              <span>集中查看模型加载情况与硬件状态，避免散落在页面各处。</span>
+            </button>
           </div>
 
-          <!-- 远程 API 面板 -->
-          <div id=”directLlmPanel”>
-            <label>Base URL</label>
-            <input id=”baseUrl” placeholder=”例如：https://api.openai.com/v1 或其他兼容端点” />
-
-            <label>API Key</label>
-            <input id=”apiKey” placeholder=”输入 API Key” type=”password” />
-
-            <label>Model</label>
-            <input id=”model” placeholder=”例如：google/gemma-4-26b-a4b / kimi-k2.5” />
-
-            <div class=”row”>
-              <div>
-                <label>Temperature</label>
-                <input id=”temperature” type=”number” step=”0.1” value=”0.2” />
+          <div id="modelViewText" class="model-config-view">
+            <div class="model-panel-card">
+              <div class="model-section-head">
+                <h3>文本模型</h3>
+                <div class="pill">统一加载模块</div>
               </div>
-              <div>
-                <label>Max Tokens</label>
-                <input id=”maxTokens” type=”number” value=”2000” />
-              </div>
-              <div>
-                <label>并发数</label>
-                <input id=”llmWorkers” type=”number” min=”1” max=”12” value=”5” />
-              </div>
-            </div>
+          <div class="mini-note">先选择加载方式，再填写最少必要项即可开始测试。只有在需要调优时再展开高级配置。</div>
 
-            <label>分析模式</label>
-            <select id=”analysisMode”>
-              <option value=”stable”>稳定模式</option>
-              <option value=”balanced” selected>标准模式</option>
-              <option value=”fast”>快速模式</option>
-            </select>
+              <label>加载方式</label>
+              <select id="llmBackendMode" onchange="setAnalysisSourceMode(this.value)">
+                <option value="openai_compat" selected>OpenAI 兼容接口</option>
+                <option value="direct">应用直接加载模型</option>
+                <option value="external">外部 Chat AI</option>
+              </select>
 
-            <label>调用方式</label>
-            <select id=”compatibilityMode”>
-              <option value=”strict_json”>严格 JSON</option>
-              <option value=”chat_compat”>Chat 兼容模式</option>
-            </select>
+              <div id="openAiCompatLlmPanel" class="model-field-group" style="margin-top:14px;">
+                <h3>必要配置</h3>
+                <div class="mini-note">适用于本地 LM Studio / Ollama / vLLM，也适用于远程 OpenAI 兼容端点。</div>
+                <label>Base URL</label>
+                <input id="baseUrl" placeholder="例如：http://127.0.0.1:1234/v1 或 https://api.openai.com/v1" />
 
-            <label>系统提示词（可选）</label>
-            <textarea id=”systemPrompt” placeholder=”留空则使用后端默认提示词”></textarea>
-
-            <div class=”actions”>
-              <button type=”button” data-busy-lock onclick=”testLLMAvailability()”>加载 / 检查远程模型</button>
-            </div>
-          </div>
-
-          <!-- 外部 Chat AI 面板 -->
-          <div id=”externalLlmPanel” class=”sub-card” hidden>
-            <div class=”muted”>将提示词发给外部 Chat AI，再把返回的 JSON 导入回来</div>
-
-            <div class=”sub-grid”>
-              <div>
-                <label>外部分析建议模式</label>
-                <select id=”externalAnalysisMode”>
-                  <option value=”stable”>稳定模式</option>
-                  <option value=”balanced” selected>标准模式</option>
-                  <option value=”fast”>快速模式</option>
+                <label>Model</label>
+                <div style="display:flex; gap:8px; align-items:stretch;">
+                  <input id="model" style="flex:1;" placeholder="例如：google/gemma-4-26b-a4b / kimi-k2.5" />
+                  <button id="openAiFetchModelsBtn" type="button" class="secondary" data-busy-lock onclick="fetchOpenAiCompatModels()" style="white-space:nowrap;">获取模型列表</button>
+                </div>
+                <select id="openAiModelSelect" style="margin-top:6px;" onchange="applyOpenAiModelSelection()">
+                  <option value="">-- 点击「获取模型列表」后选择 --</option>
                 </select>
+
+                <div class="model-actions-compact">
+                  <button type="button" data-busy-lock onclick="testLLMAvailability()">加载 / 检查模型</button>
+                </div>
+                <div id="openAiCompatStatus" class="status-box">尚未检查 OpenAI 兼容模型。</div>
+
+                <details class="advanced-toggle">
+                  <summary>显示高级配置</summary>
+                  <div class="advanced-body">
+                    <label>API Key</label>
+                    <input id="apiKey" placeholder="输入 API Key；多数本地服务可留空" type="password" />
+
+                    <div class="row">
+                      <div>
+                        <label>Temperature</label>
+                        <input id="temperature" type="number" step="0.1" value="0.2" />
+                      </div>
+                      <div>
+                        <label>Max Tokens</label>
+                        <input id="maxTokens" type="number" value="2000" />
+                      </div>
+                      <div>
+                        <label>并发数</label>
+                        <input id="llmWorkers" type="number" min="1" max="12" value="5" />
+                      </div>
+                    </div>
+
+                    <label>分析模式</label>
+                    <select id="analysisMode">
+                      <option value="stable">稳定模式</option>
+                      <option value="balanced" selected>标准模式</option>
+                      <option value="fast">快速模式</option>
+                    </select>
+
+                    <label>调用方式</label>
+                    <select id="compatibilityMode">
+                      <option value="strict_json">严格 JSON</option>
+                      <option value="chat_compat">Chat 兼容模式</option>
+                    </select>
+
+                    <label>系统提示词（可选）</label>
+                    <textarea id="systemPrompt" placeholder="留空则使用后端默认提示词"></textarea>
+                  </div>
+                </details>
               </div>
-              <div>
-                <label>外部 AI 参考 Max Tokens</label>
-                <input id=”externalMaxTokens” type=”number” value=”2000” />
+
+              <div id="localLlmPanel" class="model-field-group" style="margin-top:14px;" hidden>
+                <h3>必要配置</h3>
+                <div class="mini-note">手动填写模型根目录，扫描后从识别结果里选择一个本地可直载模型。</div>
+
+                <label>模型根目录</label>
+                <div style="display:flex; gap:8px; align-items:stretch;">
+                  <input id="localLlmScanRoot" style="flex:1;" placeholder="例如：/Users/you/.lmstudio/models" />
+                  <button type="button" class="secondary" data-busy-lock onclick="scanDirectLlmModels()" style="white-space:nowrap;">扫描目录</button>
+                </div>
+                <div class="path-actions">
+                  <button type="button" class="secondary" onclick="triggerDirectorySelection('localLlmScanRoot')">选择目录</button>
+                  <button type="button" class="secondary" onclick="applyKnownLocalPath('llm_root_lmstudio')">填入 LM Studio 模型目录</button>
+                  <button type="button" class="secondary" onclick="applyKnownLocalPath('llm_root_workspace_models')">填入工作区模型目录</button>
+                </div>
+
+                <label>扫描结果</label>
+                <select id="localLlmModelSelect" style="margin-top:6px;" onchange="applyLocalLlmModelSelection()">
+                  <option value="">-- 先扫描目录，再选择模型 --</option>
+                </select>
+
+                <label>模型路径</label>
+                <input id="localLlmModelPath" placeholder="扫描后会自动填入，也可手动修改为具体模型目录" />
+
+                <div class="row" style="margin-top:8px;">
+                  <div>
+                    <label>本地引擎</label>
+                    <select id="localLlmEngine">
+                      <option value="auto" selected>自动识别</option>
+                      <option value="mlx">MLX / MLX-LM</option>
+                      <option value="transformers">Transformers</option>
+                      <option value="gguf">GGUF / llama.cpp</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>本地推理设备</label>
+                    <select id="localLlmDevice">
+                      <option value="auto" selected>自动选择</option>
+                      <option value="mps">MPS（Apple Silicon）</option>
+                      <option value="cpu">CPU</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="model-actions-compact">
+                  <button type="button" data-busy-lock onclick="loadLocalLlmModel()">加载 / 检查本地模型</button>
+                  <button type="button" class="secondary" data-busy-lock onclick="unloadLocalLlmModel()">卸载本地模型</button>
+                  <button type="button" class="secondary" data-busy-lock onclick="testLLMAvailability()">测试可用性</button>
+                </div>
+                <div id="localLlmStatus" class="status-box">尚未连接本地模型服务</div>
+
+                <details class="advanced-toggle">
+                  <summary>显示高级配置</summary>
+                  <div class="advanced-body">
+                    <div class="row">
+                      <div>
+                        <label>上下文长度</label>
+                        <input id="localLlmCtxTokens" type="number" min="1024" step="1024" placeholder="例如 8192" />
+                      </div>
+                      <div>
+                        <label>GPU Layers</label>
+                        <input id="localLlmGpuLayers" type="number" min="-1" placeholder="GGUF 可用，-1 为尽量全上 GPU" />
+                      </div>
+                    </div>
+                    <div class="row" style="margin-top:8px;">
+                      <div>
+                        <label>Threads</label>
+                        <input id="localLlmThreads" type="number" min="1" placeholder="例如 4" />
+                      </div>
+                      <div>
+                        <label>Batch Size</label>
+                        <input id="localLlmBatchSize" type="number" min="1" step="64" placeholder="例如 512" />
+                      </div>
+                    </div>
+                    <div class="row" style="margin-top:8px;">
+                      <div>
+                        <label>推荐档位</label>
+                        <select id="localLlmLoadProfile">
+                          <option value="conservative">保守：优先稳定加载</option>
+                          <option value="balanced" selected>平衡：默认推荐</option>
+                          <option value="aggressive">激进：优先更长上下文和吞吐</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label>高级说明</label>
+                        <div class="mini-note" style="margin-top:10px;">会结合当前硬件环境、模型体积和你选择的档位来推荐参数。</div>
+                      </div>
+                    </div>
+                    <div class="model-actions-compact">
+                      <button type="button" class="secondary" data-busy-lock onclick="recommendDirectLlmLoadConfig()">智能推荐加载参数</button>
+                    </div>
+                    <div id="localLlmRecommendation" class="status-box">还没有生成智能推荐。扫描并选中模型后可根据当前硬件环境自动推荐加载参数。</div>
+
+                    <div class="row" style="margin-top:8px;">
+                      <div>
+                        <label>Temperature</label>
+                        <input id="localLlmTemperature" type="number" step="0.1" value="0.2" />
+                      </div>
+                      <div>
+                        <label>Max Tokens</label>
+                        <input id="localLlmMaxTokens" type="number" value="2000" />
+                      </div>
+                      <div>
+                        <label>并发数</label>
+                        <input id="localLlmWorkers" type="number" min="1" max="12" value="3" />
+                      </div>
+                    </div>
+
+                    <label>调用方式</label>
+                    <select id="localLlmCompatMode">
+                      <option value="chat_compat" selected>Chat 兼容模式</option>
+                      <option value="strict_json">严格 JSON</option>
+                    </select>
+
+                    <label>分析模式</label>
+                    <select id="localLlmAnalysisMode">
+                      <option value="stable" selected>稳定模式</option>
+                      <option value="balanced">标准模式</option>
+                      <option value="fast">快速模式</option>
+                    </select>
+
+                    <label>系统提示词（可选）</label>
+                    <textarea id="localLlmSystemPrompt" placeholder="留空则使用后端默认提示词"></textarea>
+                  </div>
+                </details>
+              </div>
+
+              <div id="externalLlmPanel" class="model-field-group" style="margin-top:14px;" hidden>
+                <h3>外部 Chat AI</h3>
+                <div class="mini-note">把固定提示词发给外部 Chat AI，再把返回的 JSON 导回本工具。</div>
+
+                <div class="model-actions-compact">
+                  <button type="button" data-busy-lock onclick="prepareExternalAnalysis()">生成提示词</button>
+                  <button type="button" class="secondary" onclick="copyExternalPrompt()">复制提示词</button>
+                  <button type="button" class="secondary" onclick="triggerExternalResultImport()">导入返回结果文件</button>
+                </div>
+                <div id="externalMeta" class="import-hint">点击生成后将完整原文接在提示词后面，发送给外部 Chat AI</div>
+
+                <details class="advanced-toggle">
+                  <summary>显示高级配置</summary>
+                  <div class="advanced-body">
+                    <div class="sub-grid">
+                      <div>
+                        <label>外部分析建议模式</label>
+                        <select id="externalAnalysisMode">
+                          <option value="stable">稳定模式</option>
+                          <option value="balanced" selected>标准模式</option>
+                          <option value="fast">快速模式</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label>外部 AI 参考 Max Tokens</label>
+                        <input id="externalMaxTokens" type="number" value="2000" />
+                      </div>
+                    </div>
+
+                    <label>外部 Chat AI 使用的系统提示词（可选）</label>
+                    <textarea id="externalSystemPrompt" placeholder="留空则使用系统默认的结构化分析提示词"></textarea>
+
+                    <label>发送给外部 Chat AI 的提示词</label>
+                    <textarea id="externalPromptText" style="min-height: 180px;" readonly placeholder='点击"生成外部分析提示词"后，这里会出现可直接发给外部 Chat AI 的内容'></textarea>
+
+                    <input id="externalResultFileInput" type="file" accept=".json,.txt,.md,text/plain,application/json,text/markdown" style="display:none;" onchange="handleExternalResultFileChange(event)" />
+
+                    <label>粘贴外部 AI 返回结果</label>
+                    <textarea id="externalResultText" style="min-height: 180px;" placeholder='请粘贴外部 Chat AI 返回的 JSON。可以是 {"segments":[...]} 或直接 [...]'></textarea>
+
+                    <div class="actions">
+                      <button type="button" data-busy-lock onclick="importExternalChunkResult()">导入结果</button>
+                      <button type="button" class="secondary" onclick="clearExternalImportedResults()">清空外部导入结果</button>
+                    </div>
+                  </div>
+                </details>
               </div>
             </div>
+          </div>
 
-            <label>外部 Chat AI 使用的系统提示词（可选）</label>
-            <textarea id=”externalSystemPrompt” placeholder=”留空则使用系统默认的结构化分析提示词”></textarea>
+          <div id="modelViewAudioGen" class="model-config-view" hidden>
+            <div class="model-panel-card">
+              <div class="model-section-head">
+                <h3>语音生成模型</h3>
+                <div class="pill">统一加载模块</div>
+              </div>
+              <div class="mini-note">默认先配置本地模型路径和推理设备。远程 API 与更细的控制项放在高级配置中。</div>
 
-            <div class=”actions”>
-              <button type=”button” data-busy-lock onclick=”prepareExternalAnalysis()”>生成外部分析提示词</button>
-              <button type=”button” class=”secondary” onclick=”copyExternalPrompt()”>复制提示词</button>
+              <div class="model-field-group">
+                <h3>必要配置</h3>
+                <label>运行方式</label>
+                <select id="audioBackendMode" onchange="renderBackendPanels()">
+                  <option value="local" selected>本地模型</option>
+                  <option value="remote">远程 API</option>
+                </select>
+
+                <div id="audioBackendLocalPanel">
+                  <label>本地模型位置</label>
+                  <input id="audioLocalModelPath" placeholder="留空则使用默认 k2-fsa/OmniVoice 或已缓存模型" />
+                  <div class="path-actions">
+                    <button type="button" class="secondary" onclick="triggerDirectorySelection('audioLocalModelPath')">选择目录</button>
+                    <button type="button" class="secondary" onclick="applyKnownLocalPath('audio_omnivoice_cache')">填入 OmniVoice 缓存</button>
+                  </div>
+
+                  <label>推理设备</label>
+                  <select id="inferenceDevice">
+                    <option value="auto" selected>自动选择（官方默认）</option>
+                    <option value="mps">MPS（Apple Silicon）</option>
+                    <option value="cpu">CPU</option>
+                    <option value="cuda">CUDA</option>
+                  </select>
+                  <div class="mini-note">默认自动检测 CUDA &gt; MPS &gt; CPU</div>
+                </div>
+
+                <div class="model-actions-compact">
+                  <button type="button" data-busy-lock onclick="loadAudioGenerationModel()">加载 / 检查模型</button>
+                  <button type="button" class="secondary" data-busy-lock onclick="unloadAudioGenerationModel()">卸载模型</button>
+                </div>
+                <div id="audioGenerationStatus" class="status-box">尚未检查语音生成模型。</div>
+
+                <details class="advanced-toggle">
+                  <summary>显示高级配置</summary>
+                  <div class="advanced-body">
+                    <div id="audioBackendRemotePanel" class="sub-card" hidden>
+                      <label>远程 Base URL</label>
+                      <input id="audioRemoteBaseUrl" placeholder="例如：http://127.0.0.1:8001" />
+                      <label>远程 API Key（可选）</label>
+                      <input id="audioRemoteApiKey" type="password" placeholder="如无需鉴权可留空" />
+                      <label>远程推理设备（可选）</label>
+                      <select id="audioRemoteInferenceDevice">
+                        <option value="">由远端自行决定</option>
+                        <option value="auto">自动选择</option>
+                        <option value="mps">MPS</option>
+                        <option value="cpu">CPU</option>
+                        <option value="cuda">CUDA</option>
+                      </select>
+                    </div>
+                  </div>
+                </details>
+              </div>
             </div>
+          </div>
 
-            <div id=”externalMeta” class=”import-hint”>点击生成后将完整原文接在提示词后面，发送给外部 Chat AI</div>
+          <div id="modelViewAudioRec" class="model-config-view" hidden>
+            <div class="model-panel-card">
+              <div class="model-section-head">
+                <h3>语音识别模型</h3>
+                <div class="pill">统一加载模块</div>
+              </div>
+              <div class="mini-note">识别模型用于参考音频转写。默认只显示模型路径和加载动作，运行方式与设备跟随语音生成模块中的音频后端配置。</div>
 
-            <label>发送给外部 Chat AI 的提示词</label>
-            <textarea id=”externalPromptText” style=”min-height: 180px;” readonly placeholder=”点击”生成外部分析提示词”后，这里会出现可直接发给外部 Chat AI 的内容”></textarea>
+              <div class="model-field-group">
+                <h3>必要配置</h3>
+                <label>本地模型位置</label>
+                <input id="audioRecognitionModelPath" placeholder="留空则使用默认 openai/whisper-large-v3-turbo 或已缓存模型" />
+                <div class="path-actions">
+                  <button type="button" class="secondary" onclick="triggerDirectorySelection('audioRecognitionModelPath')">选择目录</button>
+                  <button type="button" class="secondary" onclick="applyKnownLocalPath('audio_whisper_cache')">填入 Whisper 缓存</button>
+                </div>
 
-            <div class=”actions”>
-              <button type=”button” class=”secondary” onclick=”triggerExternalResultImport()”>导入返回结果文件</button>
+                <div class="model-actions-compact">
+                  <button type="button" data-busy-lock onclick="loadAudioRecognitionModel()">加载 / 检查模型</button>
+                  <button type="button" class="secondary" data-busy-lock onclick="unloadAudioRecognitionModel()">卸载模型</button>
+                </div>
+                <div id="audioRecognitionStatus" class="status-box">尚未检查语音识别模型。</div>
+
+                <details class="advanced-toggle">
+                  <summary>显示高级说明</summary>
+                  <div class="advanced-body">
+                    <div class="mini-note">语音识别模块默认复用“语音生成模型”里的运行方式和推理设备配置，因此这里只保留识别模型路径与加载动作，避免重复填写。</div>
+                  </div>
+                </details>
+              </div>
             </div>
+          </div>
 
-            <input id=”externalResultFileInput” type=”file” accept=”.json,.txt,.md,text/plain,application/json,text/markdown” style=”display:none;” onchange=”handleExternalResultFileChange(event)” />
-
-            <label>粘贴外部 AI 返回结果</label>
-            <textarea id=”externalResultText” style=”min-height: 180px;” placeholder='请粘贴外部 Chat AI 返回的 JSON。可以是 {“segments”:[...]} 或直接 [...]'></textarea>
-
-            <div class=”actions”>
-              <button type=”button” data-busy-lock onclick=”importExternalChunkResult()”>导入结果</button>
-              <button type=”button” class=”secondary” onclick=”clearExternalImportedResults()”>清空外部导入结果</button>
+          <div id="modelViewRuntime" class="model-config-view" hidden>
+            <div class="model-panel-card">
+              <div class="model-section-head">
+                <h3>运行状态</h3>
+                <div class="pill">系统监控</div>
+              </div>
+              <div class="mini-note">集中查看文本模型、语音生成模型、语音识别模型的加载状态和当前硬件资源，不再插在配置表单中间。</div>
+              <div class="model-actions-compact">
+                <button type="button" class="secondary" data-busy-lock onclick="refreshSystemStatus(true)">刷新硬件状态</button>
+              </div>
+              <div id="modelRuntimeStatus" class="status-box">尚未读取当前模型加载状态。</div>
+              <pre id="systemStatusPanel" class="status-pre">尚未读取硬件状态。</pre>
             </div>
           </div>
 
-          <hr style=”border-color:var(--line); margin:16px 0;” />
-          <div class=”actions” style=”margin-top:0;”>
-            <button type=”button” onclick=”saveConfig()”>保存全部配置</button>
-            <button type=”button” class=”secondary” onclick=”loadConfig()”>读取配置</button>
+          <div class="model-footer-actions">
+            <button type="button" onclick="saveConfig()">保存全部配置</button>
+            <button type="button" class="secondary" onclick="loadConfig()">读取配置</button>
           </div>
-        </div>
-
-        <div class=”card”>
-          <h2>音频生成后端</h2>
-          <div class=”mini-note”>选择本地或远程 OmniVoice 服务用于语音合成</div>
-
-          <label>运行方式</label>
-          <select id=”audioBackendMode” onchange=”renderBackendPanels()”>
-            <option value=”local” selected>本地 OmniVoice</option>
-            <option value=”remote”>远程 API</option>
-          </select>
-
-          <div id=”audioBackendLocalPanel”>
-            <label>推理设备</label>
-            <select id=”inferenceDevice”>
-              <option value=”auto” selected>自动选择（官方默认）</option>
-              <option value=”mps”>MPS（Apple Silicon）</option>
-              <option value=”cpu”>CPU</option>
-              <option value=”cuda”>CUDA</option>
-            </select>
-            <div class=”mini-note”>默认自动检测 CUDA &gt; MPS &gt; CPU</div>
-          </div>
-
-          <div id=”audioBackendRemotePanel” class=”sub-card” hidden>
-            <label>远程 Base URL</label>
-            <input id=”audioRemoteBaseUrl” placeholder=”例如：http://127.0.0.1:8001” />
-            <label>远程 API Key（可选）</label>
-            <input id=”audioRemoteApiKey” type=”password” placeholder=”如无需鉴权可留空” />
-            <label>远程推理设备（可选）</label>
-            <select id=”audioRemoteInferenceDevice”>
-              <option value=””>由远端自行决定</option>
-              <option value=”auto”>自动选择</option>
-              <option value=”mps”>MPS</option>
-              <option value=”cpu”>CPU</option>
-              <option value=”cuda”>CUDA</option>
-            </select>
-          </div>
-
-          <div class=”actions”>
-            <button type=”button” data-busy-lock onclick=”loadAudioGenerationModel()”>加载 / 检查音频生成模型</button>
-            <button type=”button” class=”secondary” data-busy-lock onclick=”unloadAudioGenerationModel()”>卸载音频生成模型</button>
-          </div>
-
-          <hr style=”border-color:var(--line); margin:16px 0;” />
-
-          <h2>音频识别模型</h2>
-          <div class=”mini-note”>本地 Whisper ASR 模型，用于批量导入时自动转写 ref_text</div>
-          <div class=”actions”>
-            <button type=”button” data-busy-lock onclick=”loadAudioRecognitionModel()”>加载 / 检查音频识别模型</button>
-            <button type=”button” class=”secondary” data-busy-lock onclick=”unloadAudioRecognitionModel()”>卸载音频识别模型</button>
-          </div>
-
-          <hr style=”border-color:var(--line); margin:16px 0;” />
-
-          <h2>硬件状态</h2>
-          <div class=”mini-note”>手动读取本机 CPU/内存/显存等状态，不会自动刷新</div>
-          <div class=”actions”>
-            <button type=”button” class=”secondary” data-busy-lock onclick=”refreshSystemStatus(true)”>刷新硬件状态</button>
-          </div>
-          <div id=”modelRuntimeStatus” class=”import-hint” style=”margin-top:10px; white-space:pre-line;”>尚未读取当前模型加载状态。</div>
-          <pre id=”systemStatusPanel” class=”import-hint” style=”white-space:pre-wrap; min-height:140px;”>尚未读取硬件状态。</pre>
         </div>
       </div>
     </div>
 
-    <div id="analysisTab" class="workspace-tab-panel">
+    <div id="analysisTab" class="workspace-tab-panel" hidden>
       <div class="analysis-grid">
         <div class="card">
           <h2>文本分析</h2>
-          <div class=”mini-note”>输入原文，完成分段、语音适配和角色分析</div>
+          <div class="mini-note">输入原文，完成分段、语音适配和角色分析</div>
 
           <div id="sourceInputPanel">
             <h2>文本输入</h2>
@@ -1245,11 +1651,11 @@
               <button type="button" class="secondary" onclick="continueAnalysis()">继续上次分析</button>
               <button type="button" class="secondary" onclick="exportAnalyzedJson()">导出已分析 JSON</button>
             </div>
-            <div id=”sourceImportHint” class=”import-hint”>支持 .txt / .md 文件导入。小模型建议使用「稳定模式」+「Chat 兼容模式」</div>
+            <div id="sourceImportHint" class="import-hint">支持 .txt / .md 文件导入。小模型建议使用「稳定模式」+「Chat 兼容模式」</div>
             <div id="analysisPipelineMeta" class="import-hint" style="margin-top:10px;">当前尚未执行智能分段。</div>
           </div>
 
-          <div id="status" class="status">等待操作…</div>
+          <div id="status" class="status" hidden>等待操作…</div>
         </div>
 
         <div class="card">
@@ -1285,7 +1691,7 @@
     <div id="audioTab" class="workspace-tab-panel" hidden>
       <div class="card">
         <h2>音频生成</h2>
-        <div class=”muted”>分配角色声音、试听和生成完整音频。后端设置请到「模型配置」标签页</div>
+        <div class="muted">分配角色声音、试听和生成完整音频。后端设置请到「模型配置」标签页</div>
 
         <label>输出文件名</label>
         <input id="outputName" value="novel_demo" />
@@ -1341,7 +1747,7 @@
           </div>
           <div>
             <label>说明</label>
-            <div class=”mini-note”>按规则匹配声音；勾选旁白兜底会在常规匹配后补充分配</div>
+            <div class="mini-note">按规则匹配声音；勾选旁白兜底会在常规匹配后补充分配</div>
           </div>
         </div>
 
@@ -1389,8 +1795,10 @@
   let taskCancelled = false;
   let taskStartTime = null;
   let taskElapsedTimer = null;
-  let analysisSourceMode = "direct";
-  let activeWorkspaceTab = "analysis";
+  let pendingProgressAutoExpandTimer = null;
+  let analysisSourceMode = "openai_compat";
+  let activeWorkspaceTab = "models";
+  let activeModelsConfigView = "text";
   let externalPromptChunks = [];
   let externalCurrentChunkIndex = 0;
   let externalImportedSegments = [];
@@ -1400,11 +1808,14 @@
   let roleVoiceAssignments = {};
   let plannedChunksState = [];
   let optimizedChunksState = [];
+  let segmentationInfoState = null;
   let pendingVoiceLibraryFileIndex = -1;
   let editingVoiceLibraryIndex = -1;
   let modelRuntimeState = null;
   let systemStatusState = null;
   let toastTimerSeed = 0;
+  let pendingDirectorySelectionTarget = "";
+  let localPathPresetsCache = null;
 
   const PARSE_SNAPSHOT_STORAGE_KEY = "ov_parse_snapshot";
   const LAST_SEGMENTS_STORAGE_KEY = "ov_last_segments";
@@ -1413,6 +1824,8 @@
   const LLM_DEFAULTS_STORAGE_KEY = "ov_llm_defaults_loaded";
   const AUDIO_BACKEND_STORAGE_KEY = "ov_audio_backend_config";
   const DESIGN_VOICE_ID = "__design_voice__";
+  const TASK_AUTO_EXPAND_DELAY_MS = 3000;
+  const MODELS_CONFIG_VIEW_STORAGE_KEY = "ov_models_config_view";
 
   const progressState = {
     mode: "idle",
@@ -1436,7 +1849,7 @@
     { key: "synthesize", title: "声音生成", desc: "逐段生成角色语音" },
     { key: "merge", title: "音频拼接", desc: "合并分段并刷新试听" },
   ];
-  const LLM_TEST_TEXT = "旁白：清晨的风吹过广场。李四说：“今天就开始行动吧。”张三点了点头。";
+  const LLM_TEST_TEXT = '旁白：清晨的风吹过广场。李四说：”今天就开始行动吧。”张三点了点头。';
   const DEFAULT_EXTERNAL_ANALYSIS_PROMPT = `你是一个“小说/对白文本分析器”。
 请把用户提供的原文分析成适合 TTS 的 JSON 结构。
 
@@ -1456,10 +1869,8 @@
 3. speaker 只填角色名或“旁白”。
 4. emotion 只能从以下值中选：neutral, soft, cold, serious, curious, angry
 5. style 必须只使用以下英文标签，且用英文逗号+空格分隔：
-american accent, australian accent, british accent, canadian accent,
-child, chinese accent, elderly, female, high pitch, indian accent,
-japanese accent, korean accent, low pitch, male, middle-aged,
-moderate pitch, portuguese accent, russian accent, teenager,
+child, elderly, female, high pitch, low pitch, male, middle-aged,
+moderate pitch, teenager,
 very high pitch, very low pitch, whisper, young adult
 6. 不要输出任何解释、注释、markdown，只输出 JSON。
 7. 如果无法判断，说话内容归为“旁白”。
@@ -1500,21 +1911,6 @@ very high pitch, very low pitch, whisper, young adult
       title: "风格",
       tags: [
         ["whisper", "耳语"],
-      ],
-    },
-    {
-      title: "口音",
-      tags: [
-        ["chinese accent", "中文口音"],
-        ["american accent", "美式口音"],
-        ["australian accent", "澳式口音"],
-        ["british accent", "英式口音"],
-        ["canadian accent", "加拿大口音"],
-        ["indian accent", "印度口音"],
-        ["japanese accent", "日式口音"],
-        ["korean accent", "韩式口音"],
-        ["portuguese accent", "葡语口音"],
-        ["russian accent", "俄式口音"],
       ],
     },
   ];
@@ -1727,6 +2123,7 @@ very high pitch, very low pitch, whisper, young adult
 
     renderSteps();
     renderTimeline();
+    updateCollapseBar();
   }
 
   function renderProgress() {
@@ -1748,6 +2145,7 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function resetProgress(mode = "idle") {
+    clearPendingTaskAutoExpand();
     progressState.mode = mode;
     progressState.stage = "idle";
     progressState.summary = "就绪，等待任务";
@@ -1764,6 +2162,124 @@ very high pitch, very low pitch, whisper, young adult
       progressState.logs = [];
     }
     renderProgress();
+    updateCollapseBar();
+  }
+
+  /* ===== Collapsible progress panel ===== */
+  function toggleProgressPanel(e) {
+    if (e && (e.target.tagName === "INPUT" || e.target.tagName === "LABEL")) return;
+    const shell = document.getElementById("progressShell");
+    shell.classList.toggle("collapsed");
+    localStorage.setItem("progressPanelCollapsed", shell.classList.contains("collapsed") ? "1" : "0");
+  }
+
+  function expandProgressPanel() {
+    const shell = document.getElementById("progressShell");
+    if (shell.classList.contains("collapsed")) {
+      shell.classList.remove("collapsed");
+      localStorage.setItem("progressPanelCollapsed", "0");
+    }
+  }
+
+  function collapseProgressPanel() {
+    const shell = document.getElementById("progressShell");
+    if (!shell.classList.contains("collapsed")) {
+      shell.classList.add("collapsed");
+      localStorage.setItem("progressPanelCollapsed", "1");
+    }
+  }
+
+  function updateCollapseBar() {
+    const phaseMap = {
+      idle: "空闲", prepare: "准备中", analyze: "分析中",
+      synthesize: "生成中", merge: "拼接中", done: "已完成", error: "失败"
+    };
+    const txt = document.getElementById("collapseSummaryText");
+    const phase = document.getElementById("collapsePhase");
+    if (txt) {
+      const pct = progressState.percent || 0;
+      const stageLabel = phaseMap[progressState.stage] || "处理中";
+      if (progressState.stage === "idle") {
+        txt.textContent = progressState.summary;
+      } else {
+        txt.textContent = `${progressState.summary}  —  ${pct}%  (${progressState.done || 0}/${progressState.total || 0})`;
+      }
+    }
+    if (phase) {
+      phase.textContent = phaseMap[progressState.stage] || "处理中";
+    }
+  }
+
+  function saveAutoExpandPref() {
+    const enabled = document.getElementById("autoExpandCheck").checked;
+    localStorage.setItem("progressAutoExpand", enabled ? "1" : "0");
+    if (!enabled) {
+      clearPendingTaskAutoExpand();
+    }
+  }
+
+  function clearPendingTaskAutoExpand() {
+    if (pendingProgressAutoExpandTimer) {
+      clearTimeout(pendingProgressAutoExpandTimer);
+      pendingProgressAutoExpandTimer = null;
+    }
+  }
+
+  function scheduleTaskAutoExpand(summary) {
+    clearPendingTaskAutoExpand();
+    if (!document.getElementById("autoExpandCheck").checked) {
+      return;
+    }
+    showToast(`任务已开始：${summary}`, "info", 1800);
+    pendingProgressAutoExpandTimer = window.setTimeout(() => {
+      pendingProgressAutoExpandTimer = null;
+      if (!taskBusy) return;
+      expandProgressPanel();
+      document.getElementById("progressShell").scrollIntoView({ behavior: "smooth", block: "start" });
+      showToast("任务耗时较长，已展开当前任务面板。", "info", 2200);
+    }, TASK_AUTO_EXPAND_DELAY_MS);
+  }
+
+  function shouldShowQuickTaskToast() {
+    if (!taskStartTime) return false;
+    return (Date.now() - taskStartTime) < TASK_AUTO_EXPAND_DELAY_MS;
+  }
+
+  function saveNotifyPref() {
+    const cb = document.getElementById("notifyOnDoneCheck");
+    if (cb.checked && Notification.permission === "default") {
+      Notification.requestPermission().then(p => {
+        if (p !== "granted") cb.checked = false;
+        localStorage.setItem("progressNotifyOnDone", cb.checked ? "1" : "0");
+      });
+    } else {
+      localStorage.setItem("progressNotifyOnDone", cb.checked ? "1" : "0");
+    }
+  }
+
+  function initProgressPanelPrefs() {
+    const collapsed = localStorage.getItem("progressPanelCollapsed");
+    const shell = document.getElementById("progressShell");
+    if (collapsed === "0") {
+      shell.classList.remove("collapsed");
+    } else {
+      shell.classList.add("collapsed");
+    }
+    const autoExpand = localStorage.getItem("progressAutoExpand");
+    document.getElementById("autoExpandCheck").checked = autoExpand !== "0";
+    const notify = localStorage.getItem("progressNotifyOnDone");
+    document.getElementById("notifyOnDoneCheck").checked = notify === "1";
+  }
+
+  function sendTaskNotification(title, body) {
+    if (!document.getElementById("notifyOnDoneCheck").checked) return;
+    if (Notification.permission !== "granted") return;
+    try {
+      new Notification(title, {
+        body,
+        icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>"
+      });
+    } catch (_) {}
   }
 
   function beginTask(mode, summary, detail) {
@@ -1781,9 +2297,12 @@ very high pitch, very low pitch, whisper, young adult
       done: 0,
       indeterminate: false,
     }, { log: summary });
+    scheduleTaskAutoExpand(summary);
   }
 
   function finishTask(summary, detail, options = {}) {
+    const shouldToastQuickDone = shouldShowQuickTaskToast();
+    clearPendingTaskAutoExpand();
     stopElapsedTimer();
     setProgress({
       stage: "done",
@@ -1796,9 +2315,15 @@ very high pitch, very low pitch, whisper, young adult
     }, { log: summary });
     setBusy(false);
     activeAbortController = null;
+    if (shouldToastQuickDone) {
+      showToast(`任务已完成：${summary}`, "info", 1800);
+    }
+    sendTaskNotification("任务完成 ✓", summary);
   }
 
   function failTask(summary, errorMessage) {
+    const shouldToastQuickDone = shouldShowQuickTaskToast();
+    clearPendingTaskAutoExpand();
     stopElapsedTimer();
     setProgress({
       stage: "error",
@@ -1808,6 +2333,10 @@ very high pitch, very low pitch, whisper, young adult
     }, { log: `${summary}：${errorMessage}` });
     setBusy(false);
     activeAbortController = null;
+    if (shouldToastQuickDone) {
+      showToast(`任务失败：${summary}`, "info", 2200);
+    }
+    sendTaskNotification("任务失败 ✗", `${summary}：${errorMessage}`);
   }
 
   function setStatus(msg) {
@@ -1851,11 +2380,37 @@ very high pitch, very low pitch, whisper, young adult
       el.textContent = "当前尚未执行智能分段。建议先分段，再做语音适配优化，最后分析角色。";
       return;
     }
-    el.textContent = `智能分段：${plannedCount} 块；语音适配优化：${optimizedCount || 0} 块；角色分析结果：${segmentCount} 段。`;
+    const info = segmentationInfoState || {};
+    const detectMethodMap = {
+      heading: "章节规则",
+      scene_break: "场景分隔符",
+      paragraph: "段落聚合",
+      fallback_single: "单块回退",
+    };
+    const methodLabel = detectMethodMap[info.method] || "未知";
+    const detailParts = [
+      `智能分段：${plannedCount} 块`,
+      `语音适配优化：${optimizedCount || 0} 块`,
+      `角色分析结果：${segmentCount} 段`,
+      `预切块方式：${methodLabel}`,
+    ];
+    if (info.heading_pattern && info.heading_pattern !== "none") {
+      detailParts.push(`章节规则：${info.heading_pattern}`);
+    }
+    if (info.chapter_count) {
+      detailParts.push(`章节数：${info.chapter_count}`);
+    }
+    if (info.seed_chunk_count) {
+      detailParts.push(`LLM 前工作块：${info.seed_chunk_count}`);
+    }
+    if (info.used_llm_detection && info.llm_pattern && info.llm_pattern !== "none") {
+      detailParts.push(`抽样辅助判断：${info.llm_pattern}`);
+    }
+    el.textContent = detailParts.join("；");
   }
 
   function setWorkspaceTab(tab) {
-    activeWorkspaceTab = ["models", "analysis", "audio", "library"].includes(tab) ? tab : "analysis";
+    activeWorkspaceTab = ["models", "analysis", "audio", "library"].includes(tab) ? tab : "models";
     document.getElementById("tabModelsBtn").classList.toggle("active", activeWorkspaceTab === "models");
     document.getElementById("tabAnalysisBtn").classList.toggle("active", activeWorkspaceTab === "analysis");
     document.getElementById("tabAudioBtn").classList.toggle("active", activeWorkspaceTab === "audio");
@@ -1864,6 +2419,19 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("analysisTab").hidden = activeWorkspaceTab !== "analysis";
     document.getElementById("audioTab").hidden = activeWorkspaceTab !== "audio";
     document.getElementById("libraryTab").hidden = activeWorkspaceTab !== "library";
+  }
+
+  function setModelsConfigView(view) {
+    activeModelsConfigView = ["text", "audio_gen", "audio_rec", "runtime"].includes(view) ? view : "text";
+    document.getElementById("modelViewTextBtn").classList.toggle("active", activeModelsConfigView === "text");
+    document.getElementById("modelViewAudioGenBtn").classList.toggle("active", activeModelsConfigView === "audio_gen");
+    document.getElementById("modelViewAudioRecBtn").classList.toggle("active", activeModelsConfigView === "audio_rec");
+    document.getElementById("modelViewRuntimeBtn").classList.toggle("active", activeModelsConfigView === "runtime");
+    document.getElementById("modelViewText").hidden = activeModelsConfigView !== "text";
+    document.getElementById("modelViewAudioGen").hidden = activeModelsConfigView !== "audio_gen";
+    document.getElementById("modelViewAudioRec").hidden = activeModelsConfigView !== "audio_rec";
+    document.getElementById("modelViewRuntime").hidden = activeModelsConfigView !== "runtime";
+    localStorage.setItem(MODELS_CONFIG_VIEW_STORAGE_KEY, activeModelsConfigView);
   }
 
   function saveParseSnapshot(snapshot) {
@@ -1905,14 +2473,14 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function setAnalysisSourceMode(mode) {
-    const validModes = ["local", "remote", "external"];
+    const validModes = ["openai_compat", "direct", "external"];
     // Map legacy mode names
-    if (mode === "direct") mode = "remote";
-    analysisSourceMode = validModes.includes(mode) ? mode : "remote";
+    if (mode === "local" || mode === "remote") mode = "openai_compat";
+    analysisSourceMode = validModes.includes(mode) ? mode : "openai_compat";
     const selector = document.getElementById("llmBackendMode");
     if (selector) selector.value = analysisSourceMode;
-    document.getElementById("localLlmPanel").hidden = analysisSourceMode !== "local";
-    document.getElementById("directLlmPanel").hidden = analysisSourceMode !== "remote";
+    document.getElementById("openAiCompatLlmPanel").hidden = analysisSourceMode !== "openai_compat";
+    document.getElementById("localLlmPanel").hidden = analysisSourceMode !== "direct";
     document.getElementById("externalLlmPanel").hidden = analysisSourceMode !== "external";
     if (analysisSourceMode === "external") {
       document.getElementById("externalAnalysisMode").value = document.getElementById("analysisMode").value || "balanced";
@@ -1924,34 +2492,172 @@ very high pitch, very low pitch, whisper, young adult
     }
   }
 
-  async function fetchLocalLlmModels() {
-    if (taskBusy) return;
-    const baseUrl = document.getElementById("localLlmBaseUrl").value.trim();
-    const apiKey = document.getElementById("localLlmApiKey").value.trim();
-    if (!baseUrl) {
-      setStatus("请先填写本地服务地址。");
+  async function getLocalPathPresets(forceRefresh = false) {
+    if (!forceRefresh && localPathPresetsCache) {
+      return localPathPresetsCache;
+    }
+    const data = await fetchGetJson("/api/local-path-presets");
+    localPathPresetsCache = data.presets || {};
+    return localPathPresetsCache;
+  }
+
+  function setTargetPathValue(targetId, path) {
+    const input = document.getElementById(targetId);
+    if (!input) return;
+    input.value = path;
+    if (targetId === "localLlmScanRoot") {
+      document.getElementById("localLlmStatus").textContent = `已填入模型根目录：${path}`;
+      setAnalysisSourceMode("direct");
+    } else if (targetId === "audioLocalModelPath") {
+      document.getElementById("audioGenerationStatus").textContent = `已填入语音生成模型路径：${path}`;
+    } else if (targetId === "audioRecognitionModelPath") {
+      document.getElementById("audioRecognitionStatus").textContent = `已填入语音识别模型路径：${path}`;
+    }
+  }
+
+  function resolveSelectedDirectoryPath(file) {
+    if (!file || !file.path) return "";
+    const fullPath = String(file.path).replaceAll("\\", "/");
+    const relative = String(file.webkitRelativePath || file.name || "").replaceAll("\\", "/");
+    if (!relative) {
+      const cutIndex = fullPath.lastIndexOf("/");
+      return cutIndex > 0 ? fullPath.slice(0, cutIndex) : fullPath;
+    }
+    const rootName = relative.split("/")[0];
+    const base = fullPath.endsWith(relative) ? fullPath.slice(0, fullPath.length - relative.length) : "";
+    if (base && rootName) {
+      return `${base}${rootName}`.replace(/\/+$/, "");
+    }
+    const cutIndex = fullPath.lastIndexOf("/");
+    return cutIndex > 0 ? fullPath.slice(0, cutIndex) : fullPath;
+  }
+
+  function triggerDirectorySelection(targetId) {
+    pendingDirectorySelectionTarget = targetId;
+    const input = document.getElementById("directoryPickerInput");
+    input.value = "";
+    input.dataset.target = targetId;
+    input.click();
+  }
+
+  function handleDirectorySelection(event) {
+    const input = event.target;
+    const targetId = input.dataset.target || pendingDirectorySelectionTarget;
+    const file = input.files && input.files[0];
+    pendingDirectorySelectionTarget = "";
+    input.dataset.target = "";
+    if (!file || !targetId) {
+      input.value = "";
       return;
     }
-    beginTask("parse", "正在获取本地模型列表", `正在连接 ${baseUrl} 查询可用模型...`);
+    const resolved = resolveSelectedDirectoryPath(file);
+    if (!resolved) {
+      showToast("当前环境无法从文件选择器读取绝对目录路径，请直接粘贴目录路径。", "info", 2600);
+      setStatus("目录选择器未返回可用的绝对路径，请直接粘贴目录路径。");
+      input.value = "";
+      return;
+    }
+    setTargetPathValue(targetId, resolved);
+    setStatus(`已选择目录：${resolved}`);
+    showToast("已从文件浏览器填入目录路径。", "info", 1800);
+    input.value = "";
+  }
+
+  async function applyKnownLocalPath(kind) {
+    const presets = await getLocalPathPresets();
+    const preset = presets[kind];
+    if (!preset || !preset.path) {
+      showToast("当前环境未检测到这个推荐路径，请手动选择或粘贴目录。", "info", 2400);
+      setStatus("当前环境未检测到这个推荐路径，请手动选择或粘贴目录。");
+      return;
+    }
+
+    if (!preset.exists || !preset.is_dir) {
+      const note = preset.note ? ` ${preset.note}` : "";
+      showToast(`推荐路径当前不可用：${preset.path}`, "info", 2600);
+      setStatus(`检测到该推荐路径当前不可用：${preset.path}。请手动选择目录。${note}`);
+      return;
+    }
+
+    if (kind.startsWith("llm_root_")) {
+      setTargetPathValue("localLlmScanRoot", preset.path);
+    } else if (kind === "audio_omnivoice_cache") {
+      setTargetPathValue("audioLocalModelPath", preset.path);
+    } else if (kind === "audio_whisper_cache") {
+      setTargetPathValue("audioRecognitionModelPath", preset.path);
+    }
+    setStatus(`已填入推荐路径：${preset.path}`);
+  }
+
+  async function fetchOpenAiCompatModels() {
+    if (taskBusy) return;
+    const baseUrl = document.getElementById("baseUrl").value.trim();
+    const apiKey = document.getElementById("apiKey").value.trim();
+    if (!baseUrl) {
+      setStatus("请先填写 OpenAI 兼容接口的 Base URL。");
+      return;
+    }
+    beginTask("parse", "正在获取 OpenAI 兼容模型列表", `正在连接 ${baseUrl} 查询可用模型...`);
     try {
       const data = await fetchJson("/api/llm/list-models", { base_url: baseUrl, api_key: apiKey || null });
       const models = data.models || [];
-      const select = document.getElementById("localLlmModelSelect");
+      const select = document.getElementById("openAiModelSelect");
       select.innerHTML = models.length
         ? models.map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.id)}${m.owned_by ? ` (${escapeHtml(m.owned_by)})` : ""}</option>`).join("")
         : `<option value="">未找到可用模型</option>`;
       if (models.length) {
         select.value = models[0].id;
-        document.getElementById("localLlmModelPath").value = models[0].id;
+        document.getElementById("model").value = models[0].id;
       }
-      document.getElementById("localLlmStatus").textContent = `已连接，发现 ${models.length} 个可用模型`;
-      setStatus(`本地服务连接成功，共发现 ${models.length} 个模型。`);
-      finishTask(`本地模型列表获取成功`, `${baseUrl} 返回 ${models.length} 个可用模型`, { total: 1, done: 1 });
+      document.getElementById("openAiCompatStatus").textContent = `已连接，发现 ${models.length} 个可用模型`;
+      setStatus(`OpenAI 兼容接口连接成功，共发现 ${models.length} 个模型。`);
+      finishTask(`模型列表获取成功`, `${baseUrl} 返回 ${models.length} 个可用模型`, { total: 1, done: 1 });
     } catch (err) {
       if (isTaskCancelledError(err)) return;
-      document.getElementById("localLlmStatus").textContent = `连接失败：${err.message}`;
-      setStatus(`获取本地模型列表失败：${err.message}`);
-      failTask("获取本地模型列表失败", err.message);
+      document.getElementById("openAiCompatStatus").textContent = `连接失败：${err.message}`;
+      setStatus(`获取模型列表失败：${err.message}`);
+      failTask("获取模型列表失败", err.message);
+    }
+  }
+
+  function applyOpenAiModelSelection() {
+    const select = document.getElementById("openAiModelSelect");
+    if (select.value) {
+      document.getElementById("model").value = select.value;
+    }
+  }
+
+  async function scanDirectLlmModels() {
+    if (taskBusy) return;
+    const rootPath = document.getElementById("localLlmScanRoot").value.trim();
+    if (!rootPath) {
+      setStatus("请先填写要扫描的模型根目录。");
+      return;
+    }
+    beginTask("parse", "正在扫描本地模型目录", `正在扫描 ${rootPath} 下可直接加载的模型...`);
+    try {
+      const data = await fetchJson("/api/llm/scan-local-models", { root_path: rootPath });
+      const models = data.models || [];
+      const select = document.getElementById("localLlmModelSelect");
+      select.innerHTML = models.length
+        ? models.map((item) => {
+            const tag = item.supported ? `${item.name} [${item.engine}]` : `${item.name} [${item.engine} / 暂不支持]`;
+            return `<option value="${escapeHtml(item.path)}" data-engine="${escapeHtml(item.engine || "auto")}" data-supported="${item.supported ? "1" : "0"}" data-note="${escapeHtml(item.note || "")}">${escapeHtml(tag)}</option>`;
+          }).join("")
+        : `<option value="">未扫描到可识别模型</option>`;
+      if (models.length) {
+        select.value = models[0].path;
+        applyLocalLlmModelSelection();
+      } else {
+        document.getElementById("localLlmStatus").textContent = `目录已扫描完成，但 ${rootPath} 下没有发现可识别模型。`;
+      }
+      setStatus(`目录扫描完成，共识别 ${models.length} 个模型候选。`);
+      finishTask("本地模型目录扫描完成", `${rootPath} 下识别到 ${models.length} 个模型候选。`, { total: 1, done: 1 });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      document.getElementById("localLlmStatus").textContent = `扫描失败：${err.message}`;
+      setStatus(`扫描本地模型目录失败：${err.message}`);
+      failTask("扫描本地模型目录失败", err.message);
     }
   }
 
@@ -1959,26 +2665,107 @@ very high pitch, very low pitch, whisper, young adult
     const select = document.getElementById("localLlmModelSelect");
     if (select.value) {
       document.getElementById("localLlmModelPath").value = select.value;
+      const engine = select.selectedOptions[0]?.dataset?.engine || "auto";
+      const supported = select.selectedOptions[0]?.dataset?.supported === "1";
+      const note = select.selectedOptions[0]?.dataset?.note || "";
+      if (engine && engine !== "unknown" && engine !== "gguf") {
+        document.getElementById("localLlmEngine").value = engine;
+      } else if (engine === "gguf") {
+        document.getElementById("localLlmEngine").value = "gguf";
+      }
+      document.getElementById("localLlmStatus").textContent = supported
+        ? `已选择模型：${select.value}${note ? `\n${note}` : ""}`
+        : `当前选择暂不支持直接加载：${select.value}${note ? `\n${note}` : ""}`;
+    }
+  }
+
+  function buildDirectLlmConfig() {
+    return {
+      model: document.getElementById("localLlmModelPath").value.trim(),
+      local_model_path: document.getElementById("localLlmModelPath").value.trim() || null,
+      local_runtime: "direct",
+      local_load_profile: document.getElementById("localLlmLoadProfile").value || "balanced",
+      local_engine: (() => {
+        const value = document.getElementById("localLlmEngine").value || "auto";
+        return value === "auto" ? null : value;
+      })(),
+      local_device: (() => {
+        const value = document.getElementById("localLlmDevice").value || "auto";
+        return value === "auto" ? null : value;
+      })(),
+      local_ctx_tokens: parseInt(document.getElementById("localLlmCtxTokens").value || "", 10) || null,
+      local_gpu_layers: (() => {
+        const raw = document.getElementById("localLlmGpuLayers").value;
+        return raw === "" ? null : parseInt(raw, 10);
+      })(),
+      local_threads: parseInt(document.getElementById("localLlmThreads").value || "", 10) || null,
+      local_batch_size: parseInt(document.getElementById("localLlmBatchSize").value || "", 10) || null,
+      temperature: parseFloat(document.getElementById("localLlmTemperature").value || "0.2"),
+      max_tokens: parseInt(document.getElementById("localLlmMaxTokens").value || "2000", 10),
+      workers: parseInt(document.getElementById("localLlmWorkers").value || "3", 10),
+      compatibility_mode: document.getElementById("localLlmCompatMode").value || "chat_compat",
+      analysis_mode: document.getElementById("localLlmAnalysisMode").value || "stable",
+      system_prompt: document.getElementById("localLlmSystemPrompt").value.trim() || null,
+      base_url: "",
+      api_key: "",
+    };
+  }
+
+  async function recommendDirectLlmLoadConfig() {
+    if (taskBusy) return;
+    const llm = buildDirectLlmConfig();
+    if (!llm.local_model_path) {
+      setStatus("请先扫描目录并选择模型，再生成智能推荐。");
+      return;
+    }
+    beginTask("parse", "正在分析本地模型加载参数", "将结合当前硬件环境和模型大小生成推荐加载参数。");
+    try {
+      const data = await fetchJson("/api/llm/recommend-load-config", { llm });
+      const rec = data.recommendation || {};
+      document.getElementById("localLlmEngine").value = rec.engine || "auto";
+      document.getElementById("localLlmDevice").value = rec.device || "auto";
+      document.getElementById("localLlmLoadProfile").value = rec.profile || "balanced";
+      document.getElementById("localLlmCtxTokens").value = rec.ctx_tokens ?? "";
+      document.getElementById("localLlmGpuLayers").value = rec.gpu_layers ?? "";
+      document.getElementById("localLlmThreads").value = rec.threads ?? "";
+      document.getElementById("localLlmBatchSize").value = rec.batch_size ?? "";
+      if (rec.workers) {
+        document.getElementById("localLlmWorkers").value = rec.workers;
+      }
+      const reasoning = Array.isArray(rec.reasoning) ? rec.reasoning : [];
+      const detail = [
+        `推荐档位：${rec.profile === "conservative" ? "保守" : rec.profile === "aggressive" ? "激进" : "平衡"}`,
+        `推荐引擎：${rec.engine || "auto"}`,
+        `推荐设备：${rec.device || "auto"}`,
+        `上下文长度：${rec.ctx_tokens ?? "-"}`,
+        `GPU Layers：${rec.gpu_layers ?? "-"}`,
+        `Threads：${rec.threads ?? "-"}`,
+        `Batch Size：${rec.batch_size ?? "-"}`,
+        rec.hardware_summary ? `硬件摘要：${rec.hardware_summary}` : "",
+        rec.model_size_gb != null ? `模型体积：${rec.model_size_gb} GB` : "",
+        rec.engine === "gguf" && (rec.model_size_gb || 0) >= 12 ? "任务保护：智能分段、语音适配和角色分析会自动切换到更保守的 GGUF 任务参数后再重试。" : "",
+        reasoning.length ? `分析结论：${reasoning.join(" ")}` : "",
+        !reasoning.length && rec.note ? rec.note : "",
+      ].filter(Boolean).join("\n");
+      document.getElementById("localLlmRecommendation").textContent = detail;
+      document.getElementById("localLlmStatus").textContent = `已根据当前硬件环境生成推荐参数。`;
+      setStatus("已生成本地模型智能加载参数推荐。");
+      finishTask("智能推荐已生成", detail, { total: 1, done: 1 });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      document.getElementById("localLlmRecommendation").textContent = `推荐失败：${err.message}`;
+      setStatus(`智能推荐加载参数失败：${err.message}`);
+      failTask("智能推荐加载参数失败", err.message);
     }
   }
 
   async function loadLocalLlmModel() {
     if (taskBusy) return;
-    const baseUrl = document.getElementById("localLlmBaseUrl").value.trim();
-    const apiKey = document.getElementById("localLlmApiKey").value.trim();
     const modelPath = document.getElementById("localLlmModelPath").value.trim();
-    if (!baseUrl) {
-      setStatus("请先填写本地服务地址。");
-      return;
-    }
     if (!modelPath) {
-      setStatus("请先选择或填写模型路径/名称。");
+      setStatus("请先扫描目录并选择模型，或手动填写具体模型目录。");
       return;
     }
-    // Sync local config to the main LLM config fields so analysis functions can use them
-    document.getElementById("baseUrl").value = baseUrl;
-    document.getElementById("apiKey").value = apiKey || "local";
-    document.getElementById("model").value = modelPath;
     document.getElementById("temperature").value = document.getElementById("localLlmTemperature").value || "0.2";
     document.getElementById("maxTokens").value = document.getElementById("localLlmMaxTokens").value || "2000";
     document.getElementById("llmWorkers").value = document.getElementById("localLlmWorkers").value || "3";
@@ -1986,18 +2773,48 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("analysisMode").value = document.getElementById("localLlmAnalysisMode").value || "stable";
     document.getElementById("systemPrompt").value = document.getElementById("localLlmSystemPrompt").value || "";
 
-    beginTask("parse", "正在检查本地模型可用性", `正在验证 ${baseUrl} 上的模型 ${modelPath} 是否可用...`);
+    beginTask("parse", "正在直接加载本地文本模型", `正在直接加载本地模型目录 ${modelPath}...`);
     try {
       const llm = getLLMConfig();
-      const resp = await fetchJson("/api/test-connectivity", { llm });
-      document.getElementById("localLlmStatus").textContent = `模型已就绪：${modelPath}`;
-      setStatus(`本地模型 ${modelPath} 验证通过：${resp.message || "响应正常"}`);
-      finishTask("本地模型检查通过", `${modelPath} 已就绪，可以开始文本分析`, { total: 1, done: 1 });
+      const resp = await fetchJson("/api/model/load-llm", { llm });
+      const fallbackNote = resp.last_fallback && resp.last_fallback.to_batch_size
+        ? `\n自动降档：因 ${resp.last_fallback.reason || "解码失败"}，batch 已从 ${resp.last_fallback.from_batch_size ?? "-"} 调整到 ${resp.last_fallback.to_batch_size ?? "-"}`
+        : "";
+      const taskGuardNote = resp.engine === "gguf" ? "\n任务保护：智能分段、语音适配和角色分析会自动先尝试更保守的 GGUF 参数。" : "";
+      document.getElementById("localLlmStatus").textContent = `模型已直载：${modelPath}（${resp.engine || "auto"} / ${resp.device || "auto"}）\nctx=${resp.ctx_tokens ?? "-"} / gpu_layers=${resp.gpu_layers ?? "-"} / threads=${resp.threads ?? "-"} / batch=${resp.batch_size ?? "-"}${fallbackNote}${taskGuardNote}`;
+      await refreshModelRuntimeStatus(true);
+      setStatus(`本地模型 ${modelPath} 已由应用直接加载。`);
+      finishTask("本地模型已加载", `${modelPath} 已由应用直接加载，可开始文本分析`, { total: 1, done: 1 });
     } catch (err) {
       if (isTaskCancelledError(err)) return;
       document.getElementById("localLlmStatus").textContent = `模型检查失败：${err.message}`;
       setStatus(`本地模型检查失败：${err.message}`);
       failTask("本地模型检查失败", err.message);
+    }
+  }
+
+  async function unloadLocalLlmModel() {
+    if (taskBusy) return;
+    beginTask("parse", "准备卸载本地文本模型", "将释放应用当前直接加载的本地文本模型。");
+    try {
+      await fetchJson("/api/model/unload-llm", {});
+      await refreshModelRuntimeStatus(true);
+      document.getElementById("localLlmStatus").textContent = "本地文本模型已卸载。";
+      setStatus("本地文本模型已卸载。");
+      finishTask("本地文本模型已卸载", "应用直接加载的本地文本模型已经释放。", { total: 1, done: 1 });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      document.getElementById("localLlmStatus").textContent = `卸载失败：${err.message}`;
+      setStatus(`卸载本地文本模型失败：${err.message}`);
+      failTask("卸载本地文本模型失败", err.message);
+    }
+  }
+
+  function updateActiveLlmStatusBox(message) {
+    if (analysisSourceMode === "direct") {
+      document.getElementById("localLlmStatus").textContent = message;
+    } else if (analysisSourceMode === "openai_compat") {
+      document.getElementById("openAiCompatStatus").textContent = message;
     }
   }
 
@@ -2161,12 +2978,21 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function getLLMConfig() {
-    if (analysisSourceMode === "local") {
+    if (analysisSourceMode === "direct") {
       const localCfg = getLocalLlmConfig();
       return {
-        base_url: localCfg.base_url,
-        api_key: localCfg.api_key || "local",
+        base_url: "",
+        api_key: "",
         model: localCfg.model,
+        local_model_path: localCfg.local_model_path,
+        local_runtime: "direct",
+        local_load_profile: localCfg.local_load_profile,
+        local_engine: localCfg.local_engine,
+        local_device: localCfg.local_device,
+        local_ctx_tokens: localCfg.local_ctx_tokens,
+        local_gpu_layers: localCfg.local_gpu_layers,
+        local_threads: localCfg.local_threads,
+        local_batch_size: localCfg.local_batch_size,
         temperature: localCfg.temperature,
         max_tokens: localCfg.max_tokens,
         workers: localCfg.workers,
@@ -2179,6 +3005,15 @@ very high pitch, very low pitch, whisper, young adult
       base_url: document.getElementById("baseUrl").value.trim(),
       api_key: document.getElementById("apiKey").value.trim(),
       model: document.getElementById("model").value.trim(),
+      local_model_path: null,
+      local_runtime: "openai_compat",
+      local_load_profile: null,
+      local_engine: null,
+      local_device: null,
+      local_ctx_tokens: null,
+      local_gpu_layers: null,
+      local_threads: null,
+      local_batch_size: null,
       temperature: parseFloat(document.getElementById("temperature").value || "0.2"),
       max_tokens: parseInt(document.getElementById("maxTokens").value || "2000", 10),
       workers: parseInt(document.getElementById("llmWorkers").value || "5", 10),
@@ -2274,6 +3109,8 @@ very high pitch, very low pitch, whisper, young adult
       mode,
       remote_base_url: (document.getElementById("audioRemoteBaseUrl").value || "").trim() || null,
       remote_api_key: (document.getElementById("audioRemoteApiKey").value || "").trim() || null,
+      local_audio_model_path: (document.getElementById("audioLocalModelPath").value || "").trim() || null,
+      local_asr_model_path: (document.getElementById("audioRecognitionModelPath").value || "").trim() || null,
       inference_device: mode === "remote"
         ? ((document.getElementById("audioRemoteInferenceDevice").value || "").trim() || null)
         : getInferenceDevice(),
@@ -2292,7 +3129,8 @@ very high pitch, very low pitch, whisper, young adult
     if ((config.mode || "local") === "remote") {
       return `远程 API（${config.remote_base_url || "未填写地址"}）`;
     }
-    return `本地 OmniVoice（${getInferenceDeviceLabel(config.inference_device)})`;
+    const modelName = config.local_audio_model_path || "默认 OmniVoice";
+    return `本地模型（${modelName} / ${getInferenceDeviceLabel(config.inference_device)}）`;
   }
 
   function renderBackendPanels() {
@@ -2307,6 +3145,8 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("audioRemoteBaseUrl").value = cfg.remote_base_url || "";
     document.getElementById("audioRemoteApiKey").value = cfg.remote_api_key || "";
     document.getElementById("audioRemoteInferenceDevice").value = cfg.inference_device || "";
+    document.getElementById("audioLocalModelPath").value = cfg.local_audio_model_path || "";
+    document.getElementById("audioRecognitionModelPath").value = cfg.local_asr_model_path || "";
     if ((cfg.mode || "local") !== "remote") {
       document.getElementById("inferenceDevice").value = cfg.inference_device || "auto";
     }
@@ -2356,9 +3196,25 @@ very high pitch, very low pitch, whisper, young adult
 
   function getLocalLlmConfig() {
     return {
-      base_url: document.getElementById("localLlmBaseUrl").value.trim(),
-      api_key: document.getElementById("localLlmApiKey").value.trim(),
+      scan_root: document.getElementById("localLlmScanRoot").value.trim(),
       model: document.getElementById("localLlmModelPath").value.trim(),
+      local_model_path: document.getElementById("localLlmModelPath").value.trim() || null,
+      local_load_profile: document.getElementById("localLlmLoadProfile").value || "balanced",
+      local_engine: (() => {
+        const value = document.getElementById("localLlmEngine").value || "auto";
+        return value === "auto" ? null : value;
+      })(),
+      local_device: (() => {
+        const value = document.getElementById("localLlmDevice").value || "auto";
+        return value === "auto" ? null : value;
+      })(),
+      local_ctx_tokens: parseInt(document.getElementById("localLlmCtxTokens").value || "", 10) || null,
+      local_gpu_layers: (() => {
+        const raw = document.getElementById("localLlmGpuLayers").value;
+        return raw === "" ? null : parseInt(raw, 10);
+      })(),
+      local_threads: parseInt(document.getElementById("localLlmThreads").value || "", 10) || null,
+      local_batch_size: parseInt(document.getElementById("localLlmBatchSize").value || "", 10) || null,
       temperature: parseFloat(document.getElementById("localLlmTemperature").value || "0.2"),
       max_tokens: parseInt(document.getElementById("localLlmMaxTokens").value || "2000", 10),
       workers: parseInt(document.getElementById("localLlmWorkers").value || "3", 10),
@@ -2390,9 +3246,15 @@ very high pitch, very low pitch, whisper, young adult
 
   function applyLocalLlmConfigToForm(cfg) {
     if (!cfg) return;
-    document.getElementById("localLlmBaseUrl").value = cfg.base_url || "http://127.0.0.1:1234/v1";
-    document.getElementById("localLlmApiKey").value = cfg.api_key || "";
-    document.getElementById("localLlmModelPath").value = cfg.model || "";
+    document.getElementById("localLlmScanRoot").value = cfg.scan_root || "";
+    document.getElementById("localLlmModelPath").value = cfg.local_model_path || cfg.model || "";
+    document.getElementById("localLlmLoadProfile").value = cfg.local_load_profile || "balanced";
+    document.getElementById("localLlmEngine").value = cfg.local_engine || "auto";
+    document.getElementById("localLlmDevice").value = cfg.local_device || "auto";
+    document.getElementById("localLlmCtxTokens").value = cfg.local_ctx_tokens ?? "";
+    document.getElementById("localLlmGpuLayers").value = cfg.local_gpu_layers ?? "";
+    document.getElementById("localLlmThreads").value = cfg.local_threads ?? "";
+    document.getElementById("localLlmBatchSize").value = cfg.local_batch_size ?? "";
     document.getElementById("localLlmTemperature").value = cfg.temperature ?? 0.2;
     document.getElementById("localLlmMaxTokens").value = cfg.max_tokens ?? 2000;
     document.getElementById("localLlmWorkers").value = cfg.workers ?? 3;
@@ -2505,7 +3367,12 @@ very high pitch, very low pitch, whisper, young adult
 
   function applyLLMConfigToForm(cfg) {
     if (!cfg) return;
-    setAnalysisSourceMode("remote");
+    if ((cfg.local_runtime || "").toLowerCase() === "direct") {
+      setAnalysisSourceMode("direct");
+      applyLocalLlmConfigToForm(cfg);
+      return;
+    }
+    setAnalysisSourceMode("openai_compat");
     document.getElementById("baseUrl").value = cfg.base_url || "";
     document.getElementById("apiKey").value = cfg.api_key || "";
     document.getElementById("model").value = cfg.model || "";
@@ -2521,8 +3388,12 @@ very high pitch, very low pitch, whisper, young adult
     if (!data || !data.system) return "尚未读取硬件状态。";
     const cpu = data.system.cpu || {};
     const memory = data.system.memory || {};
+    const llm = data.models?.llm || {};
     const gpu = data.system.gpu || {};
     const audio = data.models?.audio || {};
+    const llmLoaded = Array.isArray(llm.loaded_models) && llm.loaded_models.length
+      ? llm.loaded_models.map((item) => `${item.engine || "auto"} @ ${item.device || "auto"} -> ${item.model_path || "-"} / ctx=${item.ctx_tokens ?? "-"} / gpu=${item.gpu_layers ?? "-"} / thr=${item.threads ?? "-"} / batch=${item.batch_size ?? "-"}`).join(" | ")
+      : "无";
     return [
       `系统: ${data.system.platform?.system || "-"} ${data.system.platform?.release || ""} / ${data.system.platform?.machine || "-"}`,
       `Python: ${data.system.platform?.python || "-"}`,
@@ -2532,8 +3403,11 @@ very high pitch, very low pitch, whisper, young adult
       `进程内存: ${memory.process_rss_gb ?? "-"} GB`,
       `CUDA: ${gpu.cuda?.available ? `可用，已用 ${gpu.cuda?.used_gb ?? "-"} GB / ${gpu.cuda?.total_gb ?? "-"} GB` : "不可用"}`,
       `MPS: ${gpu.mps?.available ? `可用，当前分配 ${gpu.mps?.current_allocated_gb ?? "-"} GB / 驱动分配 ${gpu.mps?.driver_allocated_gb ?? "-" } GB` : "不可用"}`,
+      `文本分析本地直载: ${llmLoaded}`,
       `音频生成模型: 已加载设备 ${Array.isArray(audio.loaded_devices) && audio.loaded_devices.length ? audio.loaded_devices.join(", ") : "无"}`,
+      `音频生成模型路径: ${Array.isArray(audio.audio_model_names) && audio.audio_model_names.length ? audio.audio_model_names.join(", ") : "未加载"}`,
       `音频识别模型: 已加载设备 ${Array.isArray(audio.asr_loaded_devices) && audio.asr_loaded_devices.length ? audio.asr_loaded_devices.join(", ") : "无"}`,
+      `音频识别模型路径: ${Array.isArray(audio.asr_model_names) && audio.asr_model_names.length ? audio.asr_model_names.join(", ") : "未加载"}`,
     ].join("\n");
   }
 
@@ -2545,20 +3419,37 @@ very high pitch, very low pitch, whisper, young adult
       el.textContent = "尚未读取当前模型加载状态。";
       return;
     }
+    const llm = status.llm || {};
     const audio = status.audio || {};
+    const llmRuntime = llm.runtime || {};
+    const llmTransformersReady = llmRuntime.transformers_ready ? "就绪" : "未就绪";
+    const llmMlxReady = llmRuntime.mlx_ready ? "就绪" : "未就绪";
+    const llmGgufReady = llmRuntime.gguf_ready ? "就绪" : "未就绪";
+    const llmLoaded = Array.isArray(llm.loaded_models) && llm.loaded_models.length
+      ? llm.loaded_models.map((item) => {
+        const fallbackText = item.last_fallback && item.last_fallback.to_batch_size
+          ? ` / fallback=batch ${item.last_fallback.from_batch_size ?? "-"}→${item.last_fallback.to_batch_size ?? "-"}`
+          : "";
+        return `${item.engine || "auto"} / ${item.device || "auto"} / ${item.model_path || "-"} / ctx=${item.ctx_tokens ?? "-"} / gpu=${item.gpu_layers ?? "-"} / thr=${item.threads ?? "-"} / batch=${item.batch_size ?? "-"}${fallbackText}`;
+      }).join(" | ")
+      : "无";
     const runtimeMissing = Array.isArray(audio.runtime?.missing) && audio.runtime.missing.length ? audio.runtime.missing.join(", ") : "无";
     const asrRuntimeMissing = Array.isArray(audio.asr_runtime?.missing) && audio.asr_runtime.missing.length ? audio.asr_runtime.missing.join(", ") : "无";
     const generationReady = audio.runtime?.ready !== false;
     const asrReady = audio.asr_runtime?.ready !== false;
     const generationLoaded = Array.isArray(audio.loaded_devices) && audio.loaded_devices.length ? audio.loaded_devices.join(", ") : "无";
     const asrLoaded = Array.isArray(audio.asr_loaded_devices) && audio.asr_loaded_devices.length ? audio.asr_loaded_devices.join(", ") : "无";
+    const audioModels = Array.isArray(audio.audio_model_names) && audio.audio_model_names.length ? audio.audio_model_names.join(", ") : "未加载";
     const asrModel = Array.isArray(audio.asr_model_names) && audio.asr_model_names.length ? audio.asr_model_names.join(", ") : "未加载";
     const detectedDevice = audio.detected_device || "未知";
     el.textContent = [
+      `文本分析直载运行时：Transformers ${llmTransformersReady} / MLX ${llmMlxReady} / GGUF ${llmGgufReady}`,
+      `文本分析直载已加载：${llmLoaded}`,
       `音频生成运行时：${generationReady ? "就绪" : `缺少依赖（${runtimeMissing}）`}`,
       `音频识别运行时：${asrReady ? "就绪" : `缺少依赖（${asrRuntimeMissing}）`}`,
       `默认检测设备：${detectedDevice}`,
       `音频生成已加载设备：${generationLoaded}`,
+      `音频生成模型：${audioModels}`,
       `音频识别已加载设备：${asrLoaded}`,
       `音频识别模型：${asrModel}`,
     ].join("\n");
@@ -2601,8 +3492,9 @@ very high pitch, very low pitch, whisper, young adult
       const data = await fetchJson("/api/model/load-audio", { backend });
       const detail = data.mode === "remote"
         ? `远程后端连通正常：${backend.remote_base_url || "未填写地址"}`
-        : `本地模型已就绪，设备：${getInferenceDeviceLabel(data.device || backend.inference_device)}。`;
+        : `本地模型已就绪，设备：${getInferenceDeviceLabel(data.device || backend.inference_device)}。模型：${data.model_name || backend.local_audio_model_path || "默认 OmniVoice"}`;
       await refreshModelRuntimeStatus(true);
+      document.getElementById("audioGenerationStatus").textContent = detail;
       setStatus(`音频生成模型已就绪。${detail}`);
       finishTask("音频生成模型已就绪", detail, { total: 1, done: 1 });
     } catch (err) {
@@ -2623,6 +3515,7 @@ very high pitch, very low pitch, whisper, young adult
       const detail = data.mode === "remote"
         ? (data.message || "远程模式不在本地卸载。")
         : `本地音频生成模型已从设备 ${getInferenceDeviceLabel(data.device)} 卸载。`;
+      document.getElementById("audioGenerationStatus").textContent = detail;
       setStatus(detail);
       finishTask("音频生成模型已卸载", detail, { total: 1, done: 1 });
     } catch (err) {
@@ -2639,8 +3532,9 @@ very high pitch, very low pitch, whisper, young adult
     beginTask("narrate", "准备加载音频识别模型", `当前目标后端：${getAudioBackendLabel(backend)}。`);
     try {
       const data = await fetchJson("/api/model/load-asr", { backend });
-      const detail = `本地音频识别模型已就绪，设备：${getInferenceDeviceLabel(data.device || backend.inference_device)}。模型：${data.asr_model_name || "Whisper"}`;
+      const detail = `本地音频识别模型已就绪，设备：${getInferenceDeviceLabel(data.device || backend.inference_device)}。模型：${data.asr_model_name || backend.local_asr_model_path || "Whisper"}`;
       await refreshModelRuntimeStatus(true);
+      document.getElementById("audioRecognitionStatus").textContent = detail;
       setStatus(detail);
       finishTask("音频识别模型已就绪", detail, { total: 1, done: 1 });
     } catch (err) {
@@ -2661,6 +3555,7 @@ very high pitch, very low pitch, whisper, young adult
       const detail = data.mode === "remote"
         ? (data.message || "远程模式不在本地卸载。")
         : `本地音频识别模型已从设备 ${getInferenceDeviceLabel(data.device)} 卸载。`;
+      document.getElementById("audioRecognitionStatus").textContent = detail;
       setStatus(detail);
       finishTask("音频识别模型已卸载", detail, { total: 1, done: 1 });
     } catch (err) {
@@ -3644,7 +4539,7 @@ very high pitch, very low pitch, whisper, young adult
 
   function autoAssignVoices() {
     if (!voiceLibraryState.length) {
-      setStatus("声音库为空，请先在“声音库”标签页中添加声音模板。");
+      setStatus('声音库为空，请先在「声音库」标签页中添加声音模板。');
       return;
     }
     const rules = getAutoAssignRules();
@@ -3887,6 +4782,7 @@ very high pitch, very low pitch, whisper, young adult
     if (taskBusy) return;
     plannedChunksState = [];
     optimizedChunksState = [];
+    segmentationInfoState = null;
     applySegmentsState([], { persist: true });
     clearParseSnapshot();
     renderAnalysisPipelineMeta();
@@ -4280,17 +5176,17 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function validateLLMConfig() {
-    if (analysisSourceMode === “local”) {
+    if (analysisSourceMode === "direct") {
       const llm = getLLMConfig();
-      if (!llm.base_url || !llm.model) {
-        setStatus(“当前未配置本地模型，请到”模型配置”标签页填写服务地址和模型路径。”);
+      if (!llm.local_model_path) {
+        setStatus('当前未配置本地直载模型，请到「模型配置」标签页扫描目录并选择模型。');
         return null;
       }
       return llm;
     }
     const llm = getLLMConfig();
-    if (!llm.base_url || !llm.api_key || !llm.model) {
-      setStatus(“当前未配置文本分析模型，请到”模型配置”标签页填写并保存 LLM 配置。”);
+    if (!llm.base_url || !llm.model) {
+      setStatus('当前未配置 OpenAI 兼容文本模型，请到「模型配置」标签页填写 Base URL 和模型名。');
       return null;
     }
     return llm;
@@ -4299,7 +5195,7 @@ very high pitch, very low pitch, whisper, young adult
   function validateAudioBackendConfig() {
     const backend = getAudioBackendConfig();
     if (backend.mode === "remote" && !backend.remote_base_url) {
-      setStatus("当前未配置音频生成远程 API，请到“模型配置”标签页填写并加载或检查。");
+      setStatus('当前未配置音频生成远程 API，请到「模型配置」标签页填写并加载或检查。');
       return null;
     }
     return backend;
@@ -4332,7 +5228,7 @@ very high pitch, very low pitch, whisper, young adult
   async function ensureAudioRecognitionReady() {
     const backend = validateAudioBackendConfig();
     if (!backend) {
-      alert("当前未配置音频后端，请先到“模型配置”标签页处理。");
+      alert('当前未配置音频后端，请先到「模型配置」标签页处理。');
       setWorkspaceTab("models");
       return null;
     }
@@ -4349,7 +5245,7 @@ very high pitch, very low pitch, whisper, young adult
       ? (status.audio?.detected_device || "cpu")
       : requestedDevice;
     if (!loadedDevices.includes(expectedDevice)) {
-      alert("批量导入参考音频前，请先在“模型配置”标签页加载音频识别模型。现在将为你自动跳转。");
+      alert('批量导入参考音频前，请先在「模型配置」标签页加载音频识别模型。现在将为你自动跳转。');
       setWorkspaceTab("models");
       return null;
     }
@@ -4491,10 +5387,11 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   async function runSmartSegmentation(text, llm) {
+    segmentationInfoState = null;
     setProgress({
       stage: "segment",
       summary: "正在进行智能分段",
-      detail: "后端会先用 LLM 规划语义完整的分析工作块，并支持并发处理。",
+      detail: "后端会先探测章节/场景规则并用代码预切块，再把工作块交给 LLM 做细化规划。",
       percent: 16,
       total: 0,
       done: 0,
@@ -4503,6 +5400,7 @@ very high pitch, very low pitch, whisper, young adult
     const data = await fetchJson("/api/segment-plan", { text, llm });
     plannedChunksState = data.chunks || [];
     optimizedChunksState = [];
+    segmentationInfoState = data.info || null;
     renderAnalysisPipelineMeta();
     setStatus(`智能分段完成，共 ${plannedChunksState.length} 块。`);
     return plannedChunksState;
@@ -4543,12 +5441,32 @@ very high pitch, very low pitch, whisper, young adult
     return segments;
   }
 
+  function isThinkingModel(modelName) {
+    if (!modelName) return false;
+    const lower = modelName.toLowerCase();
+    const patterns = ["reasoner", "thinking", "think", "r1", "o1", "o3", "o4"];
+    return patterns.some(p => lower.includes(p));
+  }
+
+  function warnIfThinkingModel(llmConfig) {
+    const model = llmConfig.model || llmConfig.local_model_path || "";
+    if (!isThinkingModel(model)) return true;
+    return confirm(
+      `检测到当前使用的模型「${model}」可能是思考类（Reasoning）模型。\n\n` +
+      `思考类模型在智能分段等结构化任务中速度较慢（约慢 5-10 倍）、` +
+      `token 消耗大幅增加，但分段效果与普通 Chat 模型基本无差别。\n\n` +
+      `建议切换到同系列的非思考类模型（如 deepseek-chat、gpt-4o 等）以获得更好的性价比。\n\n` +
+      `是否仍要继续使用当前模型？`
+    );
+  }
+
   async function smartSegmentText() {
     if (taskBusy) return;
     const text = validateSourceText();
     if (!text) return;
     const llm = validateLLMConfig();
     if (!llm) return;
+    if (!warnIfThinkingModel(llm)) return;
 
     beginTask("parse", "准备开始智能分段", "正在检查原文和 LLM 配置，准备进行章节/场景级语义分块。");
     try {
@@ -4570,6 +5488,7 @@ very high pitch, very low pitch, whisper, young adult
     if (!text) return;
     const llm = validateLLMConfig();
     if (!llm) return;
+    if (!warnIfThinkingModel(llm)) return;
 
     beginTask("parse", "准备开始语音适配优化", "会先确认已有分段工作块，再按 OmniVoice 文本规则做优化。");
     try {
@@ -4592,6 +5511,7 @@ very high pitch, very low pitch, whisper, young adult
     if (!text) return;
     const llm = validateLLMConfig();
     if (!llm) return;
+    if (!warnIfThinkingModel(llm)) return;
 
     beginTask("parse", "准备开始角色分析", "会优先使用已完成语音适配的工作块，并通过并发请求做角色与情绪分析。");
     try {
@@ -4698,8 +5618,9 @@ very high pitch, very low pitch, whisper, young adult
 
     const llm = validateLLMConfig();
     if (!llm) return;
+    if (!warnIfThinkingModel(llm)) return;
 
-    beginTask("parse", "准备开始完整文本分析", "将按“智能分段 -> 语音适配优化 -> 角色分析”的顺序执行完整流程。");
+    beginTask("parse", "准备开始完整文本分析", '将按「智能分段 -> 语音适配优化 -> 角色分析」的顺序执行完整流程。');
 
     try {
       const planned = await runSmartSegmentation(text, llm);
@@ -4801,6 +5722,7 @@ very high pitch, very low pitch, whisper, young adult
       const durationSec = duration.toFixed(1);
       const suggestion = getAvailabilitySuggestion(duration, llm.analysis_mode, true);
 
+      updateActiveLlmStatusBox(`可用性测试通过：耗时约 ${durationSec} 秒，共返回 ${segments.length} 段。${suggestion}`);
       setStatus(`可用性测试通过：连通性正常，结构化分析成功，耗时约 ${durationSec} 秒，共返回 ${segments.length} 段。${suggestion}`);
       finishTask(
         `LLM 可用性测试通过，耗时约 ${durationSec} 秒`,
@@ -4812,6 +5734,7 @@ very high pitch, very low pitch, whisper, young adult
       const duration = (performance.now() - startedAt) / 1000;
       const durationSec = duration.toFixed(1);
       const suggestion = getAvailabilitySuggestion(duration, llm.analysis_mode, false);
+      updateActiveLlmStatusBox(`可用性测试失败：耗时约 ${durationSec} 秒。${suggestion}${err.message ? ` ${err.message}` : ""}`);
       setStatus("可用性测试失败，请查看上方任务面板中的详细错误。");
       failTask(
         "LLM 可用性测试失败",
@@ -4935,8 +5858,9 @@ very high pitch, very low pitch, whisper, young adult
   resetProgress();
   renderLyrics();
   updateExportButtons();
-  setWorkspaceTab("analysis");
-  setAnalysisSourceMode("direct");
+  setWorkspaceTab("models");
+  setModelsConfigView(localStorage.getItem(MODELS_CONFIG_VIEW_STORAGE_KEY) || "text");
+  setAnalysisSourceMode("openai_compat");
   renderAnalysisPipelineMeta();
   refreshExternalPromptView();
   loadVoiceLibrary();
@@ -4944,6 +5868,7 @@ very high pitch, very low pitch, whisper, young adult
   renderRoleAssignments();
   updateSegmentsMeta();
   loadConfig();
+  initProgressPanelPrefs();
 </script>
 </body>
 </html>

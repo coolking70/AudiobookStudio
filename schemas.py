@@ -41,6 +41,15 @@ class LLMConfig(BaseModel):
     base_url: str
     api_key: str
     model: str
+    local_model_path: Optional[str] = None
+    local_runtime: Optional[str] = None
+    local_engine: Optional[str] = None
+    local_device: Optional[str] = None
+    local_load_profile: Optional[str] = None
+    local_ctx_tokens: Optional[int] = None
+    local_gpu_layers: Optional[int] = None
+    local_threads: Optional[int] = None
+    local_batch_size: Optional[int] = None
     temperature: float = 0.2
     max_tokens: int = 2000
     compatibility_mode: str = "strict_json"
@@ -118,6 +127,8 @@ class AudioBackendConfig(BaseModel):
     remote_base_url: Optional[str] = None
     remote_api_key: Optional[str] = None
     inference_device: Optional[str] = None
+    local_audio_model_path: Optional[str] = None
+    local_asr_model_path: Optional[str] = None
 
 class ModelLoadRequest(BaseModel):
     backend: Optional[AudioBackendConfig] = None
@@ -137,6 +148,10 @@ class BatchImportVoiceLibraryRequest(BaseModel):
 class ListLLMModelsRequest(BaseModel):
     base_url: str
     api_key: Optional[str] = None
+
+
+class ScanLocalModelsRequest(BaseModel):
+    root_path: str
 
 
 TTSRequest.model_rebuild()

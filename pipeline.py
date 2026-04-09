@@ -207,11 +207,12 @@ class OmniVoicePipeline:
     def __init__(
         self,
         model_name: str = MODEL_NAME,
+        asr_model_name: str = ASR_MODEL_NAME,
         device: Optional[str] = None,
         dtype: Optional[Any] = None,
     ):
         self.model_name = self.resolve_model_name_or_path(model_name)
-        self.asr_model_name = self.resolve_asr_model_name_or_path(ASR_MODEL_NAME)
+        self.asr_model_name = self.resolve_asr_model_name_or_path(asr_model_name)
         self.device = device or self.detect_device()
         self.dtype = dtype or self.detect_dtype(self.device)
         self.model: Optional[Any] = None
@@ -227,6 +228,11 @@ class OmniVoicePipeline:
                 repo_or_snapshot = OmniVoicePipeline.resolve_cached_repo_dir(explicit_path)
                 return str(repo_or_snapshot) if repo_or_snapshot else str(explicit_path)
             return explicit
+
+        explicit_path = Path(str(model_name or "")).expanduser()
+        if explicit_path.exists():
+            repo_or_snapshot = OmniVoicePipeline.resolve_cached_repo_dir(explicit_path)
+            return str(repo_or_snapshot) if repo_or_snapshot else str(explicit_path)
 
         if model_name != MODEL_NAME:
             return model_name
@@ -249,6 +255,11 @@ class OmniVoicePipeline:
                 return str(repo_or_snapshot) if repo_or_snapshot else str(explicit_path)
             return explicit
 
+        explicit_path = Path(str(model_name or "")).expanduser()
+        if explicit_path.exists():
+            repo_or_snapshot = OmniVoicePipeline.resolve_cached_repo_dir(explicit_path)
+            return str(repo_or_snapshot) if repo_or_snapshot else str(explicit_path)
+
         if model_name != ASR_MODEL_NAME:
             return model_name
 
@@ -265,7 +276,7 @@ class OmniVoicePipeline:
         if not repo_dir.exists():
             return None
 
-        if (repo_dir / "model.safetensors").exists():
+        if (repo_dir / "model.safetensors").exists() or (repo_dir / "config.json").exists():
             return repo_dir
 
         refs_main = repo_dir / "refs" / "main"
@@ -278,7 +289,7 @@ class OmniVoicePipeline:
         snapshot_root = repo_dir / "snapshots"
         if snapshot_root.exists():
             for snapshot_dir in sorted(snapshot_root.iterdir(), reverse=True):
-                if (snapshot_dir / "model.safetensors").exists():
+                if (snapshot_dir / "model.safetensors").exists() or (snapshot_dir / "config.json").exists():
                     return snapshot_dir
 
         return None

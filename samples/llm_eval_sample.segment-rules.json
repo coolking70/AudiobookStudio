@@ -1,0 +1,21 @@
+{
+  "rule_summary": "以章节标题标记【】和场景转换（空白行、对话切换、动作描写）为分段锚点，优先保持对话回合完整，在对话结束或场景间隙处断开",
+  "chapter_heading_regexes": [
+    "^【[^】]+】$"
+  ],
+  "hard_break_markers": [
+    "***",
+    "---"
+  ],
+  "scene_break_regexes": [
+    "^【[^】]+】$",
+    "^\n{2,}",
+    "^(?=[“\"'])",
+    "^(?=这时|忽然|突然|窗外|走廊|门边)"
+  ],
+  "split_on_blank_lines": true,
+  "keep_dialogue_turn_complete": true,
+  "prefer_quote_isolation": true,
+  "target_chunk_chars": 4000,
+  "max_chunk_chars": 5500
+}
