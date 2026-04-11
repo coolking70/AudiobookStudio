@@ -175,6 +175,55 @@ TEXT_OPTIMIZATION_PROMPT = f"""
 8. 不要输出解释、注释或 markdown。
 """.strip()
 
+SEGMENT_OPTIMIZE_PROMPT = f"""
+你是一个“长文本 TTS 分段与语音适配一体化规划器”。
+你的任务是把输入文本直接拆成适合后续角色分析的工作块，并同时完成 OmniVoice 友好的文本优化。
+
+要求：
+1. 只输出合法 JSON，对象格式固定为：
+{{
+  "chunks": [
+    {{
+      "title": "第1块",
+      "content": "已经完成语音适配优化的文本片段"
+    }}
+  ]
+}}
+2. content 必须完整覆盖原文，不得删减任何句子、对白、动作描写、场景描写、心理描写或过渡语句。
+3. 优先按章节、场景切换、自然段和完整对白回合切分，每个 chunk 尽量语义完整。
+4. 在不改变剧情、语义和角色归属的前提下，把文本整理成更适合 OmniVoice 合成的版本；可参考以下优化原则：
+   - 支持内联非语言标签：{", ".join(SUPPORTED_NON_VERBAL_TAGS)}
+   - 中文发音纠正可用带声调数字的拼音，如 ZHE2、SHE2、ZHE1
+   - 只做必要优化，不要过度改写文学风格
+5. 所有 chunk 的 content 拼接起来必须仍能完整覆盖原文内容；不要输出解释、注释或 markdown。
+""".strip()
+
+OPTIMIZE_ANALYZE_PROMPT = """
+你是一个“TTS 语音适配与角色分析一体化处理器”。
+请在一次处理里同时完成两件事：
+1. 在不改变原意、剧情和角色归属的前提下，把文本整理成更适合 OmniVoice 合成的版本；
+2. 把整理后的文本分析成适合 TTS 的 JSON segments。
+
+要求：
+1. 输出必须是合法 JSON，对象格式固定为：
+{
+  "segments": [
+    {
+      "speaker": "旁白",
+      "text": "优化后的文本片段",
+      "emotion": "neutral",
+      "style": "female, moderate pitch"
+    }
+  ]
+}
+2. 所有 segments 的 text 按顺序拼接后，必须完整覆盖原文内容；严禁删减任何句子。
+3. speaker 只填角色名或“旁白”；emotion 只能从以下值中选：neutral, soft, cold, serious, curious, angry。
+4. style 只能使用系统允许的英文标签，并用英文逗号加空格分隔。
+5. 旁白与对白必须严格拆开；引号外叙述归“旁白”，引号内对白归角色。
+6. text 字段允许包含为了合成稳定性所做的必要保守优化，但不要过度润色或改写。
+7. 不要输出解释、注释、markdown 或额外说明。
+""".strip()
+
 
 def normalize_style(style: str | None) -> str | None:
     if not style:
@@ -373,9 +422,15 @@ def _extract_detection_sample(text: str, limit: int = SAMPLE_DETECT_MAX_CHARS) -
     return "\n".join(sample_lines).strip()[:limit]
 
 
+def resolve_chapter_sample_limit(llm_config: LLMConfig | None = None) -> int:
+    configured = int(getattr(llm_config, "chapter_sample_chars", 0) or 0) if llm_config is not None else 0
+    return max(600, min(configured or SAMPLE_DETECT_MAX_CHARS, 20000))
+
+
 def infer_heading_pattern_with_llm(sample_text: str, llm_config: LLMConfig) -> dict[str, str]:
+    chapter_prompt = llm_config.chapter_prompt.strip() if llm_config.chapter_prompt else CHAPTER_RULE_DETECTION_PROMPT
     messages = [
-        {"role": "system", "content": CHAPTER_RULE_DETECTION_PROMPT},
+        {"role": "system", "content": chapter_prompt},
         {
             "role": "user",
             "content": f"请判断下面文本样本最像哪一种章节标题模式。\n\n文本样本：\n{sample_text}",
@@ -401,16 +456,18 @@ def _build_segmentation_params(llm_config: LLMConfig) -> tuple[int, int]:
     return DEFAULT_CHUNK_MAX_CHARS, SEED_CHUNK_MAX_CHARS
 
 
-def build_seed_chunks(text: str, llm_config: LLMConfig | None = None, max_chars: int = SEED_CHUNK_MAX_CHARS) -> tuple[list[dict[str, str]], dict[str, Any]]:
+def detect_chapter_structure_with_info(text: str, llm_config: LLMConfig | None = None, max_chars: int = SEED_CHUNK_MAX_CHARS) -> tuple[list[dict[str, str]], dict[str, Any]]:
     normalized = str(text or "").strip()
     info: dict[str, Any] = {
         "method": "empty",
         "heading_pattern": "none",
+        "resolved_heading_regex": "",
         "chapter_count": 0,
         "seed_chunk_count": 0,
         "used_llm_detection": False,
         "llm_pattern": "none",
         "llm_reason": "",
+        "chapter_sample_chars": resolve_chapter_sample_limit(llm_config),
     }
     if not normalized:
         return [], info
@@ -418,9 +475,30 @@ def build_seed_chunks(text: str, llm_config: LLMConfig | None = None, max_chars:
     target_chars, resolved_max_chars = _build_segmentation_params(llm_config or LLMConfig(base_url="", api_key="", model="")) if llm_config else (DEFAULT_CHUNK_MAX_CHARS, max_chars)
     resolved_max_chars = max(resolved_max_chars, target_chars)
 
-    pattern, desc, chapter_count = detect_heading_pattern_by_rules(normalized)
+    pattern = None
+    desc = "none"
+    chapter_count = 0
+    regex_override = str(getattr(llm_config, "chapter_regex_override", "") or "").strip() if llm_config is not None else ""
+    if regex_override:
+        try:
+            override_pattern = re.compile(regex_override, re.M)
+            override_count = len(list(override_pattern.finditer(normalized)))
+            info["resolved_heading_regex"] = regex_override
+            if override_count >= 1:
+                pattern = override_pattern
+                desc = "custom_regex"
+                chapter_count = override_count
+        except re.error as exc:
+            info["llm_reason"] = f"自定义章节正则无效，已回退自动识别：{exc}"
+
+    if pattern is None:
+        pattern, desc, chapter_count = detect_heading_pattern_by_rules(normalized)
+        if pattern is not None:
+            info["resolved_heading_regex"] = pattern.pattern
+
     if pattern is None and llm_config is not None:
-        sample = _extract_detection_sample(normalized)
+        sample_limit = resolve_chapter_sample_limit(llm_config)
+        sample = _extract_detection_sample(normalized, limit=sample_limit)
         try:
             detection = infer_heading_pattern_with_llm(sample, llm_config)
             info["used_llm_detection"] = True
@@ -433,6 +511,7 @@ def build_seed_chunks(text: str, llm_config: LLMConfig | None = None, max_chars:
                     pattern = guessed_pattern
                     desc = detection["pattern"]
                     chapter_count = guessed_count
+                    info["resolved_heading_regex"] = guessed_pattern.pattern
         except Exception as exc:
             info["used_llm_detection"] = True
             info["llm_pattern"] = "none"
@@ -481,6 +560,10 @@ def build_seed_chunks(text: str, llm_config: LLMConfig | None = None, max_chars:
     info["target_chars"] = target_chars
     info["max_chars"] = resolved_max_chars
     return chunks, info
+
+
+def build_seed_chunks(text: str, llm_config: LLMConfig | None = None, max_chars: int = SEED_CHUNK_MAX_CHARS) -> tuple[list[dict[str, str]], dict[str, Any]]:
+    return detect_chapter_structure_with_info(text, llm_config=llm_config, max_chars=max_chars)
 
 
 def basic_tts_text_cleanup(text: str) -> str:
@@ -583,9 +666,10 @@ def _coerce_chunks(raw_chunks: list[dict[str, Any]], fallback_title: str) -> lis
 
 
 def intelligent_segment_seed_chunk(seed_chunk: dict[str, str], llm_config: LLMConfig) -> list[dict[str, str]]:
-    char_budget = max(1800, min(DEFAULT_CHUNK_MAX_CHARS, int(llm_config.max_tokens * 2.4)))
+    char_budget = max(1800, min(DEFAULT_CHUNK_MAX_CHARS, int((llm_config.segment_target_chars or 0) or (llm_config.max_tokens * 2.4))))
+    base_prompt = llm_config.segment_prompt.strip() if llm_config.segment_prompt else SEGMENT_PLAN_PROMPT
     prompt = (
-        f"{SEGMENT_PLAN_PROMPT}\n\n"
+        f"{base_prompt}\n\n"
         f"补充要求：单个 chunk 的 content 尽量控制在 {char_budget} 字以内；如果自然分段后某块略超出也可以接受，但不要过度细碎。"
     )
     messages = [
@@ -602,8 +686,30 @@ def intelligent_segment_seed_chunk(seed_chunk: dict[str, str], llm_config: LLMCo
     return split_chunk_if_too_long(seed_chunk, max_chars=char_budget)
 
 
+def segment_and_optimize_seed_chunk(seed_chunk: dict[str, str], llm_config: LLMConfig) -> list[dict[str, str]]:
+    char_budget = max(1800, min(DEFAULT_CHUNK_MAX_CHARS, int((llm_config.segment_target_chars or 0) or (llm_config.max_tokens * 2.4))))
+    base_prompt = llm_config.segment_optimize_prompt.strip() if llm_config.segment_optimize_prompt else SEGMENT_OPTIMIZE_PROMPT
+    prompt = (
+        f"{base_prompt}\n\n"
+        f"补充要求：单个 chunk 的 content 尽量控制在 {char_budget} 字以内；如果自然分段后某块略超出也可以接受，但不要过度细碎。"
+    )
+    messages = [
+        {"role": "system", "content": prompt},
+        {
+            "role": "user",
+            "content": f"请对下面文本完成“智能分段 + 语音适配优化”。\n\n标题：{seed_chunk['title']}\n\n正文：\n{seed_chunk['content']}",
+        },
+    ]
+    result = _run_chat_json_with_retry(llm_config, messages, f"{seed_chunk['title']} 分段与语音适配失败", task_kind="segment")
+    chunks = _coerce_chunks(result.get("chunks", []), seed_chunk["title"])
+    if chunks:
+        return chunks
+    fallback = split_chunk_if_too_long(seed_chunk, max_chars=char_budget)
+    return [optimize_chunk_for_tts(chunk, llm_config) for chunk in fallback]
+
+
 def intelligent_segment_text_with_info(text: str, llm_config: LLMConfig) -> tuple[list[dict[str, str]], dict[str, Any]]:
-    seed_chunks, info = build_seed_chunks(text, llm_config=llm_config)
+    seed_chunks, info = detect_chapter_structure_with_info(text, llm_config=llm_config)
     if not seed_chunks:
         return [], info
 
@@ -634,10 +740,40 @@ def intelligent_segment_text(text: str, llm_config: LLMConfig) -> list[dict[str,
     return chunks
 
 
+def segment_and_optimize_text_with_info(text: str, llm_config: LLMConfig) -> tuple[list[dict[str, str]], dict[str, Any]]:
+    seed_chunks, info = detect_chapter_structure_with_info(text, llm_config=llm_config)
+    if not seed_chunks:
+        return [], info
+
+    direct_runtime = str(getattr(llm_config, "local_runtime", "") or "").strip().lower() == "direct"
+    workers = 1 if direct_runtime else max(1, min(llm_config.workers or 5, len(seed_chunks)))
+    results: list[list[dict[str, str]] | None] = [None] * len(seed_chunks)
+    info["llm_workers"] = workers
+    info["combo_mode"] = "segment_optimize"
+
+    def _work(index: int, seed_chunk: dict[str, str]) -> tuple[int, list[dict[str, str]]]:
+        return index, segment_and_optimize_seed_chunk(seed_chunk, llm_config)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(_work, idx, chunk) for idx, chunk in enumerate(seed_chunks)]
+        for future in as_completed(futures):
+            index, chunks = future.result()
+            results[index] = chunks
+
+    merged: list[dict[str, str]] = []
+    for item in results:
+        if item:
+            merged.extend(item)
+    info["planned_chunk_count"] = len(merged)
+    info["optimized_chunk_count"] = len(merged)
+    return merged, info
+
+
 def optimize_chunk_for_tts(chunk: dict[str, str], llm_config: LLMConfig) -> dict[str, str]:
     cleaned = basic_tts_text_cleanup(chunk["content"])
+    opt_prompt = llm_config.optimize_prompt.strip() if llm_config.optimize_prompt else TEXT_OPTIMIZATION_PROMPT
     messages = [
-        {"role": "system", "content": TEXT_OPTIMIZATION_PROMPT},
+        {"role": "system", "content": opt_prompt},
         {
             "role": "user",
             "content": f"请优化下面这段文本，使其更适合 OmniVoice 合成。\n\n标题：{chunk['title']}\n\n正文：\n{cleaned}",
@@ -686,6 +822,23 @@ def analyze_chunk_with_retry(chunk: dict[str, str], llm_config: LLMConfig) -> li
     return sanitize_segments(segments)
 
 
+def optimize_and_analyze_chunk(chunk: dict[str, str], llm_config: LLMConfig) -> list[dict[str, Any]]:
+    system_prompt = llm_config.optimize_analyze_prompt.strip() if llm_config.optimize_analyze_prompt else OPTIMIZE_ANALYZE_PROMPT
+    cleaned = basic_tts_text_cleanup(chunk["content"])
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": f"请对下面这段文本一次性完成“语音适配优化 + 角色分析”，并输出 JSON。\n\n标题：{chunk['title']}\n\n正文：\n{cleaned}",
+        },
+    ]
+    result = _run_chat_json_with_retry(llm_config, messages, f"{chunk['title']} 语音适配与角色分析失败", task_kind="analyze")
+    segments = result.get("segments", [])
+    if not isinstance(segments, list):
+        raise RuntimeError(f"{chunk['title']} 返回的 segments 不是数组")
+    return sanitize_segments(segments)
+
+
 def analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_config: LLMConfig) -> list[dict[str, Any]]:
     if not chunks:
         return []
@@ -696,6 +849,30 @@ def analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_config: LLMConfig)
 
     def _work(index: int, chunk: dict[str, str]) -> tuple[int, list[dict[str, Any]]]:
         return index, analyze_chunk_with_retry(chunk, llm_config)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(_work, idx, chunk) for idx, chunk in enumerate(chunks)]
+        for future in as_completed(futures):
+            index, segments = future.result()
+            results[index] = segments
+
+    merged: list[dict[str, Any]] = []
+    for item in results:
+        if item:
+            merged.extend(item)
+    return merged
+
+
+def optimize_and_analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_config: LLMConfig) -> list[dict[str, Any]]:
+    if not chunks:
+        return []
+
+    direct_runtime = str(getattr(llm_config, "local_runtime", "") or "").strip().lower() == "direct"
+    workers = 1 if direct_runtime else max(1, min(llm_config.workers or 5, len(chunks)))
+    results: list[list[dict[str, Any]] | None] = [None] * len(chunks)
+
+    def _work(index: int, chunk: dict[str, str]) -> tuple[int, list[dict[str, Any]]]:
+        return index, optimize_and_analyze_chunk(chunk, llm_config)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [executor.submit(_work, idx, chunk) for idx, chunk in enumerate(chunks)]

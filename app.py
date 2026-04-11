@@ -44,7 +44,7 @@ from audio_utils import build_lrc, join_wavs
 from llm_client import OpenAICompatibleClient
 from local_llm import get_local_llm_runner, get_local_llm_status, unload_all_local_llm_runners
 from pipeline import ASR_MODEL_NAME, HF_CACHE_DIRS, MODEL_NAME, OmniVoicePipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status
-from role_analyzer import analyze_chunks_with_llm, analyze_text_with_llm, intelligent_segment_text, intelligent_segment_text_with_info, optimize_chunks_for_tts, sanitize_segments
+from role_analyzer import analyze_chunks_with_llm, analyze_text_with_llm, detect_chapter_structure_with_info, intelligent_segment_text, intelligent_segment_text_with_info, optimize_and_analyze_chunks_with_llm, optimize_chunks_for_tts, sanitize_segments, segment_and_optimize_text_with_info
 from schemas import AnalyzeChunksRequest, AutoNarrateRequest, BatchImportVoiceLibraryRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, ListLLMModelsRequest, MergeRequest, ModelLoadRequest, NarrateRequest, ParseRequest, ScanLocalModelsRequest, SegmentPlanRequest, TTSRequest, TranscribeRefAudioRequest, UploadRefAudioRequest
 
 
@@ -1124,6 +1124,22 @@ def llm_defaults():
         raise_api_error(exc)
 
 
+@app.get("/api/default-prompts")
+def default_prompts():
+    from role_analyzer import CHAPTER_RULE_DETECTION_PROMPT, DEFAULT_SYSTEM_PROMPT, OPTIMIZE_ANALYZE_PROMPT, SEGMENT_OPTIMIZE_PROMPT, SEGMENT_PLAN_PROMPT, TEXT_OPTIMIZATION_PROMPT
+    return {
+        "ok": True,
+        "prompts": {
+            "chapter_prompt": CHAPTER_RULE_DETECTION_PROMPT.strip(),
+            "system_prompt": DEFAULT_SYSTEM_PROMPT.strip(),
+            "segment_prompt": SEGMENT_PLAN_PROMPT.strip(),
+            "optimize_prompt": TEXT_OPTIMIZATION_PROMPT.strip(),
+            "segment_optimize_prompt": SEGMENT_OPTIMIZE_PROMPT.strip(),
+            "optimize_analyze_prompt": OPTIMIZE_ANALYZE_PROMPT.strip(),
+        },
+    }
+
+
 @app.get("/favicon.ico")
 def favicon():
     icon_path = Path("static/favicon.svg")
@@ -1212,6 +1228,19 @@ def parse_text(req: ParseRequest):
         raise_api_error(exc)
 
 
+@app.post("/api/chapter-detect")
+def chapter_detect(req: SegmentPlanRequest):
+    try:
+        chunks, info = detect_chapter_structure_with_info(req.text, req.llm)
+        return {
+            "ok": True,
+            "chunks": chunks,
+            "info": info,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
 @app.post("/api/segment-plan")
 def segment_plan(req: SegmentPlanRequest):
     try:
@@ -1238,11 +1267,37 @@ def optimize_chunks(req: ChunkOptimizeRequest):
         raise_api_error(exc)
 
 
+@app.post("/api/segment-optimize")
+def segment_optimize(req: SegmentPlanRequest):
+    try:
+        chunks, info = segment_and_optimize_text_with_info(req.text, req.llm)
+        return {
+            "ok": True,
+            "chunks": chunks,
+            "info": info,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
 @app.post("/api/analyze-chunks")
 def analyze_chunks(req: AnalyzeChunksRequest):
     try:
         chunks = [item.model_dump() for item in req.chunks]
         segments = analyze_chunks_with_llm(chunks, req.llm)
+        return {
+            "ok": True,
+            "segments": segments,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/optimize-analyze-chunks")
+def optimize_analyze_chunks(req: AnalyzeChunksRequest):
+    try:
+        chunks = [item.model_dump() for item in req.chunks]
+        segments = optimize_and_analyze_chunks_with_llm(chunks, req.llm)
         return {
             "ok": True,
             "segments": segments,

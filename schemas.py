@@ -62,7 +62,16 @@ class LLMConfig(BaseModel):
     temperature: float = 0.2
     max_tokens: int = 2000
     compatibility_mode: str = "strict_json"
+    chapter_sample_chars: Optional[int] = None
+    chapter_prompt: Optional[str] = None
+    chapter_regex_override: Optional[str] = None
+    segment_target_chars: Optional[int] = None
+    analysis_combo: Optional[str] = None
     system_prompt: Optional[str] = None
+    segment_prompt: Optional[str] = None
+    optimize_prompt: Optional[str] = None
+    segment_optimize_prompt: Optional[str] = None
+    optimize_analyze_prompt: Optional[str] = None
     workers: int = 5
 
 

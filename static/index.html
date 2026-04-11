@@ -890,6 +890,30 @@
     .advanced-body {
       padding: 14px;
     }
+    .prompt-stage-toggle {
+      margin-top: 6px;
+      border: 1px solid rgba(125, 154, 192, 0.08);
+      border-radius: var(--radius-sm);
+      background: rgba(8, 14, 26, 0.3);
+    }
+    .prompt-stage-toggle summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+    .prompt-stage-toggle summary::-webkit-details-marker { display: none; }
+    .prompt-stage-toggle[open] summary { color: var(--text); border-bottom: 1px solid rgba(125,154,192,0.08); }
+    .prompt-stage-toggle textarea {
+      width: 100%;
+      min-height: 80px;
+      padding: 8px;
+      font-size: 12px;
+      font-family: monospace;
+      box-sizing: border-box;
+      resize: vertical;
+    }
     .model-footer-actions {
       display: flex;
       flex-wrap: wrap;
@@ -1015,6 +1039,41 @@
       border-color: var(--accent-2);
       background: rgba(77, 176, 247, 0.06);
       color: var(--text);
+    }
+    /* ===== Voice Recorder ===== */
+    .recorder-panel {
+      margin-top: 10px;
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(125, 154, 192, 0.15);
+      background: rgba(18, 30, 48, 0.4);
+    }
+    .recorder-panel .recorder-row {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+    }
+    .recorder-panel label { margin: 0; font-size: 13px; white-space: nowrap; }
+    .recorder-panel select { flex: 1; min-width: 0; }
+    .recorder-meter-wrap {
+      height: 8px; flex: 1; min-width: 80px;
+      background: rgba(125, 154, 192, 0.1); border-radius: 4px; overflow: hidden;
+    }
+    .recorder-meter-bar {
+      height: 100%; width: 0%; border-radius: 4px;
+      background: var(--accent); transition: width 60ms linear;
+    }
+    .recorder-meter-bar.hot { background: #e74c3c; }
+    .recorder-actions { display: flex; gap: 8px; align-items: center; }
+    .recorder-actions .rec-time { font-size: 12px; color: var(--sub); font-variant-numeric: tabular-nums; min-width: 42px; }
+    .btn-rec { background: #e74c3c; color: #fff; border: none; border-radius: var(--radius-sm); padding: 6px 14px; cursor: pointer; font-size: 13px; }
+    .btn-rec:hover { background: #c0392b; }
+    .btn-rec:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-rec-stop { background: var(--accent-2); }
+    .btn-rec-stop:hover { background: #2980b9; }
+    button.recorder-toggle-active {
+      background: rgba(77, 176, 247, 0.15);
+      border-color: var(--accent-2);
+      box-shadow: inset 0 2px 6px rgba(0,0,0,0.35);
+      color: var(--accent-2);
     }
     /* ===== Style Picker ===== */
     .style-picker {
@@ -1213,6 +1272,7 @@
           <div class="player-actions">
             <button type="button" id="exportAudioButton" class="secondary" onclick="exportCurrentAudio()" disabled>导出完整音频</button>
             <button type="button" id="exportLrcButton" class="secondary" onclick="exportCurrentLrc()" disabled>导出完整歌词</button>
+            <button type="button" id="stopPreviewButton" class="secondary" onclick="stopMixedPreviewPlayback()" disabled>停止在线试听</button>
           </div>
         </div>
         <div>
@@ -1298,7 +1358,10 @@
                   <summary>显示高级配置</summary>
                   <div class="advanced-body">
                     <label>API Key</label>
-                    <input id="apiKey" placeholder="输入 API Key；多数本地服务可留空" type="password" />
+                    <div style="display:flex; gap:8px; align-items:stretch;">
+                      <input id="apiKey" style="flex:1;" placeholder="输入 API Key；多数本地服务可留空" type="password" />
+                      <button type="button" class="secondary" style="white-space:nowrap;" onclick="toggleSecretInput('apiKey', this)">显示 Key</button>
+                    </div>
 
                     <div class="row">
                       <div>
@@ -1328,8 +1391,66 @@
                       <option value="chat_compat">Chat 兼容模式</option>
                     </select>
 
-                    <label>系统提示词（可选）</label>
-                    <textarea id="systemPrompt" placeholder="留空则使用后端默认提示词"></textarea>
+                    <label>章节识别抽样字数</label>
+                    <input id="chapterSampleChars" type="number" min="600" max="20000" step="200" value="5000" />
+                    <div class="mini-note">章节识别会先截取开头一小段文本交给 LLM 判断章节标题模式，再映射成正则并用代码快速拆分。这个阶段固定单线程。</div>
+
+                    <label>后续分析组合</label>
+                    <select id="analysisCombo" onchange="updateAnalysisFlowUI()">
+                      <option value="separate" selected>1+1+1：智能分段 -> 语音适配优化 -> 角色分析</option>
+                      <option value="segment_then_optimize_analyze">1+2：智能分段 -> 语音适配优化+角色分析</option>
+                      <option value="segment_optimize_then_analyze">2+1：智能分段+语音适配优化 -> 角色分析</option>
+                      <option value="segment_then_analyze">1+3：智能分段 -> 角色分析（跳过语音适配优化）</option>
+                    </select>
+                    <div class="mini-note">组合模式在模型配置阶段统一设定。文本分析页会直接按这里的配置执行，不再单独勾选流程。</div>
+
+                    <label>智能分段目标长度（字）</label>
+                    <div style="display:flex; gap:8px; align-items:stretch;">
+                      <input id="segmentTargetChars" style="flex:1;" type="number" min="800" max="6000" step="100" value="3200" />
+                      <button type="button" class="secondary" style="white-space:nowrap;" onclick="autoTuneSegmentTargetChars()">自动估算</button>
+                    </div>
+                    <div id="segmentTargetHint" class="mini-note">会结合当前 Max Tokens 和最长组合提示词长度估算一个较稳妥的单段长度。</div>
+
+                    <div class="prompt-section">
+                      <div class="prompt-header" style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+                        <label style="margin:0;">章节识别与后续分析提示词（留空使用默认）</label>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                          <button type="button" class="secondary" style="font-size:12px; padding:2px 8px;" onclick="loadDefaultPrompts()">查看默认提示词</button>
+                          <button type="button" class="secondary" style="font-size:12px; padding:2px 8px;" onclick="showCombinedPromptPreview()">显示整合提示词</button>
+                        </div>
+                      </div>
+                      <div class="mini-note">这里维护章节识别提示词、后三阶段基础提示词，以及当前章节识别得到的正则依据。点击“查看默认提示词”后会自动展开并填入当前默认值。</div>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>章节识别提示词</summary>
+                        <textarea id="chapterPrompt" rows="6" placeholder="留空则使用后端默认章节识别提示词"></textarea>
+                      </details>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>章节识别依据正则</summary>
+                        <textarea id="chapterRegexOverride" rows="4" placeholder="点击“章节识别”后会自动回填当前识别出的正则；也可以手动修改后再次执行章节识别。"></textarea>
+                      </details>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>智能分段基础提示词</summary>
+                        <textarea id="segmentPrompt" rows="6" placeholder="留空则使用后端默认智能分段提示词"></textarea>
+                      </details>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>语音适配优化基础提示词</summary>
+                        <textarea id="optimizePrompt" rows="6" placeholder="留空则使用后端默认语音适配优化提示词"></textarea>
+                      </details>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>角色分析基础提示词</summary>
+                        <textarea id="systemPrompt" rows="6" placeholder="留空则使用后端默认角色分析提示词"></textarea>
+                      </details>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>当前整合提示词预览</summary>
+                        <textarea id="combinedPromptPreview" rows="12" readonly placeholder="根据当前在模型配置里选择的组合模式，点击“显示整合提示词”后会在这里展示对应的整合提示词。"></textarea>
+                      </details>
+                    </div>
                   </div>
                 </details>
               </div>
@@ -1454,8 +1575,66 @@
                       <option value="fast">快速模式</option>
                     </select>
 
-                    <label>系统提示词（可选）</label>
-                    <textarea id="localLlmSystemPrompt" placeholder="留空则使用后端默认提示词"></textarea>
+                    <label>章节识别抽样字数</label>
+                    <input id="localChapterSampleChars" type="number" min="600" max="20000" step="200" value="5000" />
+                    <div class="mini-note">章节识别会先截取开头一小段文本交给 LLM 判断章节标题模式，再映射成正则并用代码快速拆分。这个阶段固定单线程。</div>
+
+                    <label>后续分析组合</label>
+                    <select id="localAnalysisCombo" onchange="updateAnalysisFlowUI()">
+                      <option value="separate" selected>1+1+1：智能分段 -> 语音适配优化 -> 角色分析</option>
+                      <option value="segment_then_optimize_analyze">1+2：智能分段 -> 语音适配优化+角色分析</option>
+                      <option value="segment_optimize_then_analyze">2+1：智能分段+语音适配优化 -> 角色分析</option>
+                      <option value="segment_then_analyze">1+3：智能分段 -> 角色分析（跳过语音适配优化）</option>
+                    </select>
+                    <div class="mini-note">组合模式在模型配置阶段统一设定。文本分析页会直接按这里的配置执行，不再单独勾选流程。</div>
+
+                    <label>智能分段目标长度（字）</label>
+                    <div style="display:flex; gap:8px; align-items:stretch;">
+                      <input id="localSegmentTargetChars" style="flex:1;" type="number" min="800" max="6000" step="100" value="3200" />
+                      <button type="button" class="secondary" style="white-space:nowrap;" onclick="autoTuneSegmentTargetChars('local')">自动估算</button>
+                    </div>
+                    <div id="localSegmentTargetHint" class="mini-note">会结合当前 Max Tokens 和最长组合提示词长度估算一个较稳妥的单段长度。</div>
+
+                    <div class="prompt-section">
+                      <div class="prompt-header" style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+                        <label style="margin:0;">章节识别与后续分析提示词（留空使用默认）</label>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                          <button type="button" class="secondary" style="font-size:12px; padding:2px 8px;" onclick="loadDefaultPrompts('local')">查看默认提示词</button>
+                          <button type="button" class="secondary" style="font-size:12px; padding:2px 8px;" onclick="showCombinedPromptPreview('local')">显示整合提示词</button>
+                        </div>
+                      </div>
+                      <div class="mini-note">这里维护章节识别提示词、后三阶段基础提示词，以及当前章节识别得到的正则依据。点击“查看默认提示词”后会自动展开并填入当前默认值。</div>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>章节识别提示词</summary>
+                        <textarea id="localChapterPrompt" rows="6" placeholder="留空则使用后端默认章节识别提示词"></textarea>
+                      </details>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>章节识别依据正则</summary>
+                        <textarea id="localChapterRegexOverride" rows="4" placeholder="点击“章节识别”后会自动回填当前识别出的正则；也可以手动修改后再次执行章节识别。"></textarea>
+                      </details>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>智能分段基础提示词</summary>
+                        <textarea id="localLlmSegmentPrompt" rows="6" placeholder="留空则使用后端默认智能分段提示词"></textarea>
+                      </details>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>语音适配优化基础提示词</summary>
+                        <textarea id="localLlmOptimizePrompt" rows="6" placeholder="留空则使用后端默认语音适配优化提示词"></textarea>
+                      </details>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>角色分析基础提示词</summary>
+                        <textarea id="localLlmSystemPrompt" rows="6" placeholder="留空则使用后端默认角色分析提示词"></textarea>
+                      </details>
+
+                      <details class="prompt-stage-toggle">
+                        <summary>当前整合提示词预览</summary>
+                        <textarea id="localCombinedPromptPreview" rows="12" readonly placeholder="根据当前在模型配置里选择的组合模式，点击“显示整合提示词”后会在这里展示对应的整合提示词。"></textarea>
+                      </details>
+                    </div>
                   </div>
                 </details>
               </div>
@@ -1644,15 +1823,13 @@
 
             <div class="actions">
               <button type="button" data-busy-lock class="secondary" onclick="triggerSourceFileImport()">导入 txt/md</button>
-              <button type="button" data-busy-lock onclick="smartSegmentText()">智能分段</button>
-              <button type="button" data-busy-lock class="secondary" onclick="optimizePreparedText()">语音适配优化</button>
-              <button type="button" data-busy-lock class="secondary" onclick="analyzePreparedChunks()">分析角色</button>
-              <button type="button" data-busy-lock onclick="parseText()">一键执行全流程</button>
+              <button type="button" data-busy-lock onclick="runChapterDetectionAction()">章节识别</button>
+              <button type="button" id="runSelectedAnalysisButton" data-busy-lock onclick="runSelectedAnalysisFlow()">执行所选流程</button>
               <button type="button" class="secondary" onclick="continueAnalysis()">继续上次分析</button>
               <button type="button" class="secondary" onclick="exportAnalyzedJson()">导出已分析 JSON</button>
             </div>
-            <div id="sourceImportHint" class="import-hint">支持 .txt / .md 文件导入。小模型建议使用「稳定模式」+「Chat 兼容模式」</div>
-            <div id="analysisPipelineMeta" class="import-hint" style="margin-top:10px;">当前尚未执行智能分段。</div>
+            <div id="sourceImportHint" class="import-hint">支持 .txt / .md 文件导入。请先在“模型配置 -> 文本模型 -> 高级配置”里设定后续分析组合，再回到这里执行。</div>
+            <div id="analysisPipelineMeta" class="import-hint" style="margin-top:10px;">当前尚未执行章节识别。</div>
           </div>
 
           <div id="status" class="status" hidden>等待操作…</div>
@@ -1673,15 +1850,15 @@
           <hr style="border-color:rgba(125,154,192,0.18); margin:18px 0;" />
 
           <div class="section-head">
-            <h2 style="margin-bottom:0;">分段结果</h2>
+            <h2 style="margin-bottom:0;">分析结果</h2>
             <div id="segmentsMeta" class="section-meta">默认折叠，减少页面渲染压力</div>
           </div>
           <div class="actions">
             <button type="button" data-busy-lock onclick="addSegment()">新增一段</button>
             <button type="button" data-busy-lock class="secondary" onclick="renderSegments(true)">刷新渲染</button>
-            <button type="button" class="toggle-button" onclick="toggleSegmentsPanel()"><span id="segmentsToggleLabel">展开分段结果</span></button>
-            <button type="button" data-busy-lock onclick="goToAudioGeneration()">前往音频生成</button>
-            <button type="button" data-busy-lock class="danger" onclick="clearSegments()">清空分段</button>
+            <button type="button" class="toggle-button" onclick="toggleSegmentsPanel()"><span id="segmentsToggleLabel">展开分析结果</span></button>
+            <button type="button" id="goToAudioButton" data-busy-lock onclick="goToAudioGeneration()" disabled>前往音频生成</button>
+            <button type="button" data-busy-lock class="danger" onclick="clearSegments()">清空分析结果</button>
           </div>
           <div id="segments" class="segments" hidden></div>
         </div>
@@ -1733,6 +1910,10 @@
                 <input id="autoAssignUseDesignForSingleLine" type="checkbox" checked />
                 <span>单句角色优先无参考声音</span>
               </label>
+              <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                <input id="autoAssignPreferBrowserLocal" type="checkbox" />
+                <span>分配浏览器本地语音</span>
+              </label>
             </div>
           </div>
         </div>
@@ -1766,7 +1947,7 @@
         </div>
           <div class="actions">
             <button type="button" onclick="addVoiceLibraryEntry()">新增声音</button>
-            <button type="button" class="secondary" data-busy-lock onclick="importMicrosoftVoices()">导入微软语音</button>
+            <button type="button" class="secondary" data-busy-lock onclick="importBrowserLocalVoices()">导入浏览器本地语音</button>
             <button type="button" class="secondary" onclick="triggerVoiceLibraryBatchImport()">批量导入参考音频</button>
             <button type="button" class="secondary" onclick="saveVoiceLibrary()">保存声音库</button>
             <button type="button" class="secondary" onclick="loadVoiceLibrary()">读取声音库</button>
@@ -1790,6 +1971,7 @@
   let progressRenderQueued = false;
   let currentAudioUrl = "";
   let currentLrcUrl = "";
+  let currentPlaybackMode = "audio";
   let lyricsState = [];
   let activeLyricIndex = -1;
   let activeAbortController = null;
@@ -1807,14 +1989,21 @@
   let mergeSelectionState = {};
   let voiceLibraryState = [];
   let roleVoiceAssignments = {};
+  let chapterChunksState = [];
   let plannedChunksState = [];
   let optimizedChunksState = [];
   let segmentationInfoState = null;
   let pendingVoiceLibraryFileIndex = -1;
   let editingVoiceLibraryIndex = -1;
+  let voiceRecorderState = { stream: null, recorder: null, chunks: [], recording: false, deviceId: null, analyser: null, meterRAF: null };
   let modelRuntimeState = null;
   let systemStatusState = null;
   let microsoftVoiceCatalogCache = null;
+  let browserMicrosoftVoiceCache = null;
+  let browserPreviewSessionId = 0;
+  let mixedPreviewSessionId = 0;
+  let mixedPreviewActive = false;
+  let mixedPreviewTickTimer = null;
   let toastTimerSeed = 0;
   let pendingDirectorySelectionTarget = "";
   let localPathPresetsCache = null;
@@ -1827,6 +2016,8 @@
   const AUDIO_BACKEND_STORAGE_KEY = "ov_audio_backend_config";
   const DESIGN_VOICE_ID = "__design_voice__";
   const MICROSOFT_VOICE_ENGINE = "microsoft";
+  const BROWSER_LOCAL_VOICE_ENGINE = "browser_local";
+  const MICROSOFT_PREVIEW_SEGMENT_COUNT = 3;
   const TASK_AUTO_EXPAND_DELAY_MS = 3000;
   const MODELS_CONFIG_VIEW_STORAGE_KEY = "ov_models_config_view";
 
@@ -2384,11 +2575,12 @@ very high pitch, very low pitch, whisper, young adult
   function renderAnalysisPipelineMeta() {
     const el = document.getElementById("analysisPipelineMeta");
     if (!el) return;
+    const chapterCount = chapterChunksState.length;
     const plannedCount = plannedChunksState.length;
     const optimizedCount = optimizedChunksState.length;
     const segmentCount = segmentsState.length;
-    if (!plannedCount) {
-      el.textContent = "当前尚未执行智能分段。建议先分段，再做语音适配优化，最后分析角色。";
+    if (!chapterCount) {
+      el.textContent = "当前尚未执行章节识别。建议先识别章节依据，再按顺序选择智能分段、语音适配优化和分析角色。";
       return;
     }
     const info = segmentationInfoState || {};
@@ -2400,6 +2592,7 @@ very high pitch, very low pitch, whisper, young adult
     };
     const methodLabel = detectMethodMap[info.method] || "未知";
     const detailParts = [
+      `章节识别：${chapterCount} 块`,
       `智能分段：${plannedCount} 块`,
       `语音适配优化：${optimizedCount || 0} 块`,
       `角色分析结果：${segmentCount} 段`,
@@ -2408,8 +2601,14 @@ very high pitch, very low pitch, whisper, young adult
     if (info.heading_pattern && info.heading_pattern !== "none") {
       detailParts.push(`章节规则：${info.heading_pattern}`);
     }
+    if (info.resolved_heading_regex) {
+      detailParts.push(`章节正则：${info.resolved_heading_regex}`);
+    }
     if (info.chapter_count) {
       detailParts.push(`章节数：${info.chapter_count}`);
+    }
+    if (info.rule_summary) {
+      detailParts.push(`识别依据：${info.rule_summary}`);
     }
     if (info.seed_chunk_count) {
       detailParts.push(`LLM 前工作块：${info.seed_chunk_count}`);
@@ -2501,6 +2700,7 @@ very high pitch, very low pitch, whisper, young adult
         document.getElementById("externalSystemPrompt").value = DEFAULT_EXTERNAL_ANALYSIS_PROMPT;
       }
     }
+    updateAnalysisFlowUI();
   }
 
   async function getLocalPathPresets(forceRefresh = false) {
@@ -2783,6 +2983,8 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("compatibilityMode").value = document.getElementById("localLlmCompatMode").value || "chat_compat";
     document.getElementById("analysisMode").value = document.getElementById("localLlmAnalysisMode").value || "stable";
     document.getElementById("systemPrompt").value = document.getElementById("localLlmSystemPrompt").value || "";
+    document.getElementById("segmentPrompt").value = document.getElementById("localLlmSegmentPrompt").value || "";
+    document.getElementById("optimizePrompt").value = document.getElementById("localLlmOptimizePrompt").value || "";
 
     beginTask("parse", "正在直接加载本地文本模型", `正在直接加载本地模型目录 ${modelPath}...`);
     try {
@@ -2841,9 +3043,12 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function updateExportButtons() {
-    document.getElementById("exportAudioButton").disabled = !currentAudioUrl;
-    document.getElementById("exportLrcButton").disabled = !currentLrcUrl;
-    document.getElementById("progressPlayer").hidden = !currentAudioUrl;
+    const canExportAudio = currentPlaybackMode === "audio" && !!currentAudioUrl;
+    const canExportLrc = currentPlaybackMode === "audio" && !!currentLrcUrl;
+    document.getElementById("exportAudioButton").disabled = !canExportAudio;
+    document.getElementById("exportLrcButton").disabled = !canExportLrc;
+    document.getElementById("stopPreviewButton").disabled = !mixedPreviewActive;
+    document.getElementById("progressPlayer").hidden = !currentAudioUrl && !lyricsState.length && !mixedPreviewActive;
   }
 
   function renderLyrics() {
@@ -2902,6 +3107,14 @@ very high pitch, very low pitch, whisper, young adult
     panel.scrollTop = clampedTop;
   }
 
+  function setActiveLyricByIndex(index) {
+    if (index === activeLyricIndex) return;
+    const previousIndex = activeLyricIndex;
+    activeLyricIndex = index;
+    updateActiveLyricUI(previousIndex, activeLyricIndex);
+    scrollLyricToCenter(activeLyricIndex);
+  }
+
   function syncLyricsToAudio(currentTime) {
     if (!lyricsState.length) return;
 
@@ -2951,7 +3164,9 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   async function setMediaAssets(audioUrl, lrcUrl = "") {
+    stopMixedPreviewPlayback({ preserveLyrics: true, silent: true });
     const player = document.getElementById("audioPlayer");
+    currentPlaybackMode = "audio";
     currentAudioUrl = audioUrl || "";
     currentLrcUrl = lrcUrl || "";
     updateExportButtons();
@@ -2966,6 +3181,188 @@ very high pitch, very low pitch, whisper, young adult
     }
 
     await loadLyrics(lrcUrl);
+  }
+
+  function estimateBrowserSpeechDurationSeconds(text) {
+    const length = String(text || "").trim().length;
+    return Math.max(1.6, Math.min(18, length * 0.23 + 0.8));
+  }
+
+  function loadAudioDuration(url) {
+    return new Promise((resolve, reject) => {
+      const probe = new Audio();
+      probe.preload = "metadata";
+      probe.src = `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
+      probe.onloadedmetadata = () => resolve(Number(probe.duration) || 0);
+      probe.onerror = () => reject(new Error("音频时长读取失败"));
+    });
+  }
+
+  function clearMixedPreviewTimer() {
+    if (mixedPreviewTickTimer) {
+      clearInterval(mixedPreviewTickTimer);
+      mixedPreviewTickTimer = null;
+    }
+  }
+
+  function stopMixedPreviewPlayback(options = {}) {
+    const { preserveLyrics = false, silent = false } = options;
+    mixedPreviewSessionId += 1;
+    mixedPreviewActive = false;
+    clearMixedPreviewTimer();
+    stopBrowserSpeechPreview();
+    const player = document.getElementById("audioPlayer");
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+    if (!preserveLyrics) {
+      currentPlaybackMode = "audio";
+      currentAudioUrl = "";
+      currentLrcUrl = "";
+      lyricsState = [];
+      activeLyricIndex = -1;
+      renderLyrics();
+    }
+    updateExportButtons();
+    if (!silent) {
+      setStatus("已停止当前在线试听。");
+    }
+  }
+
+  async function prepareMixedPreviewEntries(segments, baseName, inferenceDevice, backend) {
+    const entries = [];
+    for (let i = 0; i < segments.length; i += 1) {
+      const seg = segments[i];
+      const speaker = seg.speaker || "旁白";
+      const profile = roleProfilesState[speaker] || {};
+      const effectiveVoice = effectiveVoiceForSegment(seg) || null;
+      const entry = {
+        index: i,
+        speaker,
+        text: String(seg.text || ""),
+        profile,
+        effectiveVoice,
+        duration: 0,
+      };
+      if (effectiveVoice) {
+        entry.kind = "browser";
+        entry.duration = estimateBrowserSpeechDurationSeconds(seg.text);
+      } else {
+        const outputName = `${baseName}_${String(i + 1).padStart(3, "0")}`;
+        const resp = await fetchJson("/api/tts", {
+          text: seg.text,
+          instruct: seg.style || profile.style || null,
+          ref_audio: seg.ref_audio || profile.ref_audio || null,
+          ref_text: seg.ref_text || profile.ref_text || null,
+          voice_engine: seg.voice_engine || profile.voice_engine || null,
+          voice_name: seg.voice_name || profile.voice_name || null,
+          voice_locale: seg.voice_locale || profile.voice_locale || null,
+          output_name: outputName,
+          inference_device: inferenceDevice,
+          backend,
+        });
+        entry.kind = "audio";
+        entry.audioUrl = resp.audio_url || "";
+        entry.duration = await loadAudioDuration(entry.audioUrl);
+      }
+      entries.push(entry);
+    }
+    let timeline = 0;
+    entries.forEach((entry) => {
+      entry.startTime = timeline;
+      timeline += Number(entry.duration) || 0;
+    });
+    return entries;
+  }
+
+  async function playAudioSegment(url, sessionId) {
+    const player = document.getElementById("audioPlayer");
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        player.onended = null;
+        player.onerror = null;
+      };
+      player.src = `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
+      player.load();
+      player.onended = () => {
+        cleanup();
+        resolve();
+      };
+      player.onerror = () => {
+        cleanup();
+        reject(new Error("分段音频播放失败"));
+      };
+      player.play().then(() => {
+        if (sessionId !== mixedPreviewSessionId) {
+          cleanup();
+          resolve();
+        }
+      }).catch((err) => {
+        cleanup();
+        reject(err);
+      });
+    });
+  }
+
+  async function startMixedPreviewPlayback(entries, summaryText) {
+    stopMixedPreviewPlayback({ preserveLyrics: false, silent: true });
+    mixedPreviewActive = true;
+    currentPlaybackMode = "mixed";
+    currentAudioUrl = "";
+    currentLrcUrl = "";
+    lyricsState = entries.map((entry) => ({
+      time: Number(entry.startTime) || 0,
+      text: `${entry.speaker}：${entry.text}`,
+    }));
+    activeLyricIndex = -1;
+    renderLyrics();
+    updateExportButtons();
+    const sessionId = ++mixedPreviewSessionId;
+    let elapsed = 0;
+    clearMixedPreviewTimer();
+    mixedPreviewTickTimer = setInterval(() => {
+      if (!mixedPreviewActive || sessionId !== mixedPreviewSessionId) return;
+      syncLyricsToAudio(elapsed);
+    }, 200);
+
+    const runEntry = async (entry) => {
+      setActiveLyricByIndex(entry.index);
+      if (entry.kind === "browser") {
+        const startAt = performance.now();
+        await previewMicrosoftVoiceInBrowser(entry.effectiveVoice || entry.profile || {}, [entry.text]);
+        elapsed += Math.max(0.1, (performance.now() - startAt) / 1000);
+        return;
+      }
+      const startAt = performance.now();
+      await playAudioSegment(entry.audioUrl, sessionId);
+      elapsed += Math.max(0.1, (performance.now() - startAt) / 1000);
+    };
+
+    try {
+      setStatus(summaryText);
+      for (const entry of entries) {
+        if (!mixedPreviewActive || sessionId !== mixedPreviewSessionId) {
+          throw new Error("混合试听已停止。");
+        }
+        await runEntry(entry);
+      }
+      if (sessionId === mixedPreviewSessionId) {
+        setActiveLyricByIndex(entries.length - 1);
+        setStatus("混合在线试听完成。当前结果仅供浏览器内预览，不支持导出完整音频。");
+      }
+      return true;
+    } catch (err) {
+      if (String(err?.message || err || "").includes("混合试听已停止")) {
+        return false;
+      }
+      throw err;
+    } finally {
+      if (sessionId === mixedPreviewSessionId) {
+        mixedPreviewActive = false;
+        clearMixedPreviewTimer();
+        updateExportButtons();
+      }
+    }
   }
 
   function exportCurrentAudio() {
@@ -3009,7 +3406,14 @@ very high pitch, very low pitch, whisper, young adult
         workers: localCfg.workers,
         analysis_mode: localCfg.analysis_mode,
         compatibility_mode: localCfg.compatibility_mode,
+        chapter_sample_chars: localCfg.chapter_sample_chars,
+        chapter_prompt: localCfg.chapter_prompt,
+        chapter_regex_override: localCfg.chapter_regex_override,
+        segment_target_chars: localCfg.segment_target_chars,
+        analysis_combo: localCfg.analysis_combo,
         system_prompt: localCfg.system_prompt,
+        segment_prompt: localCfg.segment_prompt,
+        optimize_prompt: localCfg.optimize_prompt,
       };
     }
     return {
@@ -3030,7 +3434,14 @@ very high pitch, very low pitch, whisper, young adult
       workers: parseInt(document.getElementById("llmWorkers").value || "5", 10),
       analysis_mode: document.getElementById("analysisMode").value || "balanced",
       compatibility_mode: document.getElementById("compatibilityMode").value || "strict_json",
+      chapter_sample_chars: parseInt(document.getElementById("chapterSampleChars").value || "5000", 10),
+      chapter_prompt: document.getElementById("chapterPrompt").value.trim() || null,
+      chapter_regex_override: document.getElementById("chapterRegexOverride").value.trim() || null,
+      segment_target_chars: parseInt(document.getElementById("segmentTargetChars").value || "3200", 10),
+      analysis_combo: document.getElementById("analysisCombo").value || "separate",
       system_prompt: document.getElementById("systemPrompt").value.trim() || null,
+      segment_prompt: document.getElementById("segmentPrompt").value.trim() || null,
+      optimize_prompt: document.getElementById("optimizePrompt").value.trim() || null,
     };
   }
 
@@ -3231,8 +3642,289 @@ very high pitch, very low pitch, whisper, young adult
       workers: parseInt(document.getElementById("localLlmWorkers").value || "3", 10),
       compatibility_mode: document.getElementById("localLlmCompatMode").value || "chat_compat",
       analysis_mode: document.getElementById("localLlmAnalysisMode").value || "stable",
+      chapter_sample_chars: parseInt(document.getElementById("localChapterSampleChars").value || "5000", 10),
+      chapter_prompt: document.getElementById("localChapterPrompt").value.trim() || null,
+      chapter_regex_override: document.getElementById("localChapterRegexOverride").value.trim() || null,
+      segment_target_chars: parseInt(document.getElementById("localSegmentTargetChars").value || "3200", 10),
+      analysis_combo: document.getElementById("localAnalysisCombo").value || "separate",
       system_prompt: document.getElementById("localLlmSystemPrompt").value.trim() || null,
+      segment_prompt: document.getElementById("localLlmSegmentPrompt").value.trim() || null,
+      optimize_prompt: document.getElementById("localLlmOptimizePrompt").value.trim() || null,
     };
+  }
+
+  function toggleSecretInput(inputId, button) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const nextType = input.type === "password" ? "text" : "password";
+    input.type = nextType;
+    if (button) {
+      button.textContent = nextType === "text" ? "隐藏 Key" : "显示 Key";
+    }
+  }
+
+  function expandPromptDetails(target) {
+    const ids = target === "local"
+      ? ["localChapterPrompt", "localChapterRegexOverride", "localLlmSegmentPrompt", "localLlmOptimizePrompt", "localLlmSystemPrompt"]
+      : ["chapterPrompt", "chapterRegexOverride", "segmentPrompt", "optimizePrompt", "systemPrompt"];
+    ids.forEach((id) => {
+      const textarea = document.getElementById(id);
+      const details = textarea?.closest("details");
+      if (details) {
+        details.open = true;
+      }
+    });
+  }
+
+  const ANALYSIS_COMBO_DEFS = {
+    separate: {
+      label: "1+1+1",
+      description: "智能分段 -> 语音适配优化 -> 角色分析",
+      stages: ["segment", "optimize", "analyze"],
+    },
+    segment_then_optimize_analyze: {
+      label: "1+2",
+      description: "智能分段 -> 语音适配优化+角色分析",
+      stages: ["segment", "optimize_analyze"],
+    },
+    segment_optimize_then_analyze: {
+      label: "2+1",
+      description: "智能分段+语音适配优化 -> 角色分析",
+      stages: ["segment_optimize", "analyze"],
+    },
+    segment_then_analyze: {
+      label: "1+3",
+      description: "智能分段 -> 角色分析",
+      stages: ["segment", "analyze"],
+    },
+  };
+
+  const ANALYSIS_STAGE_LABELS = {
+    segment: "智能分段",
+    optimize: "语音适配优化",
+    analyze: "分析角色",
+    segment_optimize: "智能分段+语音适配优化",
+    optimize_analyze: "语音适配优化+角色分析",
+  };
+
+  function getAnalysisComboValue(target) {
+    const selectId = target === "local"
+      ? "localAnalysisCombo"
+      : analysisSourceMode === "direct"
+        ? "localAnalysisCombo"
+        : "analysisCombo";
+    return document.getElementById(selectId)?.value || "separate";
+  }
+
+  function getAnalysisComboDef(combo = getAnalysisComboValue()) {
+    return ANALYSIS_COMBO_DEFS[combo] || ANALYSIS_COMBO_DEFS.separate;
+  }
+
+  function getSelectedAnalysisStageDefs(combo = getAnalysisComboValue()) {
+    return getAnalysisComboDef(combo).stages.map((key) => ({ key, label: ANALYSIS_STAGE_LABELS[key] || key }));
+  }
+
+  function getPromptFieldsForTarget(target) {
+    return target === "local"
+      ? {
+          preview: "localCombinedPromptPreview",
+          chapter: "localChapterPrompt",
+          chapterRegex: "localChapterRegexOverride",
+          segment: "localLlmSegmentPrompt",
+          optimize: "localLlmOptimizePrompt",
+          analyze: "localLlmSystemPrompt",
+          combo: "localAnalysisCombo",
+          maxTokens: "localLlmMaxTokens",
+          segmentTarget: "localSegmentTargetChars",
+          hint: "localSegmentTargetHint",
+        }
+      : {
+          preview: "combinedPromptPreview",
+          chapter: "chapterPrompt",
+          chapterRegex: "chapterRegexOverride",
+          segment: "segmentPrompt",
+          optimize: "optimizePrompt",
+          analyze: "systemPrompt",
+          combo: "analysisCombo",
+          maxTokens: "maxTokens",
+          segmentTarget: "segmentTargetChars",
+          hint: "segmentTargetHint",
+        };
+  }
+
+  function buildCombinedPromptText(combo, promptValues) {
+    const presetIntroMap = {
+      separate: "当前组合采用三阶段分离执行。章节识别后，先完成稳定的工作块规划，再对工作块做 OmniVoice 文本整理，最后基于整理后的文本分析角色。每一阶段都只做本阶段职责，不要抢跑后续阶段。",
+      segment_then_optimize_analyze: "当前组合采用“先智能分段，再对每个工作块一次性完成语音适配优化与角色分析”的策略。第二阶段必须在一次输出里同时兼顾可合成性与角色拆分正确性，不允许先优化后漏掉角色信息。",
+      segment_optimize_then_analyze: "当前组合采用“先智能分段并同步完成语音适配优化，再单独分析角色”的策略。第一阶段重点是得到可直接用于角色分析的优质工作块；第二阶段禁止再大改文本，只围绕角色、情绪和 style 做结构化输出。",
+      segment_then_analyze: "当前组合跳过独立语音适配优化阶段。请优先保证分段质量和角色分析结果完整，除非是明显影响结构化分析的噪声，否则不要为了 TTS 润色而改写文本。",
+    };
+    const def = getAnalysisComboDef(combo);
+    const blocks = [
+      `# 组合模式：${def.label} ${def.description}`,
+      `# 全局目标`,
+      `章节识别阶段会先参考开头样本判断章节依据，并尽量映射到稳定正则。后续流程必须严格遵守当前组合模式，保持原文完整覆盖，不得丢句、不得打乱顺序。`,
+      presetIntroMap[combo] || "",
+      `# 章节识别参考`,
+      promptValues.chapter || "",
+      promptValues.chapterRegex ? `当前可用章节正则：\n${promptValues.chapterRegex}` : "当前尚未写入章节识别结果正则，可在执行章节识别后回到这里查看。",
+    ].filter(Boolean);
+    def.stages.forEach((stageKey, index) => {
+      let title = ANALYSIS_STAGE_LABELS[stageKey] || stageKey;
+      let body = "";
+      if (stageKey === "segment") body = promptValues.segment;
+      if (stageKey === "optimize") body = promptValues.optimize;
+      if (stageKey === "analyze") body = promptValues.analyze;
+      if (stageKey === "segment_optimize") {
+        body = [
+          "本阶段要在一次调用中同时完成“智能分段 + 语音适配优化”。输出仍是 chunks，而不是 segments。",
+          "请优先保证 chunk 切分边界清晰、对白回合完整，并在 content 中做保守的 OmniVoice 适配整理。",
+          promptValues.segment,
+          promptValues.optimize,
+        ].filter(Boolean).join("\n\n");
+      }
+      if (stageKey === "optimize_analyze") {
+        body = [
+          "本阶段要在一次调用中同时完成“语音适配优化 + 角色分析”。输出必须直接是 segments。",
+          "请先保证旁白/对白拆分正确，再在不丢句的前提下做必要的 OmniVoice 适配整理。",
+          promptValues.optimize,
+          promptValues.analyze,
+        ].filter(Boolean).join("\n\n");
+      }
+      blocks.push(`## 第 ${index + 1} 阶段：${title}\n${body}`.trim());
+    });
+    return blocks.join("\n\n");
+  }
+
+  function estimatePromptTokenCost(text) {
+    return Math.max(80, Math.ceil(String(text || "").length * 0.55));
+  }
+
+  function getLongestComboPromptLength(target, defaults) {
+    const ids = getPromptFieldsForTarget(target);
+    const promptValues = {
+      chapter: document.getElementById(ids.chapter).value.trim() || defaults.chapter_prompt || "",
+      chapterRegex: document.getElementById(ids.chapterRegex).value.trim() || "",
+      segment: document.getElementById(ids.segment).value.trim() || defaults.segment_prompt || "",
+      optimize: document.getElementById(ids.optimize).value.trim() || defaults.optimize_prompt || "",
+      analyze: document.getElementById(ids.analyze).value.trim() || defaults.system_prompt || "",
+    };
+    return Math.max(...Object.keys(ANALYSIS_COMBO_DEFS).map((comboKey) => buildCombinedPromptText(comboKey, promptValues).length));
+  }
+
+  function updateAnalysisResultActions() {
+    const goBtn = document.getElementById("goToAudioButton");
+    if (goBtn) {
+      goBtn.disabled = !segmentsState.length;
+    }
+  }
+
+  function updateAnalysisFlowUI() {
+    const combo = getAnalysisComboValue();
+    const comboDef = getAnalysisComboDef(combo);
+    const stages = getSelectedAnalysisStageDefs(combo);
+    const runButton = document.getElementById("runSelectedAnalysisButton");
+    const hint = document.getElementById("sourceImportHint");
+    if (runButton) {
+      runButton.disabled = !stages.length || taskBusy;
+      runButton.textContent = `执行：${comboDef.label} ${comboDef.description}`;
+    }
+    if (hint) {
+      hint.textContent = `支持 .txt / .md 文件导入。固定先做章节识别；当前后续流程来自模型配置：${comboDef.label} ${comboDef.description}。`;
+    }
+    updateAnalysisResultActions();
+  }
+
+  function clearAnalysisResultsOnly(options = {}) {
+    applySegmentsState([], { persist: options.persist !== false });
+    if (options.keepStatus !== true) {
+      setStatus("当前尚未执行角色分析，分析结果区域已清空。");
+    }
+  }
+
+  function applyChapterDetectionFeedback(info = {}) {
+    const regexText = String(info.resolved_heading_regex || "").trim();
+    const openAiRegex = document.getElementById("chapterRegexOverride");
+    const localRegex = document.getElementById("localChapterRegexOverride");
+    if (openAiRegex) {
+      openAiRegex.value = regexText;
+    }
+    if (localRegex) {
+      localRegex.value = regexText;
+    }
+  }
+
+  async function showCombinedPromptPreview(target) {
+    try {
+      const resp = await fetch("/api/default-prompts");
+      const data = await resp.json();
+      if (!resp.ok || !data.prompts) throw new Error(data.detail || "获取默认提示词失败");
+      const defaults = data.prompts;
+      const ids = getPromptFieldsForTarget(target);
+      const combo = document.getElementById(ids.combo)?.value || "separate";
+      const promptValues = {
+        chapter: document.getElementById(ids.chapter).value.trim() || defaults.chapter_prompt || "",
+        chapterRegex: document.getElementById(ids.chapterRegex).value.trim() || "",
+        segment: document.getElementById(ids.segment).value.trim() || defaults.segment_prompt || "",
+        optimize: document.getElementById(ids.optimize).value.trim() || defaults.optimize_prompt || "",
+        analyze: document.getElementById(ids.analyze).value.trim() || defaults.system_prompt || "",
+      };
+      const targetEl = document.getElementById(ids.preview);
+      if (targetEl) {
+        targetEl.value = buildCombinedPromptText(combo, promptValues);
+        targetEl.closest("details")?.setAttribute("open", "open");
+      }
+      setStatus("已显示当前组合模式对应的整合提示词预览。");
+    } catch (err) {
+      setStatus("显示整合提示词失败: " + err.message);
+    }
+  }
+
+  async function autoTuneSegmentTargetChars(target) {
+    try {
+      const resp = await fetch("/api/default-prompts");
+      const data = await resp.json();
+      if (!resp.ok || !data.prompts) throw new Error(data.detail || "获取默认提示词失败");
+      const ids = getPromptFieldsForTarget(target);
+      const longestPromptChars = getLongestComboPromptLength(target, data.prompts);
+      const maxTokens = Math.max(600, parseInt(document.getElementById(ids.maxTokens).value || "2000", 10));
+      const promptTokens = estimatePromptTokenCost("x".repeat(longestPromptChars));
+      const reserveTokens = Math.max(320, Math.floor(maxTokens * 0.28));
+      const availableTokens = Math.max(260, maxTokens - promptTokens - reserveTokens);
+      const recommendedChars = Math.max(800, Math.min(6000, Math.floor(availableTokens * 2.1)));
+      document.getElementById(ids.segmentTarget).value = recommendedChars;
+      const hintEl = document.getElementById(ids.hint);
+      if (hintEl) {
+        hintEl.textContent = `已按最长组合提示词估算：Max Tokens ${maxTokens}，提示词预算约 ${promptTokens} tokens，建议单段长度约 ${recommendedChars} 字。`;
+      }
+      setStatus("已根据当前 Max Tokens 和最长组合提示词自动估算智能分段目标长度。");
+    } catch (err) {
+      setStatus("自动估算智能分段目标长度失败: " + err.message);
+    }
+  }
+
+  async function loadDefaultPrompts(target) {
+    try {
+      const resp = await fetch("/api/default-prompts");
+      const data = await resp.json();
+      if (!resp.ok || !data.prompts) throw new Error(data.detail || "获取默认提示词失败");
+      const p = data.prompts;
+      if (target === "local") {
+        document.getElementById("localChapterPrompt").value = p.chapter_prompt || "";
+        document.getElementById("localLlmSystemPrompt").value = p.system_prompt;
+        document.getElementById("localLlmSegmentPrompt").value = p.segment_prompt;
+        document.getElementById("localLlmOptimizePrompt").value = p.optimize_prompt;
+      } else {
+        document.getElementById("chapterPrompt").value = p.chapter_prompt || "";
+        document.getElementById("systemPrompt").value = p.system_prompt;
+        document.getElementById("segmentPrompt").value = p.segment_prompt;
+        document.getElementById("optimizePrompt").value = p.optimize_prompt;
+      }
+      expandPromptDetails(target);
+      setStatus("已显示当前默认提示词，并自动展开章节识别与基础提示词。清空文本框即恢复使用后端默认值。");
+    } catch (err) {
+      setStatus("加载默认提示词失败: " + err.message);
+    }
   }
 
   function saveConfig() {
@@ -3271,7 +3963,14 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("localLlmWorkers").value = cfg.workers ?? 3;
     document.getElementById("localLlmCompatMode").value = cfg.compatibility_mode || "chat_compat";
     document.getElementById("localLlmAnalysisMode").value = cfg.analysis_mode || "stable";
+    document.getElementById("localChapterSampleChars").value = cfg.chapter_sample_chars ?? 5000;
+    document.getElementById("localAnalysisCombo").value = cfg.analysis_combo || "separate";
+    document.getElementById("localSegmentTargetChars").value = cfg.segment_target_chars ?? 3200;
+    document.getElementById("localChapterPrompt").value = cfg.chapter_prompt || "";
+    document.getElementById("localChapterRegexOverride").value = cfg.chapter_regex_override || "";
     document.getElementById("localLlmSystemPrompt").value = cfg.system_prompt || "";
+    document.getElementById("localLlmSegmentPrompt").value = cfg.segment_prompt || "";
+    document.getElementById("localLlmOptimizePrompt").value = cfg.optimize_prompt || "";
   }
 
   async function loadConfig() {
@@ -3286,7 +3985,14 @@ very high pitch, very low pitch, whisper, young adult
       document.getElementById("llmWorkers").value = cfg.workers ?? 5;
       document.getElementById("analysisMode").value = cfg.analysis_mode || "balanced";
       document.getElementById("compatibilityMode").value = cfg.compatibility_mode || "strict_json";
+      document.getElementById("chapterSampleChars").value = cfg.chapter_sample_chars ?? 5000;
+      document.getElementById("analysisCombo").value = cfg.analysis_combo || "separate";
+      document.getElementById("segmentTargetChars").value = cfg.segment_target_chars ?? 3200;
+      document.getElementById("chapterPrompt").value = cfg.chapter_prompt || "";
+      document.getElementById("chapterRegexOverride").value = cfg.chapter_regex_override || "";
       document.getElementById("systemPrompt").value = cfg.system_prompt || "";
+      document.getElementById("segmentPrompt").value = cfg.segment_prompt || "";
+      document.getElementById("optimizePrompt").value = cfg.optimize_prompt || "";
     } else {
       try {
         const resp = await fetch("/api/llm-defaults");
@@ -3374,6 +4080,7 @@ very high pitch, very low pitch, whisper, young adult
         indeterminate: false,
       }, { log: "已从浏览器本地缓存读取配置" });
     }
+    updateAnalysisFlowUI();
   }
 
   function applyLLMConfigToForm(cfg) {
@@ -3392,7 +4099,14 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("llmWorkers").value = cfg.workers ?? 5;
     document.getElementById("analysisMode").value = cfg.analysis_mode || "balanced";
     document.getElementById("compatibilityMode").value = cfg.compatibility_mode || "strict_json";
+    document.getElementById("chapterSampleChars").value = cfg.chapter_sample_chars ?? 5000;
+    document.getElementById("analysisCombo").value = cfg.analysis_combo || "separate";
+    document.getElementById("segmentTargetChars").value = cfg.segment_target_chars ?? 3200;
+    document.getElementById("chapterPrompt").value = cfg.chapter_prompt || "";
+    document.getElementById("chapterRegexOverride").value = cfg.chapter_regex_override || "";
     document.getElementById("systemPrompt").value = cfg.system_prompt || "";
+    document.getElementById("segmentPrompt").value = cfg.segment_prompt || "";
+    document.getElementById("optimizePrompt").value = cfg.optimize_prompt || "";
   }
 
   function formatSystemStatus(data) {
@@ -3626,6 +4340,7 @@ very high pitch, very low pitch, whisper, young adult
     renderRoleAssignments();
     renderSegments(segmentsPanelExpanded);
     renderAnalysisPipelineMeta();
+    updateAnalysisResultActions();
   }
 
   function getExportableSegments() {
@@ -3753,6 +4468,8 @@ very high pitch, very low pitch, whisper, young adult
       voice_engine: raw.voice_engine || "",
       voice_name: raw.voice_name || "",
       voice_locale: raw.voice_locale || "",
+      voice_provider: raw.voice_provider || "",
+      voice_platform: raw.voice_platform || "",
     };
   }
 
@@ -3760,16 +4477,29 @@ very high pitch, very low pitch, whisper, young adult
     return String(voice?.voice_engine || "").toLowerCase() === MICROSOFT_VOICE_ENGINE && !!String(voice?.voice_name || "").trim();
   }
 
+  function isBrowserLocalVoice(voice) {
+    return String(voice?.voice_engine || "").toLowerCase() === BROWSER_LOCAL_VOICE_ENGINE && !!String(voice?.voice_name || "").trim();
+  }
+
+  function isBrowserPreviewVoice(voice) {
+    return isMicrosoftVoice(voice) || isBrowserLocalVoice(voice);
+  }
+
   function getVoiceBadgeLabel(voice) {
     if (isMicrosoftVoice(voice)) {
       return `微软 TTS${voice.voice_locale ? ` / ${voice.voice_locale}` : ""}`;
+    }
+    if (isBrowserLocalVoice(voice)) {
+      const provider = String(voice.voice_provider || "").trim();
+      const platform = String(voice.voice_platform || "").trim();
+      return `浏览器本地语音${provider ? ` / ${provider}` : ""}${platform ? ` / ${platform}` : ""}${voice.voice_locale ? ` / ${voice.voice_locale}` : ""}`;
     }
     return voice.ref_audio ? "参考音频" : "Voice Design";
   }
 
   function getVoiceLabel(voice) {
     const name = voice.name || "未命名声音";
-    if (isMicrosoftVoice(voice)) {
+    if (isBrowserPreviewVoice(voice)) {
       return `${name}${voice.voice_locale ? ` (${voice.voice_locale})` : ""}`;
     }
     return name;
@@ -3812,6 +4542,9 @@ very high pitch, very low pitch, whisper, young adult
     if (field === "style") {
       renderVoiceLibrary();
     }
+    if (field === "ref_audio") {
+      syncTranscribeButtonState(index);
+    }
     renderRoleAssignments();
   }
 
@@ -3824,11 +4557,99 @@ very high pitch, very low pitch, whisper, young adult
     return microsoftVoiceCatalogCache;
   }
 
-  async function importMicrosoftVoices() {
+  function isLocalBrowserSpeechVoice(voice) {
+    return !!voice && voice.localService === true;
+  }
+
+  function detectBrowserVoicePlatform() {
+    const uaPlatform = String(navigator.userAgentData?.platform || "").toLowerCase();
+    const navPlatform = String(navigator.platform || "").toLowerCase();
+    const userAgent = String(navigator.userAgent || "").toLowerCase();
+    const source = `${uaPlatform} ${navPlatform} ${userAgent}`;
+    if (source.includes("win")) return "Windows";
+    if (source.includes("mac")) return "macOS";
+    return "Other";
+  }
+
+  function inferBrowserVoiceProvider(voice, platform) {
+    const name = String(voice?.name || "").toLowerCase();
+    const uri = String(voice?.voiceURI || "").toLowerCase();
+    if (name.includes("microsoft") || uri.includes("microsoft")) return "Microsoft";
+    if (name.includes("apple") || uri.includes("com.apple")) return "Apple";
+    if (name.includes("siri")) return "Apple";
+    if (name.includes("google")) return "Google";
+    if (platform === "Windows") return "Windows";
+    if (platform === "macOS") return "Apple";
+    return "Local";
+  }
+
+  function shouldImportBrowserVoiceForPlatform(voice, platform) {
+    if (!isLocalBrowserSpeechVoice(voice)) return false;
+    const locale = String(voice?.lang || "").trim().toLowerCase();
+    if (!locale.startsWith("zh")) return false;
+    const provider = inferBrowserVoiceProvider(voice, platform);
+    if (platform === "Windows") {
+      return provider === "Microsoft" || provider === "Windows";
+    }
+    if (platform === "macOS") {
+      return provider === "Apple";
+    }
+    return true;
+  }
+
+  function inferGenderFromVoiceMeta(voice, provider = "") {
+    const name = String(voice?.name || "").toLowerCase();
+    const uri = String(voice?.voiceURI || "").toLowerCase();
+    const combined = `${name} ${uri} ${String(provider || "").toLowerCase()}`;
+    const femaleHints = ["xiaoxiao", "xiaoyi", "yaoyao", "hanhan", "meijia", "tingting", "jiaojiao", "female"];
+    const maleHints = ["yunxi", "yunjian", "kangkang", "male"];
+    if (femaleHints.some((hint) => combined.includes(hint))) return "female";
+    if (maleHints.some((hint) => combined.includes(hint))) return "male";
+    return "";
+  }
+
+  function getBrowserMicrosoftVoiceCatalog(forceRefresh = false) {
+    if (!window.speechSynthesis) {
+      return { importable_voices: [], available_languages: [] };
+    }
+    if (!forceRefresh && browserMicrosoftVoiceCache) {
+      return browserMicrosoftVoiceCache;
+    }
+    const platform = detectBrowserVoicePlatform();
+    const voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
+    const importable = voices
+      .filter((voice) => shouldImportBrowserVoiceForPlatform(voice, platform))
+      .map((voice) => {
+        const provider = inferBrowserVoiceProvider(voice, platform);
+        return {
+          name: voice.name || "",
+          system_voice_name: voice.name || "",
+          locale: voice.lang || "",
+          style: buildMicrosoftVoiceStyleHint(voice, provider),
+          provider,
+          platform,
+          gender: inferGenderFromVoiceMeta(voice, provider),
+          local_service: true,
+          preview_available: true,
+        };
+      })
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh-CN"));
+    const languages = [...new Set(importable.map((voice) => String(voice.locale || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-CN"));
+    browserMicrosoftVoiceCache = {
+      importable_voices: importable,
+      available_languages: languages,
+      platform,
+    };
+    return browserMicrosoftVoiceCache;
+  }
+
+  async function importBrowserLocalVoices() {
     if (taskBusy) return;
-    beginTask("narrate", "准备导入微软系统语音", "将读取当前 Windows / 浏览器兼容的微软语音，并把可生成音频的条目加入声音库。");
+    beginTask("narrate", "准备导入浏览器本地语音", "将自动识别当前系统是 Windows 还是 macOS，并只导入该系统下浏览器可直接播放的本地语音。");
     try {
-      const catalog = await getMicrosoftVoiceCatalog(true);
+      await ensureBrowserVoiceCatalogReady(true);
+      const catalog = getBrowserMicrosoftVoiceCatalog(true);
+      const platform = String(catalog.platform || detectBrowserVoicePlatform());
       const localePriority = {
         "zh-cn": 0,
         "ja-jp": 1,
@@ -3859,20 +4680,23 @@ very high pitch, very low pitch, whisper, young adult
         });
       const existing = new Set(
         voiceLibraryState
-          .filter(isMicrosoftVoice)
-          .map((voice) => `${String(voice.voice_name || "").trim().toLowerCase()}__${String(voice.voice_locale || "").trim().toLowerCase()}`)
+          .filter(isBrowserPreviewVoice)
+          .map((voice) => `${String(voice.voice_engine || "").trim().toLowerCase()}__${String(voice.voice_name || "").trim().toLowerCase()}__${String(voice.voice_locale || "").trim().toLowerCase()}`)
       );
       let added = 0;
       importable.forEach((item) => {
-        const key = `${String(item.system_voice_name || "").trim().toLowerCase()}__${String(item.locale || "").trim().toLowerCase()}`;
+        const engine = String(item.provider || "").toLowerCase() === "microsoft" ? MICROSOFT_VOICE_ENGINE : BROWSER_LOCAL_VOICE_ENGINE;
+        const key = `${engine}__${String(item.system_voice_name || "").trim().toLowerCase()}__${String(item.locale || "").trim().toLowerCase()}`;
         if (existing.has(key)) return;
         existing.add(key);
         voiceLibraryState.push(normalizeVoiceLibraryEntry({
           name: item.name || item.system_voice_name || "",
           style: item.style || "",
-          voice_engine: MICROSOFT_VOICE_ENGINE,
+          voice_engine: engine,
           voice_name: item.system_voice_name || item.name || "",
           voice_locale: item.locale || "",
+          voice_provider: item.provider || "",
+          voice_platform: item.platform || platform,
         }));
         added += 1;
       });
@@ -3882,15 +4706,18 @@ very high pitch, very low pitch, whisper, young adult
       renderVoiceLibrary();
       renderRoleAssignments();
       const languages = Array.isArray(catalog.available_languages) ? catalog.available_languages.join(", ") : "";
-      setStatus(`已导入 ${added} 个微软语音。当前检测到的微软语音语言：${languages || "未识别"}`);
-      finishTask(`微软语音导入完成`, `已新增 ${added} 个可生成音频的微软语音。当前检测到的浏览器/OneCore 语言：${languages || "未识别"}`, {
+      const summary = importable.length
+        ? `已为 ${platform} 新增 ${added} 个浏览器本地语音。当前检测到的本地语音语言：${languages || "未识别"}`
+        : `当前浏览器未发现可用于 ${platform} 的本地语音，请确认系统已安装对应语音包，并且该 voice 标记为本地服务。`;
+      setStatus(summary);
+      finishTask("浏览器本地语音导入完成", summary, {
         total: Math.max(importable.length, 1),
         done: added,
       });
     } catch (err) {
       if (isTaskCancelledError(err)) return;
-      setStatus("导入微软语音失败，请查看上方任务面板中的详细错误。");
-      failTask("导入微软语音失败", err.message || String(err));
+      setStatus("导入浏览器本地语音失败，请查看上方任务面板中的详细错误。");
+      failTask("导入浏览器本地语音失败", err.message || String(err));
     }
   }
 
@@ -3901,6 +4728,7 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function closeVoiceLibraryEditor() {
+    cleanupRecorder();
     editingVoiceLibraryIndex = -1;
     renderVoiceLibrary();
   }
@@ -4149,11 +4977,18 @@ very high pitch, very low pitch, whisper, young adult
     }
   }
 
+  function syncTranscribeButtonState(index) {
+    const btn = document.getElementById(`btnTranscribeRef_${index}`);
+    if (!btn) return;
+    const voice = voiceLibraryState[index];
+    btn.disabled = !(voice && (voice.ref_audio || voice.ref_audio_url));
+  }
+
   async function transcribeVoiceLibraryRefAudio(index) {
     const voice = voiceLibraryState[index];
     if (!voice) return;
     if (!String(voice.ref_audio || "").trim()) {
-      setStatus("请先为当前声音选择或填写参考音频。");
+      setStatus("请先为当前声音选择本地音频或录制声音后，再使用自动识别参考文本功能。");
       return;
     }
     const backend = await ensureAudioRecognitionReady();
@@ -4193,6 +5028,249 @@ very high pitch, very low pitch, whisper, young adult
     } finally {
       input.value = "";
     }
+  }
+
+  /* ── Voice Recorder ── */
+
+  function toggleVoiceRecorderPanel(index) {
+    const panel = document.getElementById(`voiceRecorderPanel_${index}`);
+    const dropzone = document.getElementById(`voiceDropzone_${index}`);
+    const toggleBtn = document.getElementById(`btnRecToggle_${index}`);
+    if (!panel) return;
+    const show = panel.hidden;
+    panel.hidden = !show;
+    if (dropzone) dropzone.hidden = show;
+    if (toggleBtn) toggleBtn.classList.toggle("recorder-toggle-active", show);
+    if (show) {
+      detectRecordingDevices(index);
+    } else {
+      cleanupRecorder();
+    }
+  }
+
+  async function detectRecordingDevices(index) {
+    const sel = document.getElementById(`recDeviceSelect_${index}`);
+    const startBtn = document.getElementById(`recStartBtn_${index}`);
+    if (!sel) return;
+    try {
+      const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      tempStream.getTracks().forEach(t => t.stop());
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(d => d.kind === "audioinput");
+      sel.innerHTML = "";
+      if (!audioInputs.length) {
+        sel.innerHTML = '<option value="">未检测到录音设备</option>';
+        if (startBtn) startBtn.disabled = true;
+        setStatus("未检测到任何录音设备，请检查麦克风连接。");
+        return;
+      }
+      audioInputs.forEach((d, i) => {
+        const opt = document.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `麦克风 ${i + 1}`;
+        sel.appendChild(opt);
+      });
+      voiceRecorderState.deviceId = sel.value;
+      if (startBtn) startBtn.disabled = false;
+      setStatus(`已检测到 ${audioInputs.length} 个录音设备。`);
+      startRecorderMeter(index);
+    } catch (err) {
+      sel.innerHTML = '<option value="">无法访问麦克风</option>';
+      if (startBtn) startBtn.disabled = true;
+      if (err.name === "NotAllowedError") {
+        setStatus("麦克风权限被拒绝，请在浏览器设置中允许访问麦克风。");
+      } else {
+        setStatus("检测录音设备失败: " + (err.message || err));
+      }
+    }
+  }
+
+  function switchRecordingDevice(index) {
+    const sel = document.getElementById(`recDeviceSelect_${index}`);
+    if (!sel) return;
+    voiceRecorderState.deviceId = sel.value;
+    cleanupRecorderMeter();
+    startRecorderMeter(index);
+  }
+
+  function attachMeterToStream(stream, index) {
+    /* stop previous RAF + AudioContext but don't touch any stream */
+    if (voiceRecorderState.meterRAF) {
+      cancelAnimationFrame(voiceRecorderState.meterRAF);
+      voiceRecorderState.meterRAF = null;
+    }
+    if (voiceRecorderState._meterCtx) {
+      voiceRecorderState._meterCtx.close().catch(() => {});
+      voiceRecorderState._meterCtx = null;
+    }
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+    voiceRecorderState.analyser = analyser;
+    voiceRecorderState._meterCtx = ctx;
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    const meter = document.getElementById(`recMeter_${index}`);
+    const dbLabel = document.getElementById(`recMeterDb_${index}`);
+    function tick() {
+      analyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+      const avg = sum / dataArray.length;
+      const pct = Math.min(100, (avg / 128) * 100);
+      if (meter) {
+        meter.style.width = pct + "%";
+        meter.classList.toggle("hot", pct > 85);
+      }
+      if (dbLabel) {
+        const db = avg > 0 ? Math.round(20 * Math.log10(avg / 255)) : -60;
+        dbLabel.textContent = db + " dB";
+      }
+      voiceRecorderState.meterRAF = requestAnimationFrame(tick);
+    }
+    tick();
+  }
+
+  async function startRecorderMeter(index) {
+    cleanupRecorderMeter();
+    try {
+      const constraints = { audio: voiceRecorderState.deviceId ? { deviceId: { exact: voiceRecorderState.deviceId } } : true };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      voiceRecorderState._meterStream = stream;
+      attachMeterToStream(stream, index);
+    } catch (err) {
+      console.warn("meter init failed:", err);
+    }
+  }
+
+  function cleanupRecorderMeter() {
+    if (voiceRecorderState.meterRAF) {
+      cancelAnimationFrame(voiceRecorderState.meterRAF);
+      voiceRecorderState.meterRAF = null;
+    }
+    if (voiceRecorderState._meterStream) {
+      voiceRecorderState._meterStream.getTracks().forEach(t => t.stop());
+      voiceRecorderState._meterStream = null;
+    }
+    if (voiceRecorderState._meterCtx) {
+      voiceRecorderState._meterCtx.close().catch(() => {});
+      voiceRecorderState._meterCtx = null;
+    }
+    voiceRecorderState.analyser = null;
+  }
+
+  function cleanupRecorder() {
+    if (voiceRecorderState.recording) {
+      try { voiceRecorderState.recorder.stop(); } catch (_) {}
+    }
+    if (voiceRecorderState.stream) {
+      voiceRecorderState.stream.getTracks().forEach(t => t.stop());
+    }
+    cleanupRecorderMeter();
+    if (voiceRecorderState._recTimerInterval) {
+      clearInterval(voiceRecorderState._recTimerInterval);
+      voiceRecorderState._recTimerInterval = null;
+    }
+    voiceRecorderState.stream = null;
+    voiceRecorderState.recorder = null;
+    voiceRecorderState.chunks = [];
+    voiceRecorderState.recording = false;
+  }
+
+  async function startVoiceRecording(index) {
+    /* stop any previous recorder, but keep meter stream reference for cleanup */
+    if (voiceRecorderState.recorder) {
+      try { voiceRecorderState.recorder.stop(); } catch (_) {}
+      voiceRecorderState.recorder = null;
+    }
+    if (voiceRecorderState.stream) {
+      voiceRecorderState.stream.getTracks().forEach(t => t.stop());
+      voiceRecorderState.stream = null;
+    }
+    voiceRecorderState.chunks = [];
+    voiceRecorderState.recording = false;
+    if (voiceRecorderState._recTimerInterval) {
+      clearInterval(voiceRecorderState._recTimerInterval);
+      voiceRecorderState._recTimerInterval = null;
+    }
+    /* release the preview-only meter stream so the device is free */
+    if (voiceRecorderState._meterStream) {
+      voiceRecorderState._meterStream.getTracks().forEach(t => t.stop());
+      voiceRecorderState._meterStream = null;
+    }
+    try {
+      const constraints = { audio: voiceRecorderState.deviceId ? { deviceId: { exact: voiceRecorderState.deviceId } } : true };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      voiceRecorderState.stream = stream;
+      voiceRecorderState.recorder = recorder;
+      voiceRecorderState.chunks = [];
+      voiceRecorderState.recording = true;
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) voiceRecorderState.chunks.push(e.data); };
+      recorder.onstop = () => finishRecording(index);
+      recorder.start(200);
+
+      /* reattach meter to the recording stream */
+      attachMeterToStream(stream, index);
+
+      const startBtn = document.getElementById(`recStartBtn_${index}`);
+      const stopBtn = document.getElementById(`recStopBtn_${index}`);
+      if (startBtn) startBtn.hidden = true;
+      if (stopBtn) stopBtn.hidden = false;
+
+      let elapsed = 0;
+      const timeEl = document.getElementById(`recTime_${index}`);
+      voiceRecorderState._recTimerInterval = setInterval(() => {
+        elapsed++;
+        const m = Math.floor(elapsed / 60);
+        const s = String(elapsed % 60).padStart(2, "0");
+        if (timeEl) timeEl.textContent = `${m}:${s}`;
+      }, 1000);
+
+      setStatus("正在录音...");
+    } catch (err) {
+      setStatus("启动录音失败: " + (err.message || err));
+      cleanupRecorder();
+    }
+  }
+
+  function stopVoiceRecording(index) {
+    if (!voiceRecorderState.recorder || voiceRecorderState.recorder.state === "inactive") return;
+    voiceRecorderState.recorder.stop();
+    voiceRecorderState.recording = false;
+    if (voiceRecorderState._recTimerInterval) {
+      clearInterval(voiceRecorderState._recTimerInterval);
+      voiceRecorderState._recTimerInterval = null;
+    }
+    const startBtn = document.getElementById(`recStartBtn_${index}`);
+    const stopBtn = document.getElementById(`recStopBtn_${index}`);
+    if (startBtn) { startBtn.hidden = false; }
+    if (stopBtn) stopBtn.hidden = true;
+  }
+
+  async function finishRecording(index) {
+    const chunks = voiceRecorderState.chunks;
+    if (!chunks.length) { setStatus("录音为空，未保存。"); startRecorderMeter(index); return; }
+    const blob = new Blob(chunks, { type: chunks[0].type || "audio/webm" });
+    const ext = (blob.type || "").includes("mp4") ? "m4a" : "webm";
+    const filename = `recording_${Date.now()}.${ext}`;
+    const file = new File([blob], filename, { type: blob.type });
+    if (voiceRecorderState.stream) {
+      voiceRecorderState.stream.getTracks().forEach(t => t.stop());
+      voiceRecorderState.stream = null;
+    }
+    setStatus("录音完成，正在上传...");
+    try {
+      await assignVoiceLibraryFile(index, file);
+    } catch (err) {
+      setStatus("录音上传失败: " + (err.message || err));
+    }
+    /* restore preview meter */
+    startRecorderMeter(index);
   }
 
   async function handleVoiceLibraryBatchChange(event) {
@@ -4307,6 +5385,8 @@ very high pitch, very low pitch, whisper, young adult
 
     const voice = voiceLibraryState[editIndex];
     const isMicrosoft = isMicrosoftVoice(voice);
+    const isBrowserLocal = isBrowserLocalVoice(voice);
+    const isBrowserPreview = isBrowserPreviewVoice(voice);
     editor.hidden = false;
     editor.innerHTML = `
       <div class="voice-head">
@@ -4314,31 +5394,57 @@ very high pitch, very low pitch, whisper, young adult
         <button type="button" class="secondary" onclick="closeVoiceLibraryEditor()">完成编辑</button>
       </div>
       <label>声音类型</label>
-      <input value="${escapeHtml(isMicrosoft ? "微软 TTS" : "自定义声音")}" readonly />
-      ${isMicrosoft ? `
-      <label>微软语音标识</label>
+      <input value="${escapeHtml(isMicrosoft ? "微软 TTS" : (isBrowserLocal ? "浏览器本地语音" : "自定义声音"))}" readonly />
+      ${isBrowserPreview ? `
+      <label>浏览器语音标识</label>
       <input value="${escapeHtml(voice.voice_name || "")}" readonly />
       <label>语言 / 区域</label>
       <input value="${escapeHtml(voice.voice_locale || "")}" readonly />
-      <div class="mini-note">这类声音预览会优先调用浏览器微软语音，生成音频时会走 Windows 微软 TTS 后端。</div>
+      <label>语音提供方</label>
+      <input value="${escapeHtml(voice.voice_provider || (isMicrosoft ? "Microsoft" : "Local"))}" readonly />
+      <label>系统平台</label>
+      <input value="${escapeHtml(voice.voice_platform || detectBrowserVoicePlatform())}" readonly />
+      <div class="mini-note">这类声音只会调用浏览器当前系统的本地中文语音进行连续试听，要求 voice.localService = true；性别会按已知语音名尽量推断，无法确认时不会强行标记。</div>
       ` : `
       <label>ref_audio</label>
-      <input value="${escapeHtml(voice.ref_audio || "")}" placeholder="可以填写本地或可访问的音频路径" onchange="updateVoiceLibraryField(${editIndex}, 'ref_audio', this.value)" />
+      <input id="voiceRefAudioInput_${editIndex}" value="${escapeHtml(voice.ref_audio || "")}" placeholder="可以填写本地或可访问的音频路径" onchange="updateVoiceLibraryField(${editIndex}, 'ref_audio', this.value)" />
       <div class="voice-actions">
         <button type="button" class="secondary" onclick="triggerVoiceLibraryFilePick(${editIndex})">选择本地音频</button>
-        <button type="button" class="secondary" data-busy-lock onclick="transcribeVoiceLibraryRefAudio(${editIndex})">自动识别参考文本</button>
+        <button type="button" class="secondary" id="btnRecToggle_${editIndex}" onclick="toggleVoiceRecorderPanel(${editIndex})">录制声音</button>
+        <button type="button" class="secondary" data-busy-lock id="btnTranscribeRef_${editIndex}" ${(voice.ref_audio || voice.ref_audio_url) ? "" : "disabled"} onclick="transcribeVoiceLibraryRefAudio(${editIndex})">自动识别参考文本</button>
       </div>
       <div id="voiceDropzone_${editIndex}" class="dropzone" ondragover="handleVoiceDropDragOver(event, ${editIndex})" ondragleave="handleVoiceDropDragLeave(event, ${editIndex})" ondrop="handleVoiceDrop(event, ${editIndex})">
         把本地音频文件拖到这里即可自动上传并填入路径
       </div>
-      ${(voice.ref_audio_url || voice.ref_audio) ? `<audio class="inline-audio" controls src="${escapeHtml(voice.ref_audio_url || voice.ref_audio)}"></audio>` : ""}
+      <div id="voiceRecorderPanel_${editIndex}" class="recorder-panel" hidden>
+        <div class="recorder-row">
+          <label>录音设备</label>
+          <select id="recDeviceSelect_${editIndex}" onchange="switchRecordingDevice(${editIndex})">
+            <option value="">-- 请先点击「检测设备」 --</option>
+          </select>
+          <button type="button" class="secondary" style="font-size:12px; padding:4px 10px;" onclick="detectRecordingDevices(${editIndex})">检测设备</button>
+        </div>
+        <div class="recorder-row">
+          <label>输入音量</label>
+          <div class="recorder-meter-wrap"><div id="recMeter_${editIndex}" class="recorder-meter-bar"></div></div>
+          <span id="recMeterDb_${editIndex}" style="font-size:11px; color:var(--sub); min-width:48px; text-align:right;">--</span>
+        </div>
+        <div class="recorder-row" style="margin-bottom:0;">
+          <div class="recorder-actions">
+            <button type="button" class="btn-rec" id="recStartBtn_${editIndex}" disabled onclick="startVoiceRecording(${editIndex})">开始录音</button>
+            <button type="button" class="btn-rec btn-rec-stop" id="recStopBtn_${editIndex}" hidden onclick="stopVoiceRecording(${editIndex})">停止录音</button>
+            <span class="rec-time" id="recTime_${editIndex}">0:00</span>
+          </div>
+        </div>
+      </div>
+      ${(voice.ref_audio_url || voice.ref_audio) ? `<audio id="voicePreviewAudio_${editIndex}" class="inline-audio" controls src="${escapeHtml(voice.ref_audio_url || voice.ref_audio)}"></audio>` : ""}
       `}
       <label>声音名称</label>
       <input value="${escapeHtml(voice.name || "")}" onchange="updateVoiceLibraryField(${editIndex}, 'name', this.value)" />
       <label>style</label>
       <input value="${escapeHtml(voice.style || "")}" placeholder="例如：female, moderate pitch" onchange="updateVoiceLibraryField(${editIndex}, 'style', this.value)" />
       ${renderStylePicker("voice", editIndex)}
-      ${isMicrosoft ? "" : `
+      ${isBrowserPreview ? "" : `
       <label>ref_text</label>
       <textarea onchange="updateVoiceLibraryField(${editIndex}, 'ref_text', this.value)">${escapeHtml(voice.ref_text || "")}</textarea>
       `}
@@ -4378,9 +5484,9 @@ very high pitch, very low pitch, whisper, young adult
     const meta = document.getElementById("segmentsMeta");
     const label = document.getElementById("segmentsToggleLabel");
     meta.textContent = segmentsPanelExpanded
-      ? `当前共 ${count} 段，已展开编辑视图`
-      : `当前共 ${count} 段，默认折叠以减少滚动卡顿`;
-    label.textContent = segmentsPanelExpanded ? "收起分段结果" : "展开分段结果";
+      ? `当前共 ${count} 条分析结果，已展开编辑视图`
+      : `当前共 ${count} 条分析结果，默认折叠以减少滚动卡顿`;
+    label.textContent = segmentsPanelExpanded ? "收起分析结果" : "展开分析结果";
   }
 
   function syncRoleProfilesFromSegments() {
@@ -4468,8 +5574,8 @@ very high pitch, very low pitch, whisper, young adult
     const voice = voiceLibraryState.find((item) => item.id === voiceId);
     if (voice) {
       roleProfilesState[speaker].style = voice.style || roleProfilesState[speaker].style || "";
-      roleProfilesState[speaker].ref_audio = isMicrosoftVoice(voice) ? "" : (voice.ref_audio || "");
-      roleProfilesState[speaker].ref_text = isMicrosoftVoice(voice) ? "" : (voice.ref_text || "");
+      roleProfilesState[speaker].ref_audio = isBrowserPreviewVoice(voice) ? "" : (voice.ref_audio || "");
+      roleProfilesState[speaker].ref_text = isBrowserPreviewVoice(voice) ? "" : (voice.ref_text || "");
       roleProfilesState[speaker].voice_engine = voice.voice_engine || "";
       roleProfilesState[speaker].voice_name = voice.voice_name || "";
       roleProfilesState[speaker].voice_locale = voice.voice_locale || "";
@@ -4487,6 +5593,7 @@ very high pitch, very low pitch, whisper, young adult
       disallowDuplicate: !!document.getElementById("autoAssignDisallowDuplicate")?.checked,
       useNarratorFallback: !!document.getElementById("autoAssignUseNarratorFallback")?.checked,
       useDesignForSingleLine: !!document.getElementById("autoAssignUseDesignForSingleLine")?.checked,
+      preferBrowserLocal: !!document.getElementById("autoAssignPreferBrowserLocal")?.checked,
     };
   }
 
@@ -4578,9 +5685,78 @@ very high pitch, very low pitch, whisper, young adult
     return shortlist[Math.floor(Math.random() * shortlist.length)];
   }
 
+  function choosePreviewTextsForSpeaker(speaker, maxCount = MICROSOFT_PREVIEW_SEGMENT_COUNT) {
+    const candidates = segmentsState
+      .filter((seg) => (seg.speaker || "旁白") === speaker && String(seg.text || "").trim())
+      .sort((a, b) => String(a.text || "").length - String(b.text || "").length);
+    if (!candidates.length) return [];
+    const deduped = [];
+    const seen = new Set();
+    for (const seg of candidates) {
+      const text = String(seg.text || "").trim();
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      deduped.push(seg);
+      if (deduped.length >= maxCount) break;
+    }
+    return deduped;
+  }
+
+  function buildMicrosoftVoiceStyleHint(voice, provider = "") {
+    const locale = String(voice?.lang || "").trim();
+    const tags = [];
+    const inferredGender = inferGenderFromVoiceMeta(voice, provider);
+    if (inferredGender === "female") {
+      tags.push("female");
+    } else if (inferredGender === "male") {
+      tags.push("male");
+    }
+    if (locale === "zh-CN") {
+      tags.push("chinese accent");
+    } else if (locale === "ja-JP") {
+      tags.push("japanese accent");
+    } else if (locale === "en-US") {
+      tags.push("english accent");
+    }
+    tags.push("moderate pitch");
+    return [...new Set(tags)].join(", ");
+  }
+
+  function waitForVoicesChanged(timeoutMs = 1200) {
+    const synth = window.speechSynthesis;
+    if (!synth) return Promise.resolve();
+    return new Promise((resolve) => {
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        if ("onvoiceschanged" in synth) {
+          synth.onvoiceschanged = null;
+        }
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      if ("onvoiceschanged" in synth) {
+        synth.onvoiceschanged = finish;
+      }
+    });
+  }
+
+  async function ensureBrowserVoiceCatalogReady(forceRefresh = false) {
+    if (!window.speechSynthesis) {
+      throw new Error("当前浏览器不支持 speechSynthesis。");
+    }
+    if (!forceRefresh && getBrowserMicrosoftVoiceCatalog(false).importable_voices.length) {
+      return getBrowserMicrosoftVoiceCatalog(false);
+    }
+    await waitForVoicesChanged();
+    return getBrowserMicrosoftVoiceCatalog(true);
+  }
+
   function resolveBrowserSpeechVoice(profile) {
-    if (!window.speechSynthesis || !isMicrosoftVoice(profile)) return null;
-    const voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
+    if (!window.speechSynthesis || !isBrowserPreviewVoice(profile)) return null;
+    const voices = (window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : []).filter(isLocalBrowserSpeechVoice);
     if (!voices.length) return null;
     const targetName = String(profile.voice_name || "").trim().toLowerCase().replace(" desktop", "");
     const targetLocale = String(profile.voice_locale || "").trim().toLowerCase();
@@ -4588,66 +5764,91 @@ very high pitch, very low pitch, whisper, young adult
       || voices.find((voice) => {
         const voiceName = String(voice.name || "").toLowerCase();
         const voiceLocale = String(voice.lang || "").toLowerCase();
-        return voiceName.includes("microsoft") && (!targetLocale || voiceLocale === targetLocale) && voiceName.includes(targetName.replace("microsoft ", ""));
+        if (isMicrosoftVoice(profile)) {
+          return voiceName.includes("microsoft") && (!targetLocale || voiceLocale === targetLocale) && voiceName.includes(targetName.replace("microsoft ", ""));
+        }
+        return (!targetLocale || voiceLocale === targetLocale) && voiceName.includes(targetName);
       })
       || null;
   }
 
-  async function previewMicrosoftVoiceInBrowser(profile, text) {
+  function stopBrowserSpeechPreview() {
+    browserPreviewSessionId += 1;
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  async function previewMicrosoftVoiceInBrowser(profile, texts) {
     const synth = window.speechSynthesis;
     if (!synth) {
       throw new Error("当前浏览器不支持 speechSynthesis。");
     }
+    const lines = (Array.isArray(texts) ? texts : [texts]).map((item) => String(item || "").trim()).filter(Boolean);
+    if (!lines.length) {
+      throw new Error("当前没有可用于试听的文本。");
+    }
+    await ensureBrowserVoiceCatalogReady();
     let voice = resolveBrowserSpeechVoice(profile);
     if (!voice) {
-      await new Promise((resolve) => {
-        const timer = setTimeout(resolve, 900);
-        synth.onvoiceschanged = () => {
-          clearTimeout(timer);
-          resolve();
+      throw new Error(`当前浏览器里找不到可本地播放的语音“${profile.voice_name || profile.name || ""}”。`);
+    }
+    if (!isLocalBrowserSpeechVoice(voice)) {
+      throw new Error(`语音“${voice.name || profile.voice_name || ""}”不是本地语音服务，已禁止调用。`);
+    }
+    const sessionId = ++browserPreviewSessionId;
+    synth.cancel();
+    for (const text of lines) {
+      if (sessionId !== browserPreviewSessionId) {
+        throw new Error("试听已停止。");
+      }
+      await new Promise((resolve, reject) => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.voice = voice;
+        utterance.lang = voice.lang || profile.voice_locale || "zh-CN";
+        utterance.rate = 1;
+        utterance.onend = () => resolve();
+        utterance.onerror = (event) => {
+          const errorName = String(event?.error || "");
+          if (sessionId !== browserPreviewSessionId || errorName === "interrupted" || errorName === "canceled") {
+            resolve();
+            return;
+          }
+          reject(new Error(errorName || "浏览器语音预览失败"));
         };
+        synth.speak(utterance);
       });
-      voice = resolveBrowserSpeechVoice(profile);
     }
-    if (!voice) {
-      throw new Error(`当前浏览器里找不到微软语音“${profile.voice_name || profile.name || ""}”。`);
+    if (sessionId !== browserPreviewSessionId) {
+      throw new Error("试听已停止。");
     }
-
-    await new Promise((resolve, reject) => {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.voice = voice;
-      utterance.lang = voice.lang || profile.voice_locale || "zh-CN";
-      utterance.rate = 1;
-      utterance.onend = () => resolve();
-      utterance.onerror = (event) => reject(new Error(event.error || "浏览器语音预览失败"));
-      synth.cancel();
-      synth.speak(utterance);
-    });
     return voice;
   }
 
   async function previewRoleVoice(speaker) {
     if (taskBusy) return;
     const segment = choosePreviewTextForSpeaker(speaker);
-    if (!segment) {
+    const previewSegments = choosePreviewTextsForSpeaker(speaker);
+    if (!segment && !previewSegments.length) {
       setStatus(`角色“${speaker}”当前没有可试听的台词。`);
       return;
     }
     const profile = roleProfilesState[speaker] || {};
-    beginTask("narrate", `准备试听角色“${speaker}”`, "将随机抽选一条较短台词快速生成试听音频。");
+    beginTask("narrate", `准备试听角色“${speaker}”`, isBrowserPreviewVoice(profile) ? "将使用浏览器本地语音连续播放多条较短台词。" : "将随机抽选一条较短台词快速生成试听音频。");
     try {
-      if (isMicrosoftVoice(profile)) {
-        try {
-          const browserVoice = await previewMicrosoftVoiceInBrowser(profile, segment.text);
-          finishTask(`角色“${speaker}”试听完成`, `已通过浏览器微软语音 ${browserVoice?.name || profile.voice_name || ""} 播放随机短句：${segment.text}`, { total: 1, done: 1 });
-          setStatus(`已通过浏览器微软语音为角色“${speaker}”播放试听。`);
-          return;
-        } catch (browserErr) {
-          console.warn(browserErr);
-        }
+      if (isBrowserPreviewVoice(profile)) {
+        const previewTexts = previewSegments.map((item) => String(item.text || "").trim()).filter(Boolean);
+        const browserVoice = await previewMicrosoftVoiceInBrowser(profile, previewTexts);
+        finishTask(
+          `角色“${speaker}”试听完成`,
+          `已通过浏览器本地语音 ${browserVoice?.name || profile.voice_name || ""} 连续播放 ${previewTexts.length} 条短句。`,
+          { total: previewTexts.length, done: previewTexts.length }
+        );
+        setStatus(`已通过浏览器本地语音为角色“${speaker}”连续试听 ${previewTexts.length} 条短句。`);
+        return;
       }
 
-      const backend = isMicrosoftVoice(profile) ? validateAudioBackendConfig() : await ensureAudioBackendReady();
+      const backend = isBrowserPreviewVoice(profile) ? validateAudioBackendConfig() : await ensureAudioBackendReady();
       if (!backend) return;
       const outputName = `preview_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`;
       const inferenceDevice = backend.inference_device || getInferenceDevice();
@@ -4670,6 +5871,11 @@ very high pitch, very low pitch, whisper, young adult
       finishTask(`角色“${speaker}”试听生成完成`, `已使用 ${getAudioBackendLabel(backend)} 生成随机较短台词试听：${segment.text}${fallbackNote ? ` ${fallbackNote}` : ""}`, { total: 1, done: 1 });
       setStatus(`已使用 ${getAudioBackendLabel(backend)} 为角色“${speaker}”生成试听音频。${fallbackNote}`);
     } catch (err) {
+      const message = String(err?.message || err || "");
+      if (message.includes("试听已停止")) {
+        setStatus(`角色“${speaker}”的浏览器试听已停止。`);
+        return;
+      }
       if (isTaskCancelledError(err)) return;
       setStatus("角色试听失败，请查看上方任务面板中的详细错误。");
       failTask(`角色“${speaker}”试听失败`, err.message);
@@ -4719,7 +5925,8 @@ very high pitch, very low pitch, whisper, young adult
           </select>
           <div class="mini-note">首次出现的参考 style：${escapeHtml(referenceStyle || "未设置")}。当前 ref_audio：${escapeHtml(profile.ref_audio || "未设置")}。建议模式：${preferClone ? "优先语音克隆" : "优先 design 语音"}。</div>
           <div class="assignment-actions">
-            <button type="button" class="secondary" data-busy-lock onclick="previewRoleVoice('${escapeJs(speaker)}')">试听随机短句</button>
+            <button type="button" class="secondary" data-busy-lock onclick="previewRoleVoice('${escapeJs(speaker)}')">${isBrowserPreviewVoice(profile) ? "连续试听短句" : "试听随机短句"}</button>
+            ${isBrowserPreviewVoice(profile) ? '<button type="button" class="secondary" onclick="stopBrowserSpeechPreview()">停止试听</button>' : ""}
           </div>
         </div>
       `;
@@ -4841,6 +6048,7 @@ very high pitch, very low pitch, whisper, young adult
       const targetGender = inferGenderFromStyle(referenceStyle);
       const preferClone = shouldPreferCloneVoice(speaker);
       return voiceLibraryState
+        .filter((voice) => rules.preferBrowserLocal || !isBrowserPreviewVoice(voice))
         .filter((voice) => !requireUnused || !usedVoiceIds.has(voice.id))
         .filter((voice) => !requireGender || !targetGender || inferGenderFromStyle(voice.style) === targetGender)
         .map((voice) => ({
@@ -4848,9 +6056,13 @@ very high pitch, very low pitch, whisper, young adult
           score: scoreVoiceMatch(speaker, voice),
           sameGender: !targetGender || inferGenderFromStyle(voice.style) === targetGender,
           unused: !usedVoiceIds.has(voice.id),
+          browserPreferred: rules.preferBrowserLocal && isBrowserPreviewVoice(voice),
           preferredMode: preferClone ? !!voice.ref_audio : !voice.ref_audio,
         }))
         .sort((a, b) => {
+          if (Number(b.browserPreferred) !== Number(a.browserPreferred)) {
+            return Number(b.browserPreferred) - Number(a.browserPreferred);
+          }
           if (Number(b.preferredMode) !== Number(a.preferredMode)) {
             return Number(b.preferredMode) - Number(a.preferredMode);
           }
@@ -4928,6 +6140,7 @@ very high pitch, very low pitch, whisper, young adult
       rules.disallowDuplicate ? "优先不重复" : "允许重复",
       rules.useDesignForSingleLine ? "单句角色优先 design" : "单句角色也分配参考声音",
       rules.useNarratorFallback ? "旁白兜底已开启" : "旁白兜底已关闭",
+      rules.preferBrowserLocal ? "允许并优先浏览器本地语音" : "自动分配时忽略浏览器本地语音",
     ].join("，");
 
     const message = blockedCount > 0
@@ -4970,6 +6183,10 @@ very high pitch, very low pitch, whisper, young adult
     const container = document.getElementById("segments");
     container.hidden = !segmentsPanelExpanded;
     container.innerHTML = "";
+    if (!segmentsState.length) {
+      container.innerHTML = `<div class="mini-note">当前还没有可展示的分析结果。只有执行过“分析角色”后，这里才会填充内容，并允许前往音频生成。</div>`;
+      return;
+    }
     const fragment = document.createDocumentFragment();
 
     segmentsState.forEach((seg, idx) => {
@@ -5042,23 +6259,25 @@ very high pitch, very low pitch, whisper, young adult
 
   function clearSegments() {
     if (taskBusy) return;
+    chapterChunksState = [];
     plannedChunksState = [];
     optimizedChunksState = [];
     segmentationInfoState = null;
     applySegmentsState([], { persist: true });
     clearParseSnapshot();
     renderAnalysisPipelineMeta();
-    setStatus("已清空分段。");
+    updateAnalysisFlowUI();
+    setStatus("已清空分析结果与章节识别缓存。");
     if (!taskBusy) {
       setProgress({
-        summary: "分段结果已清空",
-        detail: "可以重新做 LLM 分析，或者手动新增段落再合成。",
+        summary: "分析结果已清空",
+        detail: "可以重新执行章节识别和后续分析流程，或者手动新增段落再合成。",
         stage: "idle",
         percent: 0,
         total: 0,
         done: 0,
         indeterminate: false,
-      }, { log: "已清空当前分段列表" });
+      }, { log: "已清空当前分析结果与章节识别缓存" });
     }
   }
 
@@ -5463,15 +6682,15 @@ very high pitch, very low pitch, whisper, young adult
     return backend;
   }
 
-  function segmentUsesMicrosoftVoice(segment) {
-    return isMicrosoftVoice(segment);
+  function segmentUsesBrowserPreviewVoice(segment) {
+    return isBrowserPreviewVoice(segment);
   }
 
   function effectiveVoiceForSegment(segment) {
     const speaker = segment.speaker || "旁白";
     const profile = roleProfilesState[speaker] || {};
-    if (segmentUsesMicrosoftVoice(segment)) return segment;
-    if (isMicrosoftVoice(profile)) return profile;
+    if (segmentUsesBrowserPreviewVoice(segment)) return segment;
+    if (isBrowserPreviewVoice(profile)) return profile;
     return null;
   }
 
@@ -5481,6 +6700,27 @@ very high pitch, very low pitch, whisper, young adult
 
   function segmentsContainMicrosoftVoices(segments) {
     return (segments || []).some((segment) => !!effectiveVoiceForSegment(segment));
+  }
+
+  function segmentsContainBrowserPreviewVoices(segments) {
+    return (segments || []).some((segment) => !!effectiveVoiceForSegment(segment));
+  }
+
+  function getBrowserPreviewVoiceSpeakers(segments) {
+    const speakers = new Set();
+    (segments || []).forEach((segment) => {
+      const effectiveVoice = effectiveVoiceForSegment(segment);
+      if (effectiveVoice) {
+        speakers.add(segment.speaker || "旁白");
+      }
+    });
+    return [...speakers];
+  }
+
+  function buildMixedPreviewSummary(segments) {
+    const speakers = getBrowserPreviewVoiceSpeakers(segments);
+    const speakerText = speakers.length ? `涉及角色：${speakers.join("、")}。` : "";
+    return `当前分段包含浏览器本地语音，将切换为浏览器内混合在线试听模式。此模式不导出完整音频，但会保留歌词滚动显示。${speakerText}`;
   }
 
   async function ensureAudioBackendReady() {
@@ -5510,13 +6750,15 @@ very high pitch, very low pitch, whisper, young adult
   async function ensureAudioRecognitionReady() {
     const backend = validateAudioBackendConfig();
     if (!backend) {
-      alert('当前未配置音频后端，请先到「模型配置」标签页处理。');
-      setWorkspaceTab("models");
+      if (confirm('当前未配置音频后端。是否跳转到「模型配置」标签页进行配置？')) {
+        setWorkspaceTab("models");
+      }
       return null;
     }
     if (backend.mode === "remote") {
-      alert("当前仅支持本地音频识别模型自动转写 ref_text，请切换到本地 OmniVoice 后端并先加载音频识别模型。");
-      setWorkspaceTab("models");
+      if (confirm("自动识别参考文本需要本地音频识别模型（Whisper）。当前为远程模式，是否跳转到「模型配置」标签页切换为本地模式并加载识别模型？")) {
+        setWorkspaceTab("models");
+      }
       return null;
     }
 
@@ -5527,8 +6769,9 @@ very high pitch, very low pitch, whisper, young adult
       ? (status.audio?.detected_device || "cpu")
       : requestedDevice;
     if (!loadedDevices.includes(expectedDevice)) {
-      alert('批量导入参考音频前，请先在「模型配置」标签页加载音频识别模型。现在将为你自动跳转。');
-      setWorkspaceTab("models");
+      if (confirm('音频识别模型（Whisper）尚未加载，无法自动识别参考文本。是否跳转到「模型配置」标签页加载识别模型？')) {
+        setWorkspaceTab("models");
+      }
       return null;
     }
     return backend;
@@ -5668,12 +6911,122 @@ very high pitch, very low pitch, whisper, young adult
     return segmentsState;
   }
 
+  async function runChapterDetection(text, llm) {
+    const chapterLlm = { ...llm, workers: 1 };
+    setProgress({
+      stage: "segment",
+      summary: "正在识别章节依据",
+      detail: "当前会先抽取开头一小段文本交给 LLM 判断章节标题/场景规则，再用代码快速做首轮章节切块。该阶段固定单线程执行。",
+      percent: 12,
+      total: 0,
+      done: 0,
+      indeterminate: true,
+    }, { log: "开始执行章节识别" });
+    const data = await fetchJson("/api/chapter-detect", { text, llm: chapterLlm });
+    chapterChunksState = data.chunks || [];
+    plannedChunksState = [];
+    optimizedChunksState = [];
+    segmentationInfoState = data.info || null;
+    applyChapterDetectionFeedback(segmentationInfoState || {});
+    renderAnalysisPipelineMeta();
+    setStatus(`章节识别完成，共 ${chapterChunksState.length} 个初始章节块。`);
+    return chapterChunksState;
+  }
+
+  async function runChapterDetectionAction() {
+    if (taskBusy) return;
+    const text = validateSourceText();
+    if (!text) return;
+    const llm = validateLLMConfig();
+    if (!llm) return;
+    if (!warnIfThinkingModel(llm)) return;
+
+    beginTask("parse", "准备开始章节识别", "将使用原文开头的小样本分析章节标题规律，并固定单线程生成章节切分依据。");
+    try {
+      const chunks = await runChapterDetection(text, llm);
+      clearAnalysisResultsOnly({ keepStatus: true });
+      updateAnalysisFlowUI();
+      finishTask(`章节识别完成，共 ${chunks.length} 个初始块`, "章节识别已经独立完成。下一步可按当前组合继续执行智能分段、语音适配优化和分析角色。", {
+        total: chunks.length,
+        done: chunks.length,
+      });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("章节识别失败，请查看上方任务面板中的详细错误。");
+      failTask("章节识别失败", err.message);
+    }
+  }
+
+  async function runSelectedAnalysisFlow() {
+    if (taskBusy) return;
+    const text = validateSourceText();
+    if (!text) return;
+    const llm = validateLLMConfig();
+    if (!llm) return;
+    if (!warnIfThinkingModel(llm)) return;
+
+    const combo = llm.analysis_combo || getAnalysisComboValue();
+    const comboDef = getAnalysisComboDef(combo);
+    const stages = getSelectedAnalysisStageDefs(combo);
+    beginTask("parse", "准备执行当前配置的文本分析流程", `系统会先完成章节识别，再按模型配置里设定的组合执行：${comboDef.label} ${comboDef.description}。`);
+    try {
+      await runChapterDetection(text, llm);
+
+      if (combo === "segment_then_optimize_analyze") {
+        const planned = await runSmartSegmentation(text, llm);
+        const segments = await runOptimizeAnalyze(planned, llm);
+        updateAnalysisFlowUI();
+        finishTask(`组合流程执行完成，共得到 ${segments.length} 条分析结果`, `已按 ${comboDef.label} 组合完成：${comboDef.description}。现在可以检查分析结果并前往音频生成。`, {
+          total: segments.length,
+          done: segments.length,
+        });
+        return;
+      }
+
+      if (combo === "segment_optimize_then_analyze") {
+        const optimizedChunks = await runSegmentOptimize(text, llm);
+        const segments = await runRoleAnalysis(optimizedChunks, llm);
+        updateAnalysisFlowUI();
+        finishTask(`组合流程执行完成，共得到 ${segments.length} 条分析结果`, `已按 ${comboDef.label} 组合完成：${comboDef.description}。现在可以检查分析结果并前往音频生成。`, {
+          total: segments.length,
+          done: segments.length,
+        });
+        return;
+      }
+
+      if (combo === "segment_then_analyze") {
+        const planned = await runSmartSegmentation(text, llm);
+        optimizedChunksState = [];
+        const segments = await runRoleAnalysis(planned, llm);
+        updateAnalysisFlowUI();
+        finishTask(`组合流程执行完成，共得到 ${segments.length} 条分析结果`, `已按 ${comboDef.label} 组合完成：${comboDef.description}。当前跳过了独立语音适配优化阶段。`, {
+          total: segments.length,
+          done: segments.length,
+        });
+        return;
+      }
+
+      const planned = await runSmartSegmentation(text, llm);
+      const optimized = await runTextOptimization(planned, llm);
+      const segments = await runRoleAnalysis(optimized, llm);
+      updateAnalysisFlowUI();
+      finishTask(`组合流程执行完成，共得到 ${segments.length} 条分析结果`, `已按 ${comboDef.label} 组合完成：${comboDef.description}。现在可以检查分析结果并前往音频生成。`, {
+        total: segments.length,
+        done: segments.length,
+      });
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("执行当前配置的文本分析流程失败，请查看上方任务面板中的详细错误。");
+      failTask("执行当前配置的文本分析流程失败", err.message);
+    }
+  }
+
   async function runSmartSegmentation(text, llm) {
     segmentationInfoState = null;
     setProgress({
       stage: "segment",
       summary: "正在进行智能分段",
-      detail: "后端会先探测章节/场景规则并用代码预切块，再把工作块交给 LLM 做细化规划。",
+      detail: `后端会基于已识别的章节/场景规则预切块，再用最多 ${llm.workers || 5} 个并发请求做细化规划。当前单段目标长度约 ${llm.segment_target_chars || 3200} 字。`,
       percent: 16,
       total: 0,
       done: 0,
@@ -5686,6 +7039,26 @@ very high pitch, very low pitch, whisper, young adult
     renderAnalysisPipelineMeta();
     setStatus(`智能分段完成，共 ${plannedChunksState.length} 块。`);
     return plannedChunksState;
+  }
+
+  async function runSegmentOptimize(text, llm) {
+    segmentationInfoState = null;
+    setProgress({
+      stage: "optimize",
+      summary: "正在执行智能分段 + 语音适配优化",
+      detail: `当前会基于章节识别结果并发完成工作块规划和 OmniVoice 文本整理，单块目标长度约 ${llm.segment_target_chars || 3200} 字。`,
+      percent: 28,
+      total: 0,
+      done: 0,
+      indeterminate: true,
+    }, { log: "开始进行分段与语音适配组合处理" });
+    const data = await fetchJson("/api/segment-optimize", { text, llm });
+    plannedChunksState = data.chunks || [];
+    optimizedChunksState = data.chunks || [];
+    segmentationInfoState = data.info || null;
+    renderAnalysisPipelineMeta();
+    setStatus(`智能分段与语音适配优化完成，共 ${optimizedChunksState.length} 块。`);
+    return optimizedChunksState;
   }
 
   async function runTextOptimization(chunks, llm) {
@@ -5703,6 +7076,24 @@ very high pitch, very low pitch, whisper, young adult
     renderAnalysisPipelineMeta();
     setStatus(`语音适配优化完成，共 ${optimizedChunksState.length} 块。`);
     return optimizedChunksState;
+  }
+
+  async function runOptimizeAnalyze(chunks, llm) {
+    setProgress({
+      stage: "analyze",
+      summary: "正在执行语音适配优化 + 角色分析",
+      detail: `当前会使用最多 ${llm.workers || 5} 个并发请求，对 ${chunks.length} 个工作块一次性完成语音适配和角色分析。`,
+      percent: 58,
+      total: chunks.length,
+      done: 0,
+      indeterminate: true,
+    }, { log: `开始并发执行优化与角色分析，共 ${chunks.length} 个工作块` });
+    const data = await fetchJson("/api/optimize-analyze-chunks", { chunks, llm });
+    const segments = data.segments || [];
+    applySegmentsState(segments);
+    renderAnalysisPipelineMeta();
+    setStatus(`语音适配优化与角色分析完成，共 ${segments.length} 段。`);
+    return segments;
   }
 
   async function runRoleAnalysis(chunks, llm) {
@@ -6053,11 +7444,22 @@ very high pitch, very low pitch, whisper, young adult
       const planned = await runSmartSegmentation(text, llm);
       const optimized = await runTextOptimization(planned, llm);
       const segments = await runRoleAnalysis(optimized, llm);
+      const mixedPreviewMode = segmentsContainBrowserPreviewVoices(segments);
       const useSequentialSynthesis = backend.mode === "local" || segmentsContainMicrosoftVoices(segments);
       if (segmentsRequireAudioModel(segments)) {
         const readyBackend = await ensureAudioBackendReady();
         if (!readyBackend) return;
         Object.assign(backend, readyBackend);
+      }
+      if (mixedPreviewMode) {
+        const previewEntries = await prepareMixedPreviewEntries(segments, baseName, inferenceDevice, backend);
+        const completed = await startMixedPreviewPlayback(previewEntries, buildMixedPreviewSummary(segments));
+        if (!completed) return;
+        finishTask(`浏览器混合试听完成，共 ${segments.length} 段`, "包含浏览器本地语音的项目已切换为在线试听模式；当前不导出完整音频。", {
+          total: segments.length,
+          done: segments.length,
+        });
+        return;
       }
       const merged = useSequentialSynthesis
         ? await synthesizeSegmentsSequentially(segments, baseName, silenceMs, inferenceDevice, backend)
@@ -6104,11 +7506,22 @@ very high pitch, very low pitch, whisper, young adult
     beginTask("narrate", "准备按当前分段生成音频", `页面将把当前分段提交给后端统一生成。当前音频后端：${getAudioBackendLabel(backend)}。`);
 
     try {
+      const mixedPreviewMode = segmentsContainBrowserPreviewVoices(segmentsState);
       const useSequentialSynthesis = backend.mode === "local" || segmentsContainMicrosoftVoices(segmentsState);
       if (segmentsRequireAudioModel(segmentsState)) {
         const readyBackend = await ensureAudioBackendReady();
         if (!readyBackend) return;
         Object.assign(backend, readyBackend);
+      }
+      if (mixedPreviewMode) {
+        const previewEntries = await prepareMixedPreviewEntries(segmentsState, baseName, inferenceDevice, backend);
+        const completed = await startMixedPreviewPlayback(previewEntries, buildMixedPreviewSummary(segmentsState));
+        if (!completed) return;
+        finishTask(`浏览器混合试听完成，共 ${segmentsState.length} 段`, "包含浏览器本地语音的项目已切换为在线试听模式；当前不导出完整音频。", {
+          total: segmentsState.length,
+          done: segmentsState.length,
+        });
+        return;
       }
       const merged = useSequentialSynthesis
         ? await synthesizeSegmentsSequentially(segmentsState, baseName, silenceMs, inferenceDevice, backend)
@@ -6140,15 +7553,19 @@ very high pitch, very low pitch, whisper, young adult
 
   const audioPlayer = document.getElementById("audioPlayer");
   audioPlayer.addEventListener("timeupdate", () => {
+    if (currentPlaybackMode === "mixed") return;
     syncLyricsToAudio(audioPlayer.currentTime || 0);
   });
   audioPlayer.addEventListener("seeked", () => {
+    if (currentPlaybackMode === "mixed") return;
     syncLyricsToAudio(audioPlayer.currentTime || 0);
   });
   audioPlayer.addEventListener("loadedmetadata", () => {
+    if (currentPlaybackMode === "mixed") return;
     syncLyricsToAudio(audioPlayer.currentTime || 0);
   });
   audioPlayer.addEventListener("ended", () => {
+    if (currentPlaybackMode === "mixed") return;
     syncLyricsToAudio(Number.POSITIVE_INFINITY);
   });
 
@@ -6165,6 +7582,7 @@ very high pitch, very low pitch, whisper, young adult
   renderRoleAssignments();
   updateSegmentsMeta();
   loadConfig();
+  updateAnalysisFlowUI();
   initProgressPanelPrefs();
 </script>
 </body>
