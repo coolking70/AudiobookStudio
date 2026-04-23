@@ -30,6 +30,25 @@ class OpenAICompatibleClient:
     def _use_direct_local_runtime(self) -> bool:
         return (self.config.local_runtime or "").strip().lower() == "direct"
 
+    def _should_disable_reasoning(self) -> bool:
+        base_url = (self.config.base_url or "").strip().lower()
+        model = self._resolve_model_id().lower()
+        is_lm_studio = "127.0.0.1:1234" in base_url or "localhost:1234" in base_url
+        is_reasoning_qwen = "qwen3.6" in model or "qwen3-6" in model
+        return is_lm_studio and is_reasoning_qwen
+
+    def _apply_reasoning_options(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self._should_disable_reasoning():
+            payload["reasoning_effort"] = "none"
+        return payload
+
+    def _is_bad_request_error(self, exc: Exception) -> bool:
+        status_code = getattr(exc, "status_code", None)
+        if status_code == 400:
+            return True
+        response = getattr(exc, "response", None)
+        return getattr(response, "status_code", None) == 400
+
     def _send_chat_request(self, payload: dict[str, Any], timeout: httpx.Timeout) -> Any:
         if OpenAI is not None:
             http_client = httpx.Client(timeout=timeout, trust_env=False)
@@ -135,9 +154,10 @@ class OpenAICompatibleClient:
             "model": self._resolve_model_id(),
             "messages": messages,
             "temperature": self.config.temperature,
-            "max_tokens": min(self.config.max_tokens, 128),
+            "max_tokens": min(max(self.config.max_tokens, 256), 512),
         }
-        timeout = httpx.Timeout(connect=30.0, read=60.0, write=30.0, pool=30.0)
+        self._apply_reasoning_options(payload)
+        timeout = httpx.Timeout(connect=30.0, read=180.0, write=30.0, pool=30.0)
         try:
             response = self._send_chat_request(payload, timeout)
             if hasattr(response, "raise_for_status"):
@@ -187,9 +207,11 @@ class OpenAICompatibleClient:
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
         }
+        self._apply_reasoning_options(strict_payload)
+        self._apply_reasoning_options(fallback_payload)
 
         timeout = httpx.Timeout(connect=30.0, read=300.0, write=60.0, pool=30.0)
-        use_chat_compat = self.config.compatibility_mode == "chat_compat"
+        use_chat_compat = self.config.compatibility_mode == "chat_compat" or self._should_disable_reasoning()
         try:
             try:
                 response = self._send_chat_request(
@@ -200,7 +222,11 @@ class OpenAICompatibleClient:
                     response.raise_for_status()
             except Exception as exc:
                 error_text = str(exc)
-                if not use_chat_compat and ("response_format.type" in error_text or "json_object" in error_text):
+                if not use_chat_compat and (
+                    "response_format.type" in error_text
+                    or "json_object" in error_text
+                    or self._is_bad_request_error(exc)
+                ):
                     response = self._send_chat_request(fallback_payload, timeout)
                     if hasattr(response, "raise_for_status"):
                         response.raise_for_status()

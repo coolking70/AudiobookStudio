@@ -12,6 +12,8 @@ class Segment(BaseModel):
     voice_engine: Optional[str] = None
     voice_name: Optional[str] = None
     voice_locale: Optional[str] = None
+    cfg_value: Optional[float] = None
+    inference_timesteps: Optional[int] = None
 
 
 class RoleProfile(BaseModel):
@@ -22,6 +24,8 @@ class RoleProfile(BaseModel):
     voice_engine: Optional[str] = None
     voice_name: Optional[str] = None
     voice_locale: Optional[str] = None
+    cfg_value: Optional[float] = None
+    inference_timesteps: Optional[int] = None
 
 
 class TTSRequest(BaseModel):
@@ -32,6 +36,8 @@ class TTSRequest(BaseModel):
     voice_engine: Optional[str] = None
     voice_name: Optional[str] = None
     voice_locale: Optional[str] = None
+    cfg_value: Optional[float] = None
+    inference_timesteps: Optional[int] = None
     output_name: str = "result"
     inference_device: Optional[str] = None
     backend: Optional["AudioBackendConfig"] = None
@@ -145,6 +151,7 @@ class AudioBackendConfig(BaseModel):
     remote_base_url: Optional[str] = None
     remote_api_key: Optional[str] = None
     inference_device: Optional[str] = None
+    local_audio_engine: Optional[str] = None
     local_audio_model_path: Optional[str] = None
     local_asr_model_path: Optional[str] = None
 

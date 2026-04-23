@@ -1706,12 +1706,21 @@
                 </select>
 
                 <div id="audioBackendLocalPanel">
+                  <label>本地语音引擎</label>
+                  <select id="audioLocalEngine" onchange="renderBackendPanels()">
+                    <option value="omnivoice" selected>OmniVoice</option>
+                    <option value="voxcpm">VoxCPM</option>
+                  </select>
+                  <div id="audioLocalEngineHint" class="mini-note">OmniVoice 适合现有的风格标签流程；VoxCPM 更适合参考音频克隆和自然语言控制描述。</div>
+
                   <label>本地模型位置</label>
                   <input id="audioLocalModelPath" placeholder="留空则使用默认 k2-fsa/OmniVoice 或已缓存模型" />
                   <div class="path-actions">
                     <button type="button" class="secondary" onclick="triggerDirectorySelection('audioLocalModelPath')">选择目录</button>
-                    <button type="button" class="secondary" onclick="applyKnownLocalPath('audio_omnivoice_cache')">填入 OmniVoice 缓存</button>
+                    <button type="button" class="secondary" id="audioLocalPresetOmniVoice" onclick="applyKnownLocalPath('audio_omnivoice_cache')">填入 OmniVoice 缓存</button>
+                    <button type="button" class="secondary" id="audioLocalPresetVoxCPM" onclick="applyKnownLocalPath('audio_voxcpm_cache')" hidden>填入 VoxCPM 缓存</button>
                   </div>
+                  <div id="audioLocalModelHint" class="mini-note">留空时会按当前引擎使用默认模型名或已缓存目录。</div>
 
                   <label>推理设备</label>
                   <select id="inferenceDevice">
@@ -2017,6 +2026,7 @@
   const DESIGN_VOICE_ID = "__design_voice__";
   const MICROSOFT_VOICE_ENGINE = "microsoft";
   const BROWSER_LOCAL_VOICE_ENGINE = "browser_local";
+  const VOXCPM_VOICE_ENGINE = "voxcpm";
   const MICROSOFT_PREVIEW_SEGMENT_COUNT = 3;
   const TASK_AUTO_EXPAND_DELAY_MS = 3000;
   const MODELS_CONFIG_VIEW_STORAGE_KEY = "ov_models_config_view";
@@ -2346,6 +2356,70 @@ very high pitch, very low pitch, whisper, young adult
     renderProgress();
   }
 
+  function formatDurationSeconds(seconds) {
+    const total = Math.max(0, Math.floor(Number(seconds) || 0));
+    const minutes = Math.floor(total / 60);
+    const remainder = total % 60;
+    return minutes > 0 ? `${minutes}分${String(remainder).padStart(2, "0")}秒` : `${remainder}秒`;
+  }
+
+  async function withLlmRequestProgress(requestPromiseFactory, options = {}) {
+    const startedAt = performance.now();
+    const stage = options.stage || progressState.stage || "analyze";
+    const summary = options.summary || progressState.summary || "正在等待 LLM 返回";
+    const basePercent = Number.isFinite(options.basePercent) ? options.basePercent : (progressState.percent || 0);
+    const ceilingPercent = Number.isFinite(options.ceilingPercent) ? options.ceilingPercent : Math.min(96, basePercent + 16);
+    const total = Number.isFinite(options.total) ? options.total : progressState.total;
+    const done = Number.isFinite(options.done) ? options.done : progressState.done;
+    const intervalMs = Number.isFinite(options.intervalMs) ? options.intervalMs : 4500;
+    const slowAfterSeconds = Number.isFinite(options.slowAfterSeconds) ? options.slowAfterSeconds : 20;
+    let tick = 0;
+    let settled = false;
+
+    const buildDetail = () => {
+      const elapsed = (performance.now() - startedAt) / 1000;
+      const elapsedText = formatDurationSeconds(elapsed);
+      const details = [
+        options.detail || "请求已经发送到 LLM，正在等待模型完成生成并返回 JSON。",
+        `已等待 ${elapsedText}。`,
+      ];
+      if (elapsed >= slowAfterSeconds) {
+        details.push("如果 LM Studio 后台仍在持续产生 token，这是正常的长请求等待，不代表前端卡住。");
+      }
+      if (options.hint) {
+        details.push(options.hint);
+      }
+      return details.join(" ");
+    };
+
+    const update = (log = false) => {
+      tick += 1;
+      const elapsed = (performance.now() - startedAt) / 1000;
+      const easing = Math.min(1, Math.log2(tick + 1) / 6);
+      const percent = Math.min(ceilingPercent, Math.round(basePercent + ((ceilingPercent - basePercent) * easing)));
+      setProgress({
+        stage,
+        summary,
+        detail: buildDetail(),
+        percent,
+        total,
+        done,
+        indeterminate: true,
+      }, log ? { log: `${summary}，已等待 ${formatDurationSeconds(elapsed)}` } : {});
+    };
+
+    update(false);
+    const timer = setInterval(() => {
+      if (!settled) update(tick % 3 === 2);
+    }, intervalMs);
+    try {
+      return await requestPromiseFactory();
+    } finally {
+      settled = true;
+      clearInterval(timer);
+    }
+  }
+
   function resetProgress(mode = "idle") {
     clearPendingTaskAutoExpand();
     progressState.mode = mode;
@@ -2665,11 +2739,33 @@ very high pitch, very low pitch, whisper, young adult
     localStorage.removeItem(PARSE_SNAPSHOT_STORAGE_KEY);
   }
 
+  function isQuotaExceededError(err) {
+    if (!err) return false;
+    const message = String(err.message || err || "").toLowerCase();
+    return err.name === "QuotaExceededError"
+      || err.code === 22
+      || message.includes("quota")
+      || message.includes("exceeded");
+  }
+
   function saveLastSegments(segments) {
-    localStorage.setItem(LAST_SEGMENTS_STORAGE_KEY, JSON.stringify({
-      segments: segments || [],
-      updatedAt: new Date().toISOString(),
-    }));
+    try {
+      localStorage.setItem(LAST_SEGMENTS_STORAGE_KEY, JSON.stringify({
+        segments: segments || [],
+        updatedAt: new Date().toISOString(),
+      }));
+      return { persisted: true, reason: "" };
+    } catch (err) {
+      if (isQuotaExceededError(err)) {
+        try {
+          localStorage.removeItem(LAST_SEGMENTS_STORAGE_KEY);
+        } catch {
+          // Ignore cleanup errors and continue with in-memory state only.
+        }
+        return { persisted: false, reason: "quota" };
+      }
+      throw err;
+    }
   }
 
   function getLastSegments() {
@@ -2793,6 +2889,8 @@ very high pitch, very low pitch, whisper, young adult
     if (kind.startsWith("llm_root_")) {
       setTargetPathValue("localLlmScanRoot", preset.path);
     } else if (kind === "audio_omnivoice_cache") {
+      setTargetPathValue("audioLocalModelPath", preset.path);
+    } else if (kind === "audio_voxcpm_cache") {
       setTargetPathValue("audioLocalModelPath", preset.path);
     } else if (kind === "audio_whisper_cache") {
       setTargetPathValue("audioRecognitionModelPath", preset.path);
@@ -3525,12 +3623,49 @@ very high pitch, very low pitch, whisper, young adult
     return document.getElementById("inferenceDevice").value || "auto";
   }
 
+  function getLocalAudioEngine() {
+    return normalizeVoiceEngineValue(document.getElementById("audioLocalEngine")?.value || "omnivoice") || "omnivoice";
+  }
+
+  function getLocalAudioEngineLabel(engine = getLocalAudioEngine()) {
+    return isVoxCPMVoiceEngine(engine) ? "VoxCPM" : "OmniVoice";
+  }
+
+  function getDefaultLocalAudioModelLabel(engine = getLocalAudioEngine()) {
+    return isVoxCPMVoiceEngine(engine) ? "openbmb/VoxCPM2" : "k2-fsa/OmniVoice";
+  }
+
+  function updateAudioLocalModelUi() {
+    const engine = getLocalAudioEngine();
+    const modelInput = document.getElementById("audioLocalModelPath");
+    const engineHint = document.getElementById("audioLocalEngineHint");
+    const modelHint = document.getElementById("audioLocalModelHint");
+    const omniButton = document.getElementById("audioLocalPresetOmniVoice");
+    const voxcpmButton = document.getElementById("audioLocalPresetVoxCPM");
+    if (modelInput) {
+      modelInput.placeholder = isVoxCPMVoiceEngine(engine)
+        ? "留空则使用默认 openbmb/VoxCPM2 或已缓存模型"
+        : "留空则使用默认 k2-fsa/OmniVoice 或已缓存模型";
+    }
+    if (engineHint) {
+      engineHint.textContent = isVoxCPMVoiceEngine(engine)
+        ? "VoxCPM 更适合参考音频克隆和自然语言控制描述，前端生成时会直接透传控制描述、CFG 与步数。"
+        : "OmniVoice 适合当前默认的 style 标签工作流，也支持本地语音识别补全参考文本。";
+    }
+    if (modelHint) {
+      modelHint.textContent = `留空时会按当前引擎使用默认模型名 ${getDefaultLocalAudioModelLabel(engine)}，也可以直接填本地缓存目录。`;
+    }
+    if (omniButton) omniButton.hidden = isVoxCPMVoiceEngine(engine);
+    if (voxcpmButton) voxcpmButton.hidden = !isVoxCPMVoiceEngine(engine);
+  }
+
   function getAudioBackendConfig() {
     const mode = document.getElementById("audioBackendMode").value || "local";
     return {
       mode,
       remote_base_url: (document.getElementById("audioRemoteBaseUrl").value || "").trim() || null,
       remote_api_key: (document.getElementById("audioRemoteApiKey").value || "").trim() || null,
+      local_audio_engine: getLocalAudioEngine(),
       local_audio_model_path: (document.getElementById("audioLocalModelPath").value || "").trim() || null,
       local_asr_model_path: (document.getElementById("audioRecognitionModelPath").value || "").trim() || null,
       inference_device: mode === "remote"
@@ -3551,14 +3686,16 @@ very high pitch, very low pitch, whisper, young adult
     if ((config.mode || "local") === "remote") {
       return `远程 API（${config.remote_base_url || "未填写地址"}）`;
     }
-    const modelName = config.local_audio_model_path || "默认 OmniVoice";
-    return `本地模型（${modelName} / ${getInferenceDeviceLabel(config.inference_device)}）`;
+    const engine = normalizeVoiceEngineValue(config.local_audio_engine || "omnivoice");
+    const modelName = config.local_audio_model_path || `默认 ${getDefaultLocalAudioModelLabel(engine)}`;
+    return `本地 ${getLocalAudioEngineLabel(engine)}（${modelName} / ${getInferenceDeviceLabel(config.inference_device)}）`;
   }
 
   function renderBackendPanels() {
     const audioMode = document.getElementById("audioBackendMode").value || "local";
     document.getElementById("audioBackendLocalPanel").hidden = audioMode !== "local";
     document.getElementById("audioBackendRemotePanel").hidden = audioMode !== "remote";
+    updateAudioLocalModelUi();
   }
 
   function applyAudioBackendConfigToForm(cfg) {
@@ -3567,6 +3704,7 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("audioRemoteBaseUrl").value = cfg.remote_base_url || "";
     document.getElementById("audioRemoteApiKey").value = cfg.remote_api_key || "";
     document.getElementById("audioRemoteInferenceDevice").value = cfg.inference_device || "";
+    document.getElementById("audioLocalEngine").value = normalizeVoiceEngineValue(cfg.local_audio_engine || "omnivoice") || "omnivoice";
     document.getElementById("audioLocalModelPath").value = cfg.local_audio_model_path || "";
     document.getElementById("audioRecognitionModelPath").value = cfg.local_asr_model_path || "";
     if ((cfg.mode || "local") !== "remote") {
@@ -3577,6 +3715,69 @@ very high pitch, very low pitch, whisper, young adult
 
   function setSourceText(text) {
     document.getElementById("sourceText").value = text;
+  }
+
+  function normalizeImportedText(text) {
+    return String(text || "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  }
+
+  function decodeTextBytes(bytes, label, fatal = true) {
+    return new TextDecoder(label, { fatal }).decode(bytes);
+  }
+
+  function scoreDecodedText(text) {
+    const value = String(text || "");
+    if (!value) return -100000;
+    let score = 0;
+    score -= (value.match(/\uFFFD/g) || []).length * 120;
+    score -= (value.match(/\u0000/g) || []).length * 80;
+    score += (value.match(/[\u4e00-\u9fff]/g) || []).length * 3;
+    score += (value.match(/[，。！？：“”《》、]/g) || []).length * 2;
+    score += Math.min(value.length, 8000) / 120;
+    return score;
+  }
+
+  async function readTextFileWithEncoding(file) {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const candidates = [];
+
+    if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
+      return { text: normalizeImportedText(decodeTextBytes(bytes, "utf-16le", false)), encoding: "UTF-16LE" };
+    }
+    if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
+      return { text: normalizeImportedText(decodeTextBytes(bytes, "utf-16be", false)), encoding: "UTF-16BE" };
+    }
+    if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+      return { text: normalizeImportedText(decodeTextBytes(bytes, "utf-8", false)), encoding: "UTF-8 BOM" };
+    }
+
+    const evenNulls = bytes.slice(0, Math.min(bytes.length, 4096)).filter((_, index) => index % 2 === 0 && bytes[index] === 0).length;
+    const oddNulls = bytes.slice(0, Math.min(bytes.length, 4096)).filter((_, index) => index % 2 === 1 && bytes[index] === 0).length;
+    if (evenNulls > 20 || oddNulls > 20) {
+      const label = oddNulls >= evenNulls ? "utf-16le" : "utf-16be";
+      return { text: normalizeImportedText(decodeTextBytes(bytes, label, false)), encoding: label.toUpperCase() };
+    }
+
+    for (const label of ["utf-8", "gb18030", "gbk"]) {
+      try {
+        const text = decodeTextBytes(bytes, label, true);
+        candidates.push({ text, encoding: label.toUpperCase(), score: scoreDecodedText(text) });
+      } catch {
+        // Try the next likely text encoding.
+      }
+    }
+
+    if (!candidates.length) {
+      const text = decodeTextBytes(bytes, "utf-8", false);
+      return { text: normalizeImportedText(text), encoding: "UTF-8 fallback" };
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    return {
+      text: normalizeImportedText(candidates[0].text),
+      encoding: candidates[0].encoding,
+    };
   }
 
   function triggerSourceFileImport() {
@@ -3597,18 +3798,19 @@ very high pitch, very low pitch, whisper, young adult
     }
 
     try {
-      const text = await file.text();
-      setSourceText(text.replace(/\r\n/g, "\n"));
-      setStatus(`已导入文件：${file.name}`);
+      const decoded = await readTextFileWithEncoding(file);
+      const text = decoded.text;
+      setSourceText(text);
+      setStatus(`已导入文件：${file.name}（识别编码：${decoded.encoding}）`);
       setProgress({
         summary: `已导入文本文件 ${file.name}`,
-        detail: `文件内容已写入原文输入框，共 ${text.length} 个字符。可以直接发起自动分角色或合成。`,
+        detail: `文件内容已按 ${decoded.encoding} 写入原文输入框，共 ${text.length} 个字符。可以直接发起自动分角色或合成。`,
         stage: taskBusy ? progressState.stage : "idle",
         percent: taskBusy ? progressState.percent : 0,
         total: taskBusy ? progressState.total : 0,
         done: taskBusy ? progressState.done : 0,
         indeterminate: taskBusy ? progressState.indeterminate : false,
-      }, { log: `已导入文件 ${file.name}` });
+      }, { log: `已导入文件 ${file.name}，识别编码 ${decoded.encoding}` });
     } catch (err) {
       setStatus("导入文件失败：\n" + err.message);
     } finally {
@@ -4021,7 +4223,22 @@ very high pitch, very low pitch, whisper, young adult
 
     const roleRaw = localStorage.getItem("ov_role_profiles");
     if (roleRaw) {
-      roleProfilesState = JSON.parse(roleRaw);
+      const parsed = JSON.parse(roleRaw) || {};
+      roleProfilesState = Object.fromEntries(
+        Object.entries(parsed).map(([speaker, role]) => {
+          const current = role || {};
+          const voiceEngine = normalizeVoiceEngineValue(current.voice_engine || "");
+          return [speaker, {
+            speaker,
+            style: normalizeVoiceStyleValue(current.style || "", voiceEngine),
+            ref_audio: current.ref_audio || "",
+            ref_text: current.ref_text || "",
+            voice_engine: voiceEngine,
+            voice_name: current.voice_name || "",
+            voice_locale: current.voice_locale || "",
+          }];
+        })
+      );
       renderRoles();
     }
 
@@ -4116,6 +4333,11 @@ very high pitch, very low pitch, whisper, young adult
     const llm = data.models?.llm || {};
     const gpu = data.system.gpu || {};
     const audio = data.models?.audio || {};
+    const voxcpmBridge = audio.voxcpm_bridge || {};
+    const omnivoiceLoadedDevices = Array.isArray(audio.loaded_devices) && audio.loaded_devices.length ? audio.loaded_devices.join(", ") : "无";
+    const voxcpmLoadedDevices = Array.isArray(audio.voxcpm_loaded_devices) && audio.voxcpm_loaded_devices.length ? audio.voxcpm_loaded_devices.join(", ") : "无";
+    const omnivoiceModels = Array.isArray(audio.audio_model_names) && audio.audio_model_names.length ? audio.audio_model_names.join(", ") : "未加载";
+    const voxcpmModels = Array.isArray(audio.voxcpm_model_names) && audio.voxcpm_model_names.length ? audio.voxcpm_model_names.join(", ") : "未加载";
     const llmLoaded = Array.isArray(llm.loaded_models) && llm.loaded_models.length
       ? llm.loaded_models.map((item) => `${item.engine || "auto"} @ ${item.device || "auto"} -> ${item.model_path || "-"} / ctx=${item.ctx_tokens ?? "-"} / gpu=${item.gpu_layers ?? "-"} / thr=${item.threads ?? "-"} / batch=${item.batch_size ?? "-"}`).join(" | ")
       : "无";
@@ -4129,8 +4351,11 @@ very high pitch, very low pitch, whisper, young adult
       `CUDA: ${gpu.cuda?.available ? `可用，已用 ${gpu.cuda?.used_gb ?? "-"} GB / ${gpu.cuda?.total_gb ?? "-"} GB` : "不可用"}`,
       `MPS: ${gpu.mps?.available ? `可用，当前分配 ${gpu.mps?.current_allocated_gb ?? "-"} GB / 驱动分配 ${gpu.mps?.driver_allocated_gb ?? "-" } GB` : "不可用"}`,
       `文本分析本地直载: ${llmLoaded}`,
-      `音频生成模型: 已加载设备 ${Array.isArray(audio.loaded_devices) && audio.loaded_devices.length ? audio.loaded_devices.join(", ") : "无"}`,
-      `音频生成模型路径: ${Array.isArray(audio.audio_model_names) && audio.audio_model_names.length ? audio.audio_model_names.join(", ") : "未加载"}`,
+      `OmniVoice: 已加载设备 ${omnivoiceLoadedDevices}`,
+      `OmniVoice 模型: ${omnivoiceModels}`,
+      `VoxCPM: 已加载设备 ${voxcpmLoadedDevices}`,
+      `VoxCPM 模型: ${voxcpmModels}`,
+      `VoxCPM 专用环境: ${voxcpmBridge.available ? (voxcpmBridge.python_executable || "可用") : "未检测到"}`,
       `音频识别模型: 已加载设备 ${Array.isArray(audio.asr_loaded_devices) && audio.asr_loaded_devices.length ? audio.asr_loaded_devices.join(", ") : "无"}`,
       `音频识别模型路径: ${Array.isArray(audio.asr_model_names) && audio.asr_model_names.length ? audio.asr_model_names.join(", ") : "未加载"}`,
     ].join("\n");
@@ -4150,6 +4375,7 @@ very high pitch, very low pitch, whisper, young adult
     const llmTransformersReady = llmRuntime.transformers_ready ? "就绪" : "未就绪";
     const llmMlxReady = llmRuntime.mlx_ready ? "就绪" : "未就绪";
     const llmGgufReady = llmRuntime.gguf_ready ? "就绪" : "未就绪";
+    const voxcpmBridge = audio.voxcpm_bridge || {};
     const llmLoaded = Array.isArray(llm.loaded_models) && llm.loaded_models.length
       ? llm.loaded_models.map((item) => {
         const fallbackText = item.last_fallback && item.last_fallback.to_batch_size
@@ -4159,22 +4385,30 @@ very high pitch, very low pitch, whisper, young adult
       }).join(" | ")
       : "无";
     const runtimeMissing = Array.isArray(audio.runtime?.missing) && audio.runtime.missing.length ? audio.runtime.missing.join(", ") : "无";
+    const voxcpmRuntimeMissing = Array.isArray(audio.voxcpm_runtime?.missing) && audio.voxcpm_runtime.missing.length ? audio.voxcpm_runtime.missing.join(", ") : "无";
     const asrRuntimeMissing = Array.isArray(audio.asr_runtime?.missing) && audio.asr_runtime.missing.length ? audio.asr_runtime.missing.join(", ") : "无";
     const generationReady = audio.runtime?.ready !== false;
+    const voxcpmReady = audio.voxcpm_runtime?.ready !== false;
     const asrReady = audio.asr_runtime?.ready !== false;
     const generationLoaded = Array.isArray(audio.loaded_devices) && audio.loaded_devices.length ? audio.loaded_devices.join(", ") : "无";
+    const voxcpmLoaded = Array.isArray(audio.voxcpm_loaded_devices) && audio.voxcpm_loaded_devices.length ? audio.voxcpm_loaded_devices.join(", ") : "无";
     const asrLoaded = Array.isArray(audio.asr_loaded_devices) && audio.asr_loaded_devices.length ? audio.asr_loaded_devices.join(", ") : "无";
     const audioModels = Array.isArray(audio.audio_model_names) && audio.audio_model_names.length ? audio.audio_model_names.join(", ") : "未加载";
+    const voxcpmModels = Array.isArray(audio.voxcpm_model_names) && audio.voxcpm_model_names.length ? audio.voxcpm_model_names.join(", ") : "未加载";
     const asrModel = Array.isArray(audio.asr_model_names) && audio.asr_model_names.length ? audio.asr_model_names.join(", ") : "未加载";
     const detectedDevice = audio.detected_device || "未知";
     el.textContent = [
       `文本分析直载运行时：Transformers ${llmTransformersReady} / MLX ${llmMlxReady} / GGUF ${llmGgufReady}`,
       `文本分析直载已加载：${llmLoaded}`,
-      `音频生成运行时：${generationReady ? "就绪" : `缺少依赖（${runtimeMissing}）`}`,
+      `OmniVoice 运行时：${generationReady ? "就绪" : `缺少依赖（${runtimeMissing}）`}`,
+      `VoxCPM 运行时：${voxcpmReady ? "就绪" : `缺少依赖（${voxcpmRuntimeMissing}）`}`,
+      `VoxCPM 专用环境：${voxcpmBridge.available ? `可用（${voxcpmBridge.python_executable || "已配置"}）` : "未检测到"}`,
       `音频识别运行时：${asrReady ? "就绪" : `缺少依赖（${asrRuntimeMissing}）`}`,
       `默认检测设备：${detectedDevice}`,
-      `音频生成已加载设备：${generationLoaded}`,
-      `音频生成模型：${audioModels}`,
+      `OmniVoice 已加载设备：${generationLoaded}`,
+      `OmniVoice 模型：${audioModels}`,
+      `VoxCPM 已加载设备：${voxcpmLoaded}`,
+      `VoxCPM 模型：${voxcpmModels}`,
       `音频识别已加载设备：${asrLoaded}`,
       `音频识别模型：${asrModel}`,
     ].join("\n");
@@ -4217,7 +4451,7 @@ very high pitch, very low pitch, whisper, young adult
       const data = await fetchJson("/api/model/load-audio", { backend });
       const detail = data.mode === "remote"
         ? `远程后端连通正常：${backend.remote_base_url || "未填写地址"}`
-        : `本地模型已就绪，设备：${getInferenceDeviceLabel(data.device || backend.inference_device)}。模型：${data.model_name || backend.local_audio_model_path || "默认 OmniVoice"}`;
+        : `本地模型已就绪，设备：${getInferenceDeviceLabel(data.device || backend.inference_device)}。模型：${data.model_name || backend.local_audio_model_path || `默认 ${getDefaultLocalAudioModelLabel(backend.local_audio_engine || "omnivoice")}`}${data.bridge_python_executable ? `。专用环境：${data.bridge_python_executable}` : ""}${data.message ? `。${data.message}` : ""}`;
       await refreshModelRuntimeStatus(true);
       document.getElementById("audioGenerationStatus").textContent = detail;
       setStatus(`音频生成模型已就绪。${detail}`);
@@ -4314,10 +4548,15 @@ very high pitch, very low pitch, whisper, young adult
 
   function applySegmentsState(segments, options = {}) {
     segmentsState = (segments || []).map((seg) => ({
+      voice_engine: normalizeVoiceEngineValue(seg.voice_engine || ""),
+      voice_name: seg.voice_name || "",
+      voice_locale: seg.voice_locale || "",
+      cfg_value: seg.cfg_value ?? "",
+      inference_timesteps: seg.inference_timesteps ?? "",
       speaker: seg.speaker || "旁白",
       text: seg.text || "",
       emotion: seg.emotion || "neutral",
-      style: seg.style || "",
+      style: normalizeVoiceStyleValue(seg.style || "", seg.voice_engine || ""),
       ref_audio: seg.ref_audio || null,
       ref_text: seg.ref_text || null,
     }));
@@ -4332,8 +4571,9 @@ very high pitch, very low pitch, whisper, young adult
         delete roleVoiceAssignments[speaker];
       }
     });
+    let persistResult = { persisted: true, reason: "" };
     if (options.persist !== false) {
-      saveLastSegments(segmentsState);
+      persistResult = saveLastSegments(segmentsState);
     }
     syncRoleProfilesFromSegments();
     renderSpeakerMergeList();
@@ -4341,6 +4581,7 @@ very high pitch, very low pitch, whisper, young adult
     renderSegments(segmentsPanelExpanded);
     renderAnalysisPipelineMeta();
     updateAnalysisResultActions();
+    return persistResult;
   }
 
   function getExportableSegments() {
@@ -4458,19 +4699,126 @@ very high pitch, very low pitch, whisper, young adult
 
   function normalizeVoiceLibraryEntry(voice) {
     const raw = voice || {};
+    const voiceEngine = String(raw.voice_engine || "").trim().toLowerCase();
     return {
       id: raw.id || `voice_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
       name: raw.name || "",
-      style: normalizeStyleValue(raw.style || ""),
+      style: normalizeVoiceStyleValue(raw.style || "", voiceEngine),
       ref_audio: raw.ref_audio || "",
       ref_audio_url: raw.ref_audio_url || "",
       ref_text: raw.ref_text || "",
-      voice_engine: raw.voice_engine || "",
+      voice_engine: voiceEngine,
       voice_name: raw.voice_name || "",
       voice_locale: raw.voice_locale || "",
+      cfg_value: raw.cfg_value ?? "",
+      inference_timesteps: raw.inference_timesteps ?? "",
       voice_provider: raw.voice_provider || "",
       voice_platform: raw.voice_platform || "",
     };
+  }
+
+  function normalizeVoiceEngineValue(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function isVoxCPMVoiceEngine(value) {
+    return normalizeVoiceEngineValue(value) === VOXCPM_VOICE_ENGINE;
+  }
+
+  function shouldUseStylePickerForEngine(value) {
+    const engine = normalizeVoiceEngineValue(value);
+    return !engine;
+  }
+
+  function normalizeVoiceStyleValue(value, voiceEngine = "") {
+    if (isVoxCPMVoiceEngine(voiceEngine)) {
+      return String(value || "").trim();
+    }
+    return normalizeStyleValue(value);
+  }
+
+  function getVoiceStyleFieldLabel(voiceEngine = "") {
+    return isVoxCPMVoiceEngine(voiceEngine) ? "控制描述" : "style";
+  }
+
+  function getVoiceStylePlaceholder(voiceEngine = "") {
+    if (isVoxCPMVoiceEngine(voiceEngine)) {
+      return "例如：成熟中文女声，沉稳温和，语速中等，适合小说旁白";
+    }
+    return "例如：female, moderate pitch";
+  }
+
+  function getVoiceStyleHelp(voiceEngine = "") {
+    if (isVoxCPMVoiceEngine(voiceEngine)) {
+      return "VoxCPM 支持自然语言控制描述。可直接写年龄、性别、语气、情绪、语速和角色感觉，不需要限制在标签集合里。";
+    }
+    return "OmniVoice 当前使用固定标签 style。可以手填，也可以直接点击下方标签。";
+  }
+
+  function getNumericVoiceFieldValue(value, fallback = "") {
+    if (value === null || value === undefined || value === "") return fallback;
+    return String(value);
+  }
+
+  function parseOptionalFloatValue(value) {
+    const text = String(value ?? "").trim();
+    if (!text) return null;
+    const parsed = Number.parseFloat(text);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function parseOptionalIntValue(value) {
+    const text = String(value ?? "").trim();
+    if (!text) return null;
+    const parsed = Number.parseInt(text, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function renderVoxCPMAdvancedFields(targetType, key, current = {}) {
+    const engine = normalizeVoiceEngineValue(current.voice_engine || "");
+    if (!isVoxCPMVoiceEngine(engine)) return "";
+    const handlerMap = {
+      voice: "updateVoiceLibraryField",
+      role: "updateRoleField",
+      segment: "updateSegmentField",
+    };
+    const handler = handlerMap[targetType] || "updateSegmentField";
+    return `
+      <div class="row">
+        <div>
+          <label>CFG</label>
+          <input type="number" step="0.1" min="0.1" max="10" value="${escapeHtml(getNumericVoiceFieldValue(current.cfg_value, "2.0"))}" onchange="${handler}('${escapeJs(String(key))}', 'cfg_value', this.value)" />
+          <div class="mini-note">越高越贴合控制描述或参考音色。留空时默认使用 2.0。</div>
+        </div>
+        <div>
+          <label>迭代步数</label>
+          <input type="number" step="1" min="1" max="100" value="${escapeHtml(getNumericVoiceFieldValue(current.inference_timesteps, "10"))}" onchange="${handler}('${escapeJs(String(key))}', 'inference_timesteps', this.value)" />
+          <div class="mini-note">越高通常越稳但越慢。留空时默认使用 10。</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderVoiceEngineSelect(targetType, key, currentValue = "") {
+    const current = normalizeVoiceEngineValue(currentValue);
+    const options = [
+      { value: "", label: "默认 / OmniVoice" },
+      { value: VOXCPM_VOICE_ENGINE, label: "VoxCPM" },
+      { value: MICROSOFT_VOICE_ENGINE, label: "Microsoft TTS" },
+      { value: BROWSER_LOCAL_VOICE_ENGINE, label: "浏览器本地语音" },
+    ];
+    const handlerMap = {
+      voice: "updateVoiceLibraryField",
+      role: "updateRoleField",
+      segment: "updateSegmentField",
+    };
+    const handler = handlerMap[targetType] || "updateSegmentField";
+    return `
+      <label>语音引擎</label>
+      <select onchange="${handler}('${escapeJs(String(key))}', 'voice_engine', this.value)">
+        ${options.map((item) => `<option value="${item.value}" ${current === item.value ? "selected" : ""}>${item.label}</option>`).join("")}
+      </select>
+    `;
   }
 
   function isMicrosoftVoice(voice) {
@@ -4493,6 +4841,9 @@ very high pitch, very low pitch, whisper, young adult
       const provider = String(voice.voice_provider || "").trim();
       const platform = String(voice.voice_platform || "").trim();
       return `浏览器本地语音${provider ? ` / ${provider}` : ""}${platform ? ` / ${platform}` : ""}${voice.voice_locale ? ` / ${voice.voice_locale}` : ""}`;
+    }
+    if (isVoxCPMVoiceEngine(voice?.voice_engine)) {
+      return voice.ref_audio ? "VoxCPM 克隆" : "VoxCPM Design";
     }
     return voice.ref_audio ? "参考音频" : "Voice Design";
   }
@@ -4538,8 +4889,31 @@ very high pitch, very low pitch, whisper, young adult
 
   function updateVoiceLibraryField(index, field, value) {
     if (!voiceLibraryState[index]) return;
-    voiceLibraryState[index][field] = field === "style" ? normalizeStyleValue(value) : value;
+    if (field === "voice_engine") {
+      voiceLibraryState[index][field] = normalizeVoiceEngineValue(value);
+    } else if (field === "style") {
+      voiceLibraryState[index][field] = normalizeVoiceStyleValue(value, voiceLibraryState[index].voice_engine);
+    } else if (field === "cfg_value") {
+      voiceLibraryState[index][field] = String(value ?? "").trim();
+    } else if (field === "inference_timesteps") {
+      voiceLibraryState[index][field] = String(value ?? "").trim();
+    } else {
+      voiceLibraryState[index][field] = value;
+    }
     if (field === "style") {
+      renderVoiceLibrary();
+    }
+    if (field === "voice_engine") {
+      if (isVoxCPMVoiceEngine(value)) {
+        voiceLibraryState[index].voice_name = "";
+        voiceLibraryState[index].voice_locale = "";
+        voiceLibraryState[index].voice_provider = "";
+        voiceLibraryState[index].voice_platform = "";
+      } else {
+        voiceLibraryState[index].cfg_value = "";
+        voiceLibraryState[index].inference_timesteps = "";
+      }
+      voiceLibraryState[index].style = normalizeVoiceStyleValue(voiceLibraryState[index].style, voiceLibraryState[index].voice_engine);
       renderVoiceLibrary();
     }
     if (field === "ref_audio") {
@@ -4785,7 +5159,10 @@ very high pitch, very low pitch, whisper, young adult
     return STYLE_TAG_LABEL_MAP[normalized] || tag;
   }
 
-  function formatStyleDisplay(style) {
+  function formatStyleDisplay(style, voiceEngine = "") {
+    if (isVoxCPMVoiceEngine(voiceEngine)) {
+      return String(style || "").trim() || "未设置控制描述";
+    }
     const parts = getStyleParts(style);
     if (!parts.length) return "未设置 style";
     return parts.map((part) => getStyleDisplayLabel(part)).join("，");
@@ -4929,7 +5306,7 @@ very high pitch, very low pitch, whisper, young adult
       imported.forEach((voice) => {
         voiceLibraryState.push(normalizeVoiceLibraryEntry({
           name: voice.name || getFileStem(voice.file_name || "") || "",
-          style: normalizeStyleValue(voice.style || ""),
+          style: voice.style || "",
           ref_audio: voice.ref_audio || "",
           ref_audio_url: voice.ref_audio_url || "",
           ref_text: voice.ref_text || "",
@@ -5330,6 +5707,10 @@ very high pitch, very low pitch, whisper, young adult
     return !String(voice?.style || "").trim();
   }
 
+  function getVoiceMissingPromptLabel(voice) {
+    return isVoxCPMVoiceEngine(voice?.voice_engine) ? "待补控制描述" : "待补 style";
+  }
+
   function renderVoiceLibrary() {
     const container = document.getElementById("voiceLibraryList");
     const editor = document.getElementById("voiceLibraryEditor");
@@ -5348,8 +5729,8 @@ very high pitch, very low pitch, whisper, young adult
     const missingStyleCount = voiceLibraryState.filter((voice) => voiceNeedsStyle(voice)).length;
     if (meta) {
       meta.textContent = missingStyleCount
-        ? `当前共有 ${voiceLibraryState.length} 个声音模板，其中 ${missingStyleCount} 个还没填写 style，列表中会用“待补 style”标记高亮显示。`
-        : `当前共有 ${voiceLibraryState.length} 个声音模板，style 都已填写。`;
+        ? `当前共有 ${voiceLibraryState.length} 个声音模板，其中 ${missingStyleCount} 个还没填写风格提示或控制描述，列表中会用高亮提示。`
+        : `当前共有 ${voiceLibraryState.length} 个声音模板，提示字段都已填写。`;
     }
     container.hidden = isEditing;
     container.style.display = isEditing ? "none" : "";
@@ -5361,10 +5742,10 @@ very high pitch, very low pitch, whisper, young adult
           <div>
             <strong>${escapeHtml(getVoiceLabel(voice))}</strong>
             <div class="voice-list-meta">
-              <span class="pill">${escapeHtml(formatStyleDisplay(voice.style || ""))}</span>
+              <span class="pill">${escapeHtml(formatStyleDisplay(voice.style || "", voice.voice_engine || ""))}</span>
               <span class="pill">${escapeHtml(getVoiceBadgeLabel(voice))}</span>
               <span class="pill">${voice.ref_audio ? "已配置参考音频" : "无参考音频"}</span>
-              ${voiceNeedsStyle(voice) ? `<span class="pill" style="background:rgba(248,196,113,0.16); border-color:rgba(248,196,113,0.24); color:#fff2c7;">待补 style</span>` : ""}
+              ${voiceNeedsStyle(voice) ? `<span class="pill" style="background:rgba(248,196,113,0.16); border-color:rgba(248,196,113,0.24); color:#fff2c7;">${escapeHtml(getVoiceMissingPromptLabel(voice))}</span>` : ""}
             </div>
           </div>
           <div class="voice-actions">
@@ -5441,9 +5822,12 @@ very high pitch, very low pitch, whisper, young adult
       `}
       <label>声音名称</label>
       <input value="${escapeHtml(voice.name || "")}" onchange="updateVoiceLibraryField(${editIndex}, 'name', this.value)" />
-      <label>style</label>
-      <input value="${escapeHtml(voice.style || "")}" placeholder="例如：female, moderate pitch" onchange="updateVoiceLibraryField(${editIndex}, 'style', this.value)" />
-      ${renderStylePicker("voice", editIndex)}
+      ${isBrowserPreview ? "" : renderVoiceEngineSelect("voice", editIndex, voice.voice_engine || "")}
+      <label>${escapeHtml(getVoiceStyleFieldLabel(voice.voice_engine || ""))}</label>
+      <input value="${escapeHtml(voice.style || "")}" placeholder="${escapeHtml(getVoiceStylePlaceholder(voice.voice_engine || ""))}" onchange="updateVoiceLibraryField(${editIndex}, 'style', this.value)" />
+      <div class="mini-note">${escapeHtml(getVoiceStyleHelp(voice.voice_engine || ""))}</div>
+      ${shouldUseStylePickerForEngine(voice.voice_engine || "") ? renderStylePicker("voice", editIndex) : ""}
+      ${renderVoxCPMAdvancedFields("voice", editIndex, voice)}
       ${isBrowserPreview ? "" : `
       <label>ref_text</label>
       <textarea onchange="updateVoiceLibraryField(${editIndex}, 'ref_text', this.value)">${escapeHtml(voice.ref_text || "")}</textarea>
@@ -5468,6 +5852,8 @@ very high pitch, very low pitch, whisper, young adult
         voice_engine: "",
         voice_name: "",
         voice_locale: "",
+        cfg_value: "",
+        inference_timesteps: "",
       };
     }
   }
@@ -5524,9 +5910,12 @@ very high pitch, very low pitch, whisper, young adult
           <strong>${escapeHtml(speaker)}</strong>
           <button type="button" class="danger" ${taskBusy ? "disabled" : ""} onclick="removeRole('${escapeJs(speaker)}')">删除角色配置</button>
         </div>
-        <label>style</label>
-        <input value="${escapeHtml(role.style || "")}" placeholder="例如：female, moderate pitch" onchange="updateRoleField('${escapeJs(speaker)}', 'style', this.value)" />
-        ${renderStylePicker("role", speaker)}
+        ${renderVoiceEngineSelect("role", speaker, role.voice_engine || "")}
+        <label>${escapeHtml(getVoiceStyleFieldLabel(role.voice_engine || ""))}</label>
+        <input value="${escapeHtml(role.style || "")}" placeholder="${escapeHtml(getVoiceStylePlaceholder(role.voice_engine || ""))}" onchange="updateRoleField('${escapeJs(speaker)}', 'style', this.value)" />
+        <div class="mini-note">${escapeHtml(getVoiceStyleHelp(role.voice_engine || ""))}</div>
+        ${shouldUseStylePickerForEngine(role.voice_engine || "") ? renderStylePicker("role", speaker) : ""}
+        ${renderVoxCPMAdvancedFields("role", speaker, role)}
         <label>ref_audio（推荐用于角色一致性）</label>
         <input value="${escapeHtml(role.ref_audio || "")}" placeholder="例如：I:/voices/zhangsan.wav" onchange="updateRoleField('${escapeJs(speaker)}', 'ref_audio', this.value)" />
         <label>ref_text（可选）</label>
@@ -5538,11 +5927,32 @@ very high pitch, very low pitch, whisper, young adult
 
   function updateRoleField(speaker, field, value) {
     ensureRoleProfile(speaker);
-    roleProfilesState[speaker][field] = field === "style" ? normalizeStyleValue(value) : value;
+    if (field === "voice_engine") {
+      roleProfilesState[speaker][field] = normalizeVoiceEngineValue(value);
+    } else if (field === "style") {
+      roleProfilesState[speaker][field] = normalizeVoiceStyleValue(value, roleProfilesState[speaker].voice_engine);
+    } else if (field === "cfg_value" || field === "inference_timesteps") {
+      roleProfilesState[speaker][field] = String(value ?? "").trim();
+    } else {
+      roleProfilesState[speaker][field] = value;
+    }
     if (field === "ref_audio" && String(value || "").trim()) {
-      roleProfilesState[speaker].voice_engine = "";
+      if (!isVoxCPMVoiceEngine(roleProfilesState[speaker].voice_engine)) {
+        roleProfilesState[speaker].voice_engine = "";
+      }
       roleProfilesState[speaker].voice_name = "";
       roleProfilesState[speaker].voice_locale = "";
+    }
+    if (field === "voice_engine") {
+      roleProfilesState[speaker].style = normalizeVoiceStyleValue(roleProfilesState[speaker].style, roleProfilesState[speaker].voice_engine);
+      if (isVoxCPMVoiceEngine(roleProfilesState[speaker].voice_engine)) {
+        roleProfilesState[speaker].voice_name = "";
+        roleProfilesState[speaker].voice_locale = "";
+      } else {
+        roleProfilesState[speaker].cfg_value = "";
+        roleProfilesState[speaker].inference_timesteps = "";
+      }
+      renderRoles();
     }
     if (field === "style") {
       renderRoles();
@@ -5568,6 +5978,8 @@ very high pitch, very low pitch, whisper, young adult
       roleProfilesState[speaker].voice_engine = "";
       roleProfilesState[speaker].voice_name = "";
       roleProfilesState[speaker].voice_locale = "";
+      roleProfilesState[speaker].cfg_value = "";
+      roleProfilesState[speaker].inference_timesteps = "";
       renderRoleAssignments();
       return;
     }
@@ -5576,9 +5988,11 @@ very high pitch, very low pitch, whisper, young adult
       roleProfilesState[speaker].style = voice.style || roleProfilesState[speaker].style || "";
       roleProfilesState[speaker].ref_audio = isBrowserPreviewVoice(voice) ? "" : (voice.ref_audio || "");
       roleProfilesState[speaker].ref_text = isBrowserPreviewVoice(voice) ? "" : (voice.ref_text || "");
-      roleProfilesState[speaker].voice_engine = voice.voice_engine || "";
+      roleProfilesState[speaker].voice_engine = normalizeVoiceEngineValue(voice.voice_engine || "");
       roleProfilesState[speaker].voice_name = voice.voice_name || "";
       roleProfilesState[speaker].voice_locale = voice.voice_locale || "";
+      roleProfilesState[speaker].cfg_value = voice.cfg_value || "";
+      roleProfilesState[speaker].inference_timesteps = voice.inference_timesteps || "";
     }
     renderRoleAssignments();
   }
@@ -5619,7 +6033,10 @@ very high pitch, very low pitch, whisper, young adult
           style: seg.style || "",
           ref_audio: seg.ref_audio || "",
           ref_text: seg.ref_text || "",
+          voice_engine: normalizeVoiceEngineValue(seg.voice_engine || ""),
           voice_locale: seg.voice_locale || "",
+          cfg_value: seg.cfg_value || "",
+          inference_timesteps: seg.inference_timesteps || "",
         };
       }
     });
@@ -5848,7 +6265,10 @@ very high pitch, very low pitch, whisper, young adult
         return;
       }
 
-      const backend = isBrowserPreviewVoice(profile) ? validateAudioBackendConfig() : await ensureAudioBackendReady();
+      const effectiveEngine = normalizeVoiceEngineValue(segment.voice_engine || profile.voice_engine || "");
+      const backend = isBrowserPreviewVoice(profile)
+        ? validateAudioBackendConfig()
+        : (isVoxCPMVoiceEngine(effectiveEngine) ? validateAudioBackendConfig() : await ensureAudioBackendReady());
       if (!backend) return;
       const outputName = `preview_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`;
       const inferenceDevice = backend.inference_device || getInferenceDevice();
@@ -5860,6 +6280,8 @@ very high pitch, very low pitch, whisper, young adult
         voice_engine: segment.voice_engine || profile.voice_engine || null,
         voice_name: segment.voice_name || profile.voice_name || null,
         voice_locale: segment.voice_locale || profile.voice_locale || null,
+        cfg_value: parseOptionalFloatValue(segment.cfg_value || profile.cfg_value),
+        inference_timesteps: parseOptionalIntValue(segment.inference_timesteps || profile.inference_timesteps),
         output_name: outputName,
         inference_device: inferenceDevice,
         backend,
@@ -5958,6 +6380,8 @@ very high pitch, very low pitch, whisper, young adult
       roleProfilesState[speaker].voice_engine = narratorProfile.voice_engine || roleProfilesState[speaker].voice_engine || "";
       roleProfilesState[speaker].voice_name = narratorProfile.voice_name || roleProfilesState[speaker].voice_name || "";
       roleProfilesState[speaker].voice_locale = narratorProfile.voice_locale || roleProfilesState[speaker].voice_locale || "";
+      roleProfilesState[speaker].cfg_value = narratorProfile.cfg_value || roleProfilesState[speaker].cfg_value || "";
+      roleProfilesState[speaker].inference_timesteps = narratorProfile.inference_timesteps || roleProfilesState[speaker].inference_timesteps || "";
       appliedCount += 1;
     });
 
@@ -5977,6 +6401,8 @@ very high pitch, very low pitch, whisper, young adult
       roleProfilesState[speaker].voice_engine = firstSeg.voice_engine || "";
       roleProfilesState[speaker].voice_name = firstSeg.voice_name || "";
       roleProfilesState[speaker].voice_locale = firstSeg.voice_locale || "";
+      roleProfilesState[speaker].cfg_value = firstSeg.cfg_value || "";
+      roleProfilesState[speaker].inference_timesteps = firstSeg.inference_timesteps || "";
     });
     renderRoleAssignments();
     setStatus("已清空当前音频生成配置，所有角色都恢复为导入 JSON 后的未分配状态。");
@@ -6155,9 +6581,12 @@ very high pitch, very low pitch, whisper, young adult
 
   async function importSegmentsContent(content, sourceLabel = "导入文件") {
     const data = await fetchJson("/api/import-segments", { content });
-    applySegmentsState(data.segments || []);
+    const persistResult = applySegmentsState(data.segments || []);
     setWorkspaceTab("audio");
-    setStatus(`${sourceLabel} 已导入，共 ${segmentsState.length} 段。`);
+    const persistNote = persistResult && !persistResult.persisted
+      ? " 由于浏览器本地存储配额不足，本次结果仅保留在当前页面内，刷新后不会自动恢复。"
+      : "";
+    setStatus(`${sourceLabel} 已导入，共 ${segmentsState.length} 段。${persistNote}`);
   }
 
   async function handleSegmentsJsonFileChange(event) {
@@ -6165,7 +6594,8 @@ very high pitch, very low pitch, whisper, young adult
     const file = input.files && input.files[0];
     if (!file) return;
     try {
-      await importSegmentsContent(await file.text(), `文件 ${file.name}`);
+      const decoded = await readTextFileWithEncoding(file);
+      await importSegmentsContent(decoded.text, `文件 ${file.name}（${decoded.encoding}）`);
     } catch (err) {
       setStatus("导入分段 JSON 失败，请查看上方任务面板中的详细错误。");
       failTask("导入分段 JSON 失败", err.message || String(err));
@@ -6200,10 +6630,13 @@ very high pitch, very low pitch, whisper, young adult
               `<option value="${e}" ${seg.emotion === e ? "selected" : ""}>${e}</option>`
             ).join("")}
           </select>
-          <input value="${escapeHtml(seg.style || "")}" placeholder="可留空，优先继承角色配置" onchange="updateSegmentField(${idx}, 'style', this.value)" />
+          <input value="${escapeHtml(seg.style || "")}" placeholder="${escapeHtml(getVoiceStylePlaceholder(seg.voice_engine || ""))}" onchange="updateSegmentField(${idx}, 'style', this.value)" />
           <button type="button" class="danger" ${taskBusy ? "disabled" : ""} onclick="removeSegment(${idx})">删除</button>
         </div>
-        ${renderStylePicker("segment", idx)}
+        ${renderVoiceEngineSelect("segment", idx, seg.voice_engine || "")}
+        <div class="mini-note">${escapeHtml(getVoiceStyleHelp(seg.voice_engine || ""))}</div>
+        ${shouldUseStylePickerForEngine(seg.voice_engine || "") ? renderStylePicker("segment", idx) : ""}
+        ${renderVoxCPMAdvancedFields("segment", idx, seg)}
         <textarea onchange="updateSegmentField(${idx}, 'text', this.value)">${escapeHtml(seg.text || "")}</textarea>
       `;
       fragment.appendChild(div);
@@ -6225,14 +6658,27 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function updateSegmentField(index, field, value) {
-    segmentsState[index][field] = field === "style" ? normalizeStyleValue(value) : value;
+    if (field === "voice_engine") {
+      segmentsState[index][field] = normalizeVoiceEngineValue(value);
+      segmentsState[index].style = normalizeVoiceStyleValue(segmentsState[index].style, segmentsState[index].voice_engine);
+      if (!isVoxCPMVoiceEngine(segmentsState[index].voice_engine)) {
+        segmentsState[index].cfg_value = "";
+        segmentsState[index].inference_timesteps = "";
+      }
+    } else if (field === "style") {
+      segmentsState[index][field] = normalizeVoiceStyleValue(value, segmentsState[index].voice_engine);
+    } else if (field === "cfg_value" || field === "inference_timesteps") {
+      segmentsState[index][field] = String(value ?? "").trim();
+    } else {
+      segmentsState[index][field] = value;
+    }
     if (field === "speaker") {
       ensureRoleProfile(value || "旁白");
       renderRoles();
       renderRoleAssignments();
       renderSpeakerMergeList();
     }
-    if (field === "style") {
+    if (field === "style" || field === "voice_engine") {
       renderSegments(true);
     }
     saveLastSegments(segmentsState);
@@ -6245,6 +6691,9 @@ very high pitch, very low pitch, whisper, young adult
       text: "",
       emotion: "neutral",
       style: "",
+      voice_engine: "",
+      cfg_value: "",
+      inference_timesteps: "",
       ref_audio: null,
       ref_text: null
     });
@@ -6354,8 +6803,9 @@ very high pitch, very low pitch, whisper, young adult
     const file = input.files && input.files[0];
     if (!file) return;
     try {
-      document.getElementById("externalResultText").value = await file.text();
-      setStatus(`已导入外部结果文件：${file.name}`);
+      const decoded = await readTextFileWithEncoding(file);
+      document.getElementById("externalResultText").value = decoded.text;
+      setStatus(`已导入外部结果文件：${file.name}（识别编码：${decoded.encoding}）`);
     } catch (err) {
       setStatus("导入外部结果文件失败。");
     } finally {
@@ -6390,7 +6840,7 @@ very high pitch, very low pitch, whisper, young adult
       const data = await fetchJson("/api/import-segments", { content });
       externalImportedChunkMap[externalCurrentChunkIndex] = data.segments || [];
       externalImportedSegments = data.segments || [];
-      applySegmentsState(externalImportedSegments.slice());
+      const persistResult = applySegmentsState(externalImportedSegments.slice());
       refreshExternalPromptView();
 
       refreshExternalPromptView();
@@ -6401,7 +6851,10 @@ very high pitch, very low pitch, whisper, young adult
         `当前累计 ${segmentsState.length} 个分段，已经可以直接进行语音合成。`,
         { total: 1, done: 1 }
       );
-      setStatus(`外部结果已导入，共 ${segmentsState.length} 段。`);
+      const persistNote = persistResult && !persistResult.persisted
+        ? " 由于浏览器本地存储配额不足，本次结果仅保留在当前页面内，刷新后不会自动恢复。"
+        : "";
+      setStatus(`外部结果已导入，共 ${segmentsState.length} 段。${persistNote}`);
     } catch (err) {
       if (isTaskCancelledError(err)) return;
       setStatus("外部结果导入失败，请查看上方任务面板中的详细错误。");
@@ -6634,7 +7087,19 @@ very high pitch, very low pitch, whisper, young adult
       }
 
       try {
-        return await fetchJson("/api/parse", { text: chunk, llm });
+        return await withLlmRequestProgress(
+          () => fetchJson("/api/parse", { text: chunk, llm }),
+          {
+            stage: "analyze",
+            summary: `正在分析第 ${chunkLabel} 块`,
+            detail: `当前已完成 ${completedChunks} / ${workChunksLength} 块，正在等待 LLM 返回结构化 segments JSON。`,
+            hint: "LM Studio 后台持续生成 token 说明模型仍在工作；本块完成后前端会继续处理下一块。",
+            basePercent: Math.min(43, Math.round(18 + ((completedChunks / Math.max(workChunksLength, 1)) * 24))),
+            ceilingPercent: Math.min(88, Math.round(42 + (((completedChunks + 1) / Math.max(workChunksLength, 1)) * 40))),
+            total: workChunksLength,
+            done: completedChunks,
+          }
+        );
       } catch (err) {
         lastError = err;
         const isRetryableTimeout = String(err && err.message ? err.message : err || "").toLowerCase().includes("timeout") || String(err && err.message ? err.message : err || "").toLowerCase().includes("超时");
@@ -6686,6 +7151,16 @@ very high pitch, very low pitch, whisper, young adult
     return isBrowserPreviewVoice(segment);
   }
 
+  function getEffectiveVoiceEngineForSegment(segment) {
+    const speaker = segment.speaker || "旁白";
+    const profile = roleProfilesState[speaker] || {};
+    return normalizeVoiceEngineValue(segment.voice_engine || profile.voice_engine || "");
+  }
+
+  function segmentUsesVoxCPMVoice(segment) {
+    return isVoxCPMVoiceEngine(getEffectiveVoiceEngineForSegment(segment));
+  }
+
   function effectiveVoiceForSegment(segment) {
     const speaker = segment.speaker || "旁白";
     const profile = roleProfilesState[speaker] || {};
@@ -6696,6 +7171,10 @@ very high pitch, very low pitch, whisper, young adult
 
   function segmentsRequireAudioModel(segments) {
     return (segments || []).some((segment) => !effectiveVoiceForSegment(segment));
+  }
+
+  function segmentsRequirePreloadedAudioModel(segments) {
+    return (segments || []).some((segment) => !effectiveVoiceForSegment(segment) && !segmentUsesVoxCPMVoice(segment));
   }
 
   function segmentsContainMicrosoftVoices(segments) {
@@ -7023,19 +7502,66 @@ very high pitch, very low pitch, whisper, young adult
 
   async function runSmartSegmentation(text, llm) {
     segmentationInfoState = null;
+    const chapterChunks = chapterChunksState.length ? chapterChunksState : await runChapterDetection(text, llm);
+    const totalChapters = Math.max(chapterChunks.length, 1);
+    const plannedChunks = [];
     setProgress({
       stage: "segment",
       summary: "正在进行智能分段",
-      detail: `后端会基于已识别的章节/场景规则预切块，再用最多 ${llm.workers || 5} 个并发请求做细化规划。当前单段目标长度约 ${llm.segment_target_chars || 3200} 字。`,
+      detail: `已识别 ${totalChapters} 个章节/初始块，将按章节逐个请求 LLM 细化分段。当前单段目标长度约 ${llm.segment_target_chars || 3200} 字。`,
       percent: 16,
-      total: 0,
+      total: totalChapters,
       done: 0,
       indeterminate: true,
     }, { log: "开始进行 LLM 智能分段" });
-    const data = await fetchJson("/api/segment-plan", { text, llm });
-    plannedChunksState = data.chunks || [];
+
+    for (let index = 0; index < chapterChunks.length; index += 1) {
+      const chapter = chapterChunks[index];
+      const chapterTitle = chapter.title || `章节 ${index + 1}`;
+      const basePercent = Math.round(16 + ((index / totalChapters) * 18));
+      const ceilingPercent = Math.round(18 + (((index + 1) / totalChapters) * 22));
+      setProgress({
+        stage: "segment",
+        summary: `正在智能分段第 ${index + 1} / ${totalChapters} 章`,
+        detail: `当前章节：${chapterTitle}，长度 ${String(chapter.content || "").length} 字符。已累计规划 ${plannedChunks.length} 个工作块。`,
+        percent: basePercent,
+        total: totalChapters,
+        done: index,
+        indeterminate: true,
+      }, { log: `开始智能分段第 ${index + 1} / ${totalChapters} 章：${chapterTitle}` });
+      const data = await withLlmRequestProgress(
+        () => fetchJson("/api/segment-plan-chunks", { chunks: [chapter], llm }),
+        {
+          stage: "segment",
+          summary: `正在智能分段第 ${index + 1} / ${totalChapters} 章`,
+          detail: `当前章节：${chapterTitle}。正在等待 LLM 返回该章节的分段规划 JSON。`,
+          hint: "LM Studio 后台持续生成 token 时，请继续等待；当前章节完成后会立刻进入下一章。",
+          basePercent,
+          ceilingPercent,
+          total: totalChapters,
+          done: index,
+        }
+      );
+      plannedChunks.push(...(data.chunks || []));
+      setProgress({
+        stage: "segment",
+        summary: `已完成第 ${index + 1} / ${totalChapters} 章智能分段`,
+        detail: `当前已累计规划 ${plannedChunks.length} 个工作块。`,
+        percent: ceilingPercent,
+        total: totalChapters,
+        done: index + 1,
+        indeterminate: false,
+      }, { log: `完成第 ${index + 1} / ${totalChapters} 章智能分段，累计 ${plannedChunks.length} 块` });
+    }
+
+    plannedChunksState = plannedChunks;
     optimizedChunksState = [];
-    segmentationInfoState = data.info || null;
+    segmentationInfoState = {
+      ...(segmentationInfoState || {}),
+      method: "chapter_sequential",
+      chapter_count: totalChapters,
+      planned_chunk_count: plannedChunksState.length,
+    };
     renderAnalysisPipelineMeta();
     setStatus(`智能分段完成，共 ${plannedChunksState.length} 块。`);
     return plannedChunksState;
@@ -7043,19 +7569,57 @@ very high pitch, very low pitch, whisper, young adult
 
   async function runSegmentOptimize(text, llm) {
     segmentationInfoState = null;
+    const chapterChunks = chapterChunksState.length ? chapterChunksState : await runChapterDetection(text, llm);
+    const totalChapters = Math.max(chapterChunks.length, 1);
+    const optimizedChunks = [];
     setProgress({
       stage: "optimize",
       summary: "正在执行智能分段 + 语音适配优化",
-      detail: `当前会基于章节识别结果并发完成工作块规划和 OmniVoice 文本整理，单块目标长度约 ${llm.segment_target_chars || 3200} 字。`,
+      detail: `已识别 ${totalChapters} 个章节/初始块，将按章节逐个完成工作块规划和 OmniVoice 文本整理。`,
       percent: 28,
-      total: 0,
+      total: totalChapters,
       done: 0,
       indeterminate: true,
     }, { log: "开始进行分段与语音适配组合处理" });
-    const data = await fetchJson("/api/segment-optimize", { text, llm });
-    plannedChunksState = data.chunks || [];
-    optimizedChunksState = data.chunks || [];
-    segmentationInfoState = data.info || null;
+
+    for (let index = 0; index < chapterChunks.length; index += 1) {
+      const chapter = chapterChunks[index];
+      const chapterTitle = chapter.title || `章节 ${index + 1}`;
+      const basePercent = Math.round(28 + ((index / totalChapters) * 18));
+      const ceilingPercent = Math.round(30 + (((index + 1) / totalChapters) * 24));
+      const data = await withLlmRequestProgress(
+        () => fetchJson("/api/segment-optimize-chunks", { chunks: [chapter], llm }),
+        {
+          stage: "optimize",
+          summary: `正在处理第 ${index + 1} / ${totalChapters} 章分段与语音适配`,
+          detail: `当前章节：${chapterTitle}。正在等待 LLM 返回该章节的优化分段 JSON。`,
+          hint: "当前章节完成后会立刻累计结果并进入下一章。",
+          basePercent,
+          ceilingPercent,
+          total: totalChapters,
+          done: index,
+        }
+      );
+      optimizedChunks.push(...(data.chunks || []));
+      setProgress({
+        stage: "optimize",
+        summary: `已完成第 ${index + 1} / ${totalChapters} 章分段与语音适配`,
+        detail: `当前已累计得到 ${optimizedChunks.length} 个优化工作块。`,
+        percent: ceilingPercent,
+        total: totalChapters,
+        done: index + 1,
+        indeterminate: false,
+      }, { log: `完成第 ${index + 1} / ${totalChapters} 章分段与语音适配，累计 ${optimizedChunks.length} 块` });
+    }
+
+    plannedChunksState = optimizedChunks;
+    optimizedChunksState = optimizedChunks;
+    segmentationInfoState = {
+      ...(segmentationInfoState || {}),
+      method: "chapter_sequential_optimize",
+      chapter_count: totalChapters,
+      planned_chunk_count: optimizedChunksState.length,
+    };
     renderAnalysisPipelineMeta();
     setStatus(`智能分段与语音适配优化完成，共 ${optimizedChunksState.length} 块。`);
     return optimizedChunksState;
@@ -7071,7 +7635,19 @@ very high pitch, very low pitch, whisper, young adult
       done: 0,
       indeterminate: true,
     }, { log: `开始对 ${chunks.length} 个工作块做语音适配优化` });
-    const data = await fetchJson("/api/optimize-chunks", { chunks, llm });
+    const data = await withLlmRequestProgress(
+      () => fetchJson("/api/optimize-chunks", { chunks, llm }),
+      {
+        stage: "optimize",
+        summary: "语音适配优化请求进行中",
+        detail: `正在等待 LLM 优化 ${chunks.length} 个工作块，完成后会一次性刷新优化结果。`,
+        hint: "如果模型较大，单个工作块完成前不会产生中间 JSON。",
+        basePercent: 34,
+        ceilingPercent: 52,
+        total: chunks.length,
+        done: 0,
+      }
+    );
     optimizedChunksState = data.chunks || [];
     renderAnalysisPipelineMeta();
     setStatus(`语音适配优化完成，共 ${optimizedChunksState.length} 块。`);
@@ -7088,7 +7664,19 @@ very high pitch, very low pitch, whisper, young adult
       done: 0,
       indeterminate: true,
     }, { log: `开始并发执行优化与角色分析，共 ${chunks.length} 个工作块` });
-    const data = await fetchJson("/api/optimize-analyze-chunks", { chunks, llm });
+    const data = await withLlmRequestProgress(
+      () => fetchJson("/api/optimize-analyze-chunks", { chunks, llm }),
+      {
+        stage: "analyze",
+        summary: "语音适配与角色分析请求进行中",
+        detail: `正在等待 LLM 对 ${chunks.length} 个工作块完成优化和角色分析。`,
+        hint: "后端会在所有工作块返回后统一合并结果，因此前端会显示等待心跳。",
+        basePercent: 58,
+        ceilingPercent: 78,
+        total: chunks.length,
+        done: 0,
+      }
+    );
     const segments = data.segments || [];
     applySegmentsState(segments);
     renderAnalysisPipelineMeta();
@@ -7106,7 +7694,19 @@ very high pitch, very low pitch, whisper, young adult
       done: 0,
       indeterminate: true,
     }, { log: `开始并发分析 ${chunks.length} 个工作块` });
-    const data = await fetchJson("/api/analyze-chunks", { chunks, llm });
+    const data = await withLlmRequestProgress(
+      () => fetchJson("/api/analyze-chunks", { chunks, llm }),
+      {
+        stage: "analyze",
+        summary: "角色分析请求进行中",
+        detail: `正在等待 LLM 分析 ${chunks.length} 个工作块的 speaker、emotion 和 style。`,
+        hint: "LM Studio 后台持续生成 token 说明模型仍在工作；结果返回前不会有逐 token 进度。",
+        basePercent: 58,
+        ceilingPercent: 84,
+        total: chunks.length,
+        done: 0,
+      }
+    );
     const segments = data.segments || [];
     applySegmentsState(segments);
     renderAnalysisPipelineMeta();
@@ -7243,6 +7843,8 @@ very high pitch, very low pitch, whisper, young adult
         voice_engine: seg.voice_engine || profile.voice_engine || null,
         voice_name: seg.voice_name || profile.voice_name || null,
         voice_locale: seg.voice_locale || profile.voice_locale || null,
+        cfg_value: parseOptionalFloatValue(seg.cfg_value || profile.cfg_value),
+        inference_timesteps: parseOptionalIntValue(seg.inference_timesteps || profile.inference_timesteps),
         output_name: segmentOutputName,
         inference_device: inferenceDevice,
         backend,
@@ -7386,12 +7988,24 @@ very high pitch, very low pitch, whisper, young adult
         indeterminate: true,
       }, { log: "已发起结构化分析测试请求" });
 
-      const data = await requestParseChunk(
-        LLM_TEST_TEXT,
-        llm,
-        "结构化测试",
-        2,
-        1,
+      const data = await withLlmRequestProgress(
+        () => requestParseChunk(
+          LLM_TEST_TEXT,
+          llm,
+          "结构化测试",
+          2,
+          1,
+        ),
+        {
+          stage: "analyze",
+          summary: "正在进行结构化分析测试",
+          detail: "连通性已通过，当前正在验证智能分段与角色分析 JSON 能力。",
+          hint: "Qwen reasoning 类模型即使关闭 reasoning，也可能比普通 Chat 模型更慢。",
+          basePercent: 60,
+          ceilingPercent: 88,
+          total: 2,
+          done: 1,
+        }
       );
       const segments = data.segments || [];
       const duration = (performance.now() - startedAt) / 1000;
@@ -7446,7 +8060,7 @@ very high pitch, very low pitch, whisper, young adult
       const segments = await runRoleAnalysis(optimized, llm);
       const mixedPreviewMode = segmentsContainBrowserPreviewVoices(segments);
       const useSequentialSynthesis = backend.mode === "local" || segmentsContainMicrosoftVoices(segments);
-      if (segmentsRequireAudioModel(segments)) {
+      if (segmentsRequirePreloadedAudioModel(segments)) {
         const readyBackend = await ensureAudioBackendReady();
         if (!readyBackend) return;
         Object.assign(backend, readyBackend);
@@ -7508,7 +8122,7 @@ very high pitch, very low pitch, whisper, young adult
     try {
       const mixedPreviewMode = segmentsContainBrowserPreviewVoices(segmentsState);
       const useSequentialSynthesis = backend.mode === "local" || segmentsContainMicrosoftVoices(segmentsState);
-      if (segmentsRequireAudioModel(segmentsState)) {
+      if (segmentsRequirePreloadedAudioModel(segmentsState)) {
         const readyBackend = await ensureAudioBackendReady();
         if (!readyBackend) return;
         Object.assign(backend, readyBackend);

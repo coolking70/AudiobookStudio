@@ -43,13 +43,14 @@ from fastapi.staticfiles import StaticFiles
 from audio_utils import build_lrc, join_wavs
 from llm_client import OpenAICompatibleClient
 from local_llm import get_local_llm_runner, get_local_llm_status, unload_all_local_llm_runners
-from pipeline import ASR_MODEL_NAME, HF_CACHE_DIRS, MODEL_NAME, OmniVoicePipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status
-from role_analyzer import analyze_chunks_with_llm, analyze_text_with_llm, detect_chapter_structure_with_info, intelligent_segment_text, intelligent_segment_text_with_info, optimize_and_analyze_chunks_with_llm, optimize_chunks_for_tts, sanitize_segments, segment_and_optimize_text_with_info
+from pipeline import ASR_MODEL_NAME, HF_CACHE_DIRS, MODEL_NAME, VOXCPM_MODEL_NAME, OmniVoicePipeline, VoxCPMPipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status, get_voxcpm_runtime_dependency_status
+from role_analyzer import analyze_chunks_with_llm, analyze_text_with_llm, detect_chapter_structure_with_info, intelligent_segment_seed_chunk, intelligent_segment_text, intelligent_segment_text_with_info, optimize_and_analyze_chunks_with_llm, optimize_chunks_for_tts, sanitize_segments, segment_and_optimize_seed_chunk, segment_and_optimize_text_with_info
 from schemas import AnalyzeChunksRequest, AutoNarrateRequest, BatchImportVoiceLibraryRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, ListLLMModelsRequest, MergeRequest, ModelLoadRequest, NarrateRequest, ParseRequest, ScanLocalModelsRequest, SegmentPlanRequest, TTSRequest, TranscribeRefAudioRequest, UploadRefAudioRequest
 
 
 app = FastAPI(title="OmniVoice Reader Studio")
 pipeline_cache: dict[tuple[str, str, str], OmniVoicePipeline] = {}
+voxcpm_pipeline_cache: dict[tuple[str, str], VoxCPMPipeline] = {}
 pipeline_lock = Lock()
 
 Path("outputs").mkdir(parents=True, exist_ok=True)
@@ -67,6 +68,7 @@ AI_HELPER_CONFIG_CANDIDATES = [
 ]
 
 MICROSOFT_TTS_SUPPORTED_CULTURES = {"zh-CN", "en-US", "ja-JP"}
+VOXCPM_BRIDGE_SCRIPT = Path(__file__).resolve().parent / "voxcpm_bridge.py"
 
 
 def augment_process_path_from_python_env() -> None:
@@ -162,6 +164,80 @@ def _run_powershell_json(command: str) -> object:
     if not stdout:
         return []
     return json.loads(stdout)
+
+
+def get_voxcpm_bridge_python_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    explicit = str(os.getenv("VOXCPM_PYTHON_EXE") or "").strip()
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+    candidates.extend(
+        [
+            Path(r"I:\conda_envs\voxcpm\python.exe"),
+            Path(r"I:\ProgramData\miniconda3\envs\voxcpm\python.exe"),
+            Path(sys.executable).resolve(),
+        ]
+    )
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate).lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(candidate)
+    return deduped
+
+
+def find_voxcpm_bridge_python() -> Path | None:
+    for candidate in get_voxcpm_bridge_python_candidates():
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def get_voxcpm_bridge_status() -> dict[str, object]:
+    python_exe = find_voxcpm_bridge_python()
+    return {
+        "available": bool(python_exe and VOXCPM_BRIDGE_SCRIPT.exists()),
+        "python_executable": str(python_exe) if python_exe else None,
+        "script_path": str(VOXCPM_BRIDGE_SCRIPT),
+    }
+
+
+def run_voxcpm_bridge(action: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+    status = get_voxcpm_bridge_status()
+    python_exe = status.get("python_executable")
+    if not status.get("available") or not python_exe:
+        raise RuntimeError(
+            "当前主服务环境未安装 VoxCPM，且未找到可用的 VoxCPM 专用 Python 环境。"
+            " 请确认 I:\\conda_envs\\voxcpm\\python.exe 存在，或设置环境变量 VOXCPM_PYTHON_EXE。"
+        )
+
+    completed = subprocess.run(
+        [str(python_exe), str(VOXCPM_BRIDGE_SCRIPT), action],
+        input=json.dumps(payload or {}, ensure_ascii=False),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=str(Path(__file__).resolve().parent),
+        check=False,
+    )
+    stdout = str(completed.stdout or "").strip()
+    stderr = str(completed.stderr or "").strip()
+    if not stdout:
+        raise RuntimeError(f"VoxCPM 专用环境未返回结果。{stderr or '请检查专用环境日志。'}")
+
+    try:
+        data = json.loads(stdout)
+    except Exception as exc:
+        raise RuntimeError(f"VoxCPM 专用环境返回了无法解析的内容：{stdout[:400]}") from exc
+
+    if completed.returncode != 0 or not data.get("ok"):
+        error = data.get("error") or stderr or "未知错误"
+        raise RuntimeError(f"VoxCPM 专用环境执行失败：{error}")
+    return data
 
 
 def get_microsoft_tts_catalog() -> dict[str, object]:
@@ -458,6 +534,15 @@ def normalize_remote_base_url(base_url: str | None) -> str:
     return normalized
 
 
+def normalize_openai_compat_base_url(base_url: str | None) -> str:
+    normalized = str(base_url or "").strip().rstrip("/")
+    if not normalized:
+        raise ValueError("Base URL 不能为空")
+    if normalized.endswith("/v1"):
+        return normalized
+    return f"{normalized}/v1"
+
+
 def absolutize_remote_file_url(base_url: str, file_url: str | None) -> str | None:
     if not file_url:
         return file_url
@@ -528,9 +613,27 @@ def get_pipeline(
 
 def unload_all_audio_pipelines() -> None:
     with pipeline_lock:
-        pipelines = list(pipeline_cache.values())
+        pipelines = [*pipeline_cache.values(), *voxcpm_pipeline_cache.values()]
     for pipeline in pipelines:
         pipeline.unload()
+
+
+def get_voxcpm_pipeline(
+    device: str | None = None,
+    model_name: str | None = None,
+) -> VoxCPMPipeline:
+    resolved_device = normalize_inference_device(device)
+    resolved_model_name = VoxCPMPipeline.resolve_model_name_or_path(model_name or VOXCPM_MODEL_NAME)
+    cache_key = (resolved_device, resolved_model_name)
+    with pipeline_lock:
+        pipeline = voxcpm_pipeline_cache.get(cache_key)
+        if pipeline is None:
+            pipeline = VoxCPMPipeline(
+                model_name=resolved_model_name,
+                device=resolved_device,
+            )
+            voxcpm_pipeline_cache[cache_key] = pipeline
+        return pipeline
 
 
 def resolve_audio_backend(req_backend, fallback_device: str | None = None) -> tuple[str, str | None, str | None, str | None]:
@@ -546,6 +649,16 @@ def resolve_local_audio_model_path(req_backend) -> str | None:
     backend = req_backend or {}
     value = str(backend.get("local_audio_model_path") or "").strip()
     return value or None
+
+
+def resolve_local_audio_engine(req_backend) -> str:
+    backend = req_backend or {}
+    value = str(backend.get("local_audio_engine") or "").strip().lower()
+    if value in {"", "omnivoice"}:
+        return "omnivoice"
+    if value == "voxcpm":
+        return "voxcpm"
+    raise ValueError(f"不支持的本地语音引擎: {backend.get('local_audio_engine')}")
 
 
 def resolve_local_asr_model_path(req_backend) -> str | None:
@@ -580,6 +693,7 @@ def build_local_path_preset_catalog() -> dict[str, dict[str, object]]:
 
     omnivoice_candidates = [root / "models--k2-fsa--OmniVoice" for root in hf_roots]
     whisper_candidates = [root / "models--openai--whisper-large-v3-turbo" for root in hf_roots]
+    voxcpm_candidates = [root / "models--openbmb--VoxCPM2" for root in hf_roots]
 
     return {
         "llm_root_lmstudio": build_entry(
@@ -599,6 +713,11 @@ def build_local_path_preset_catalog() -> dict[str, dict[str, object]]:
             "OmniVoice 缓存目录",
             omnivoice_candidates or [home / ".cache" / "huggingface" / "hub" / "models--k2-fsa--OmniVoice"],
             "会按当前环境的 Hugging Face 缓存根目录自动检测 OmniVoice 模型仓库。",
+        ),
+        "audio_voxcpm_cache": build_entry(
+            "VoxCPM 缓存目录",
+            voxcpm_candidates or [home / ".cache" / "huggingface" / "hub" / "models--openbmb--VoxCPM2"],
+            "会按当前环境的 Hugging Face 缓存根目录自动检测 VoxCPM2 模型仓库。",
         ),
         "audio_whisper_cache": build_entry(
             "Whisper 缓存目录",
@@ -924,6 +1043,48 @@ def synthesize_local_tts_with_fallback(
         return {"device": "cpu", "fallback_device": "cpu", "original_device": resolved_device}
 
 
+def synthesize_local_voxcpm_tts_with_fallback(
+    *,
+    inference_device: str | None,
+    model_name: str | None,
+    text: str,
+    output_path: Path,
+    instruct: str | None = None,
+    ref_audio: str | None = None,
+    ref_text: str | None = None,
+    cfg_value: float | None = None,
+    inference_timesteps: int | None = None,
+) -> dict:
+    resolved_device = normalize_inference_device(inference_device)
+    pipeline = get_voxcpm_pipeline(resolved_device, model_name=model_name)
+    try:
+        pipeline.synthesize_segment(
+            text=text,
+            output_path=output_path,
+            instruct=instruct,
+            ref_audio=ref_audio,
+            ref_text=ref_text,
+            cfg_value=cfg_value if cfg_value is not None else 2.0,
+            inference_timesteps=inference_timesteps if inference_timesteps is not None else 10,
+        )
+        return {"device": resolved_device, "fallback_device": None}
+    except Exception as exc:
+        if resolved_device != "mps" or not is_mps_oom_error(exc):
+            raise
+        pipeline.unload()
+        cpu_pipeline = get_voxcpm_pipeline("cpu", model_name=model_name)
+        cpu_pipeline.synthesize_segment(
+            text=text,
+            output_path=output_path,
+            instruct=instruct,
+            ref_audio=ref_audio,
+            ref_text=ref_text,
+            cfg_value=cfg_value if cfg_value is not None else 2.0,
+            inference_timesteps=inference_timesteps if inference_timesteps is not None else 10,
+        )
+        return {"device": "cpu", "fallback_device": "cpu", "original_device": resolved_device}
+
+
 def synthesize_local_narration_with_fallback(
     *,
     inference_device: str | None,
@@ -966,19 +1127,28 @@ def synthesize_local_narration_with_fallback(
 def get_audio_model_status() -> dict:
     with pipeline_lock:
         pipelines = list(pipeline_cache.values())
+        voxcpm_pipelines = list(voxcpm_pipeline_cache.values())
         loaded_devices = sorted({pipeline.device for pipeline in pipelines if pipeline.model is not None})
         cached_devices = sorted({pipeline.device for pipeline in pipelines})
         asr_loaded_devices = sorted({pipeline.device for pipeline in pipelines if pipeline.is_asr_loaded()})
         asr_model_names = sorted({pipeline.asr_model_name for pipeline in pipeline_cache.values() if pipeline.is_asr_loaded()})
         audio_model_names = sorted({pipeline.model_name for pipeline in pipeline_cache.values() if pipeline.model is not None})
+        voxcpm_loaded_devices = sorted({pipeline.device for pipeline in voxcpm_pipelines if pipeline.model is not None})
+        voxcpm_cached_devices = sorted({pipeline.device for pipeline in voxcpm_pipelines})
+        voxcpm_model_names = sorted({pipeline.model_name for pipeline in voxcpm_pipelines if pipeline.model is not None})
     return {
         "runtime": get_runtime_dependency_status(),
+        "voxcpm_runtime": get_voxcpm_runtime_dependency_status(),
+        "voxcpm_bridge": get_voxcpm_bridge_status(),
         "asr_runtime": get_asr_runtime_dependency_status(),
         "loaded_devices": loaded_devices,
         "cached_devices": cached_devices,
         "asr_loaded_devices": asr_loaded_devices,
         "audio_model_names": audio_model_names,
         "asr_model_names": asr_model_names,
+        "voxcpm_loaded_devices": voxcpm_loaded_devices,
+        "voxcpm_cached_devices": voxcpm_cached_devices,
+        "voxcpm_model_names": voxcpm_model_names,
         "detected_device": OmniVoicePipeline.detect_device(),
     }
 
@@ -1152,7 +1322,8 @@ def favicon():
 def tts(req: TTSRequest):
     try:
         output_name = sanitize_output_name(req.output_name, "tts_result")
-        if str(req.voice_engine or "").strip().lower() == "microsoft":
+        voice_engine = str(req.voice_engine or "").strip().lower()
+        if voice_engine == "microsoft":
             output_path = (OUTPUT_DIR / f"{output_name}.wav").resolve()
             file_path = synthesize_microsoft_tts(
                 text=req.text,
@@ -1184,6 +1355,9 @@ def tts(req: TTSRequest):
                     "instruct": req.instruct,
                     "ref_audio": req.ref_audio,
                     "ref_text": req.ref_text,
+                    "voice_engine": req.voice_engine,
+                    "cfg_value": req.cfg_value,
+                    "inference_timesteps": req.inference_timesteps,
                     "output_name": output_name,
                     "inference_device": inference_device,
                 },
@@ -1193,6 +1367,51 @@ def tts(req: TTSRequest):
             return remote_resp
 
         output_path = OUTPUT_DIR / f"{output_name}.wav"
+        if voice_engine == "voxcpm":
+            if get_voxcpm_runtime_dependency_status().get("ready"):
+                result = synthesize_local_voxcpm_tts_with_fallback(
+                    inference_device=inference_device,
+                    model_name=resolve_local_audio_model_path(backend_data),
+                    text=req.text,
+                    output_path=output_path,
+                    instruct=req.instruct,
+                    ref_audio=req.ref_audio,
+                    ref_text=req.ref_text,
+                    cfg_value=req.cfg_value,
+                    inference_timesteps=req.inference_timesteps,
+                )
+            else:
+                bridge_result = run_voxcpm_bridge(
+                    "tts",
+                    {
+                        "device": normalize_inference_device(inference_device),
+                        "model_name": resolve_local_audio_model_path(backend_data) or VOXCPM_MODEL_NAME,
+                        "text": req.text,
+                        "output_path": str(output_path.resolve()),
+                        "instruct": req.instruct,
+                        "ref_audio": req.ref_audio,
+                        "ref_text": req.ref_text,
+                        "cfg_value": req.cfg_value,
+                        "inference_timesteps": req.inference_timesteps,
+                    },
+                )
+                result = {
+                    "device": bridge_result.get("device"),
+                    "fallback_device": None,
+                    "original_device": None,
+                    "bridge_python_executable": bridge_result.get("python_executable"),
+                }
+            return {
+                "ok": True,
+                "file": str(output_path),
+                "audio_url": f"/file/{output_path.name}",
+                "engine": "voxcpm",
+                "device": result.get("device"),
+                "fallback_device": result.get("fallback_device"),
+                "original_device": result.get("original_device"),
+                "bridge_python_executable": result.get("bridge_python_executable"),
+            }
+
         result = synthesize_local_tts_with_fallback(
             inference_device=inference_device,
             model_name=resolve_local_audio_model_path(backend_data),
@@ -1254,6 +1473,21 @@ def segment_plan(req: SegmentPlanRequest):
         raise_api_error(exc)
 
 
+@app.post("/api/segment-plan-chunks")
+def segment_plan_chunks(req: ChunkOptimizeRequest):
+    try:
+        source_chunks = [item.model_dump() for item in req.chunks]
+        planned = []
+        for chunk in source_chunks:
+            planned.extend(intelligent_segment_seed_chunk(chunk, req.llm))
+        return {
+            "ok": True,
+            "chunks": planned,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
 @app.post("/api/optimize-chunks")
 def optimize_chunks(req: ChunkOptimizeRequest):
     try:
@@ -1275,6 +1509,21 @@ def segment_optimize(req: SegmentPlanRequest):
             "ok": True,
             "chunks": chunks,
             "info": info,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/segment-optimize-chunks")
+def segment_optimize_chunks(req: ChunkOptimizeRequest):
+    try:
+        source_chunks = [item.model_dump() for item in req.chunks]
+        optimized = []
+        for chunk in source_chunks:
+            optimized.extend(segment_and_optimize_seed_chunk(chunk, req.llm))
+        return {
+            "ok": True,
+            "chunks": optimized,
         }
     except Exception as exc:
         raise_api_error(exc)
@@ -1523,9 +1772,7 @@ def unload_llm_model():
 @app.post("/api/llm/list-models")
 def list_llm_models(req: ListLLMModelsRequest):
     try:
-        base_url = str(req.base_url or "").strip().rstrip("/")
-        if not base_url:
-            raise ValueError("Base URL 不能为空")
+        base_url = normalize_openai_compat_base_url(req.base_url)
         models_url = f"{base_url}/models"
         headers: dict[str, str] = {}
         if req.api_key:
@@ -1676,6 +1923,39 @@ def load_audio_model(req: ModelLoadRequest):
 
         unload_all_audio_pipelines()
         inference_device = backend.get("inference_device")
+        local_audio_engine = resolve_local_audio_engine(backend)
+        if local_audio_engine == "voxcpm":
+            if get_voxcpm_runtime_dependency_status().get("ready"):
+                pipeline = get_voxcpm_pipeline(
+                    inference_device,
+                    model_name=resolve_local_audio_model_path(backend),
+                )
+                pipeline.load()
+                return {
+                    "ok": True,
+                    "mode": "local",
+                    "engine": "voxcpm",
+                    "device": pipeline.device,
+                    "model_name": pipeline.model_name,
+                }
+
+            bridge_result = run_voxcpm_bridge(
+                "load",
+                {
+                    "device": normalize_inference_device(inference_device),
+                    "model_name": resolve_local_audio_model_path(backend) or VOXCPM_MODEL_NAME,
+                },
+            )
+            return {
+                "ok": True,
+                "mode": "local",
+                "engine": "voxcpm",
+                "device": bridge_result.get("device"),
+                "model_name": bridge_result.get("model_name"),
+                "bridge_python_executable": bridge_result.get("python_executable"),
+                "message": "当前主服务环境未直装 VoxCPM，已通过专用环境完成可用性检查。实际生成时也会自动走该专用环境。",
+            }
+
         pipeline = get_pipeline(
             inference_device,
             model_name=resolve_local_audio_model_path(backend),
@@ -1685,6 +1965,7 @@ def load_audio_model(req: ModelLoadRequest):
         return {
             "ok": True,
             "mode": "local",
+            "engine": "omnivoice",
             "device": pipeline.device,
             "model_name": pipeline.model_name,
         }
@@ -1730,6 +2011,7 @@ def unload_audio_model(req: ModelLoadRequest):
         return {
             "ok": True,
             "mode": "local",
+            "engine": resolve_local_audio_engine(backend),
             "device": inference_device,
             "status": get_audio_model_status(),
         }

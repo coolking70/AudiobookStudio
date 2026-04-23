@@ -33,10 +33,16 @@ try:
 except ImportError:
     hf_pipeline = None
 
+try:
+    from voxcpm import VoxCPM
+except ImportError:
+    VoxCPM = None
+
 from audio_utils import ensure_dir, join_wavs
 
 
 MODEL_NAME = "k2-fsa/OmniVoice"
+VOXCPM_MODEL_NAME = "openbmb/VoxCPM2"
 ASR_MODEL_NAME = "openai/whisper-large-v3-turbo"
 OUTPUT_DIR = Path("outputs")
 
@@ -197,6 +203,30 @@ def get_asr_runtime_dependency_status() -> dict[str, object]:
         "ready": not missing,
         "missing": missing,
     }
+
+
+def get_voxcpm_runtime_dependency_status() -> dict[str, object]:
+    missing = []
+    if torch is None:
+        missing.append("torch")
+    if VoxCPM is None:
+        missing.append("voxcpm")
+    return {
+        "ready": not missing,
+        "missing": missing,
+    }
+
+
+def ensure_voxcpm_runtime_dependencies() -> None:
+    status = get_voxcpm_runtime_dependency_status()
+    missing = status["missing"]
+    if missing:
+        joined = ", ".join(missing)
+        raise RuntimeError(
+            f"当前环境缺少 VoxCPM 本地音频生成依赖：{joined}。"
+            " 请切换到已安装 VoxCPM 的 Python 环境，或补装对应依赖后再启用 VoxCPM。"
+        )
+    _patch_torchaudio_fallbacks()
 
 
 def allow_asr_autoload() -> bool:
@@ -470,10 +500,12 @@ class OmniVoicePipeline:
         if ref_audio:
             normalized_ref_audio = str(ref_audio).strip()
             normalized_ref_text = str(ref_text or "").strip()
-            if not normalized_ref_text and not allow_asr_autoload():
+            asr_ready_for_transcription = self.is_asr_loaded() or allow_asr_autoload()
+            if not normalized_ref_text and not asr_ready_for_transcription:
                 raise RuntimeError(
                     "当前参考音频未填写 ref_text。为避免 OmniVoice 自动加载 Whisper ASR 并触发额外下载，"
                     "当前已默认禁用自动转写。请先填写对应 ref_text，"
+                    "或先在模型配置页加载音频识别模型，"
                     "或显式设置环境变量 OMNIVOICE_ALLOW_ASR_AUTOLOAD=1 后再允许自动转写。"
                 )
             cache_key = (normalized_ref_audio, normalized_ref_text)
@@ -535,3 +567,103 @@ class OmniVoicePipeline:
 
         final_path = out_dir / f"{base_name}_merged.wav"
         return join_wavs(wav_paths, final_path, silence_ms=silence_ms)
+
+
+class VoxCPMPipeline:
+    def __init__(
+        self,
+        model_name: str = VOXCPM_MODEL_NAME,
+        device: Optional[str] = None,
+    ):
+        self.model_name = self.resolve_model_name_or_path(model_name)
+        self.device = device or OmniVoicePipeline.detect_device()
+        self.model: Optional[Any] = None
+
+    @staticmethod
+    def resolve_model_name_or_path(model_name: str) -> str:
+        explicit = os.getenv("VOXCPM_MODEL_PATH", "").strip()
+        if explicit:
+            explicit_path = Path(explicit).expanduser()
+            if explicit_path.exists():
+                repo_or_snapshot = OmniVoicePipeline.resolve_cached_repo_dir(explicit_path)
+                return str(repo_or_snapshot) if repo_or_snapshot else str(explicit_path)
+            return explicit
+
+        explicit_path = Path(str(model_name or "")).expanduser()
+        if explicit_path.exists():
+            repo_or_snapshot = OmniVoicePipeline.resolve_cached_repo_dir(explicit_path)
+            return str(repo_or_snapshot) if repo_or_snapshot else str(explicit_path)
+
+        if model_name != VOXCPM_MODEL_NAME:
+            return model_name
+
+        for cache_root in HF_CACHE_DIRS:
+            repo_dir = cache_root / "models--openbmb--VoxCPM2"
+            resolved = OmniVoicePipeline.resolve_cached_repo_dir(repo_dir)
+            if resolved:
+                return str(resolved)
+
+        return model_name
+
+    def load(self) -> Any:
+        ensure_voxcpm_runtime_dependencies()
+        if self.model is None:
+            optimize = os.getenv("VOXCPM_OPTIMIZE", "").strip().lower() in {"1", "true", "yes", "on"}
+            load_denoiser = os.getenv("VOXCPM_LOAD_DENOISER", "").strip().lower() in {"1", "true", "yes", "on"}
+            self.model = VoxCPM.from_pretrained(
+                self.model_name,
+                load_denoiser=load_denoiser,
+                optimize=optimize,
+                device=self.device,
+            )
+        return self.model
+
+    def unload(self) -> None:
+        self.model = None
+        gc.collect()
+        if _cuda_available() and str(self.device).startswith("cuda"):
+            torch.cuda.empty_cache()
+        if _mps_available() and str(self.device) == "mps" and hasattr(torch, "mps"):
+            try:
+                torch.mps.empty_cache()
+            except Exception:
+                pass
+
+    def synthesize_segment(
+        self,
+        text: str,
+        output_path: str | Path,
+        instruct: Optional[str] = None,
+        ref_audio: Optional[str] = None,
+        ref_text: Optional[str] = None,
+        cfg_value: float = 2.0,
+        inference_timesteps: int = 10,
+    ) -> str:
+        ensure_voxcpm_runtime_dependencies()
+        model = self.load()
+
+        final_text = str(text or "").strip()
+        control = str(instruct or "").strip()
+        if control:
+            final_text = f"({control}){final_text}"
+        if not final_text:
+            raise RuntimeError("VoxCPM 缺少可合成文本。")
+
+        kwargs: dict[str, Any] = {
+            "text": final_text,
+            "cfg_value": cfg_value,
+            "inference_timesteps": inference_timesteps,
+        }
+
+        normalized_ref_audio = str(ref_audio or "").strip()
+        normalized_ref_text = str(ref_text or "").strip()
+        if normalized_ref_audio:
+            kwargs["reference_wav_path"] = normalized_ref_audio
+            if normalized_ref_text:
+                kwargs["prompt_wav_path"] = normalized_ref_audio
+                kwargs["prompt_text"] = normalized_ref_text
+
+        wav = model.generate(**kwargs)
+        sample_rate = int(getattr(model.tts_model, "sample_rate", 48000))
+        sf.write(str(output_path), wav, sample_rate)
+        return str(output_path)
