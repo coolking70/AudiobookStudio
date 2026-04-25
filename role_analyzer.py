@@ -1,7 +1,11 @@
+import json
+import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from itertools import groupby
+from pathlib import Path
 from typing import Any
 
 from character_registry import CharacterRegistry
@@ -190,6 +194,12 @@ CHAPTER_RULE_DETECTION_PROMPT = """
   "confidence": "low",
   "reason": "一句简短判断理由"
 }
+""".strip()
+
+COMPACT_CHAPTER_RULE_DETECTION_PROMPT = """
+判断样本文本最像哪种章节标题模式。
+可选值仅限：md_chapter_cn / plain_chapter_cn / cn_hui_jie / chapter_en / part_en / numbered / md_heading / none
+PATTERN: <pattern> | <confidence> | <一句简短理由>
 """.strip()
 
 _CN_NUM = r"[零一二三四五六七八九十百千万\d]+"
@@ -482,6 +492,61 @@ def split_chunk_if_too_long(chunk: dict[str, str], max_chars: int) -> list[dict[
     return sub_chunks or [chunk]
 
 
+def _split_indexed_chunk_for_compact(
+    chunk: dict[str, Any],
+    max_chars: int,
+    max_lines: int,
+) -> list[dict[str, str]]:
+    indexed = _ensure_chunk_line_index(chunk)
+    lines = indexed.get("lines") or []
+    content = str(indexed.get("content", ""))
+    if not lines or not content:
+        return [chunk]
+
+    sub_chunks: list[dict[str, str]] = []
+    current: list[dict[str, Any]] = []
+    current_chars = 0
+
+    def flush() -> None:
+        nonlocal current, current_chars
+        if not current:
+            return
+        start = int(current[0]["start"])
+        end = int(current[-1]["end"])
+        piece = content[start:end].strip()
+        if piece:
+            sub_chunks.append(
+                {
+                    "title": f"{chunk['title']}（第{len(sub_chunks) + 1}部分）",
+                    "content": piece,
+                }
+            )
+        current = []
+        current_chars = 0
+
+    for line in lines:
+        line_text = str(line.get("text", ""))
+        line_len = max(1, len(line_text))
+        need_flush = bool(
+            current and (
+                len(current) >= max_lines or
+                current_chars + line_len > max_chars
+            )
+        )
+        if need_flush:
+            flush()
+        current.append(line)
+        current_chars += line_len
+
+    flush()
+    return sub_chunks or [chunk]
+
+
+def _is_timeout_like_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    return any(token in message for token in ("超时", "timeout", "timed out"))
+
+
 def _extract_detection_sample(text: str, limit: int = SAMPLE_DETECT_MAX_CHARS) -> str:
     normalized = str(text or "").strip()
     if len(normalized) <= limit:
@@ -504,6 +569,31 @@ def resolve_chapter_sample_limit(llm_config: LLMConfig | None = None) -> int:
 
 
 def infer_heading_pattern_with_llm(sample_text: str, llm_config: LLMConfig) -> dict[str, str]:
+    if _is_compact_output_mode(llm_config):
+        messages = [
+            {"role": "system", "content": COMPACT_CHAPTER_RULE_DETECTION_PROMPT},
+            {
+                "role": "user",
+                "content": f"请判断下面文本样本最像哪一种章节标题模式。\n\n文本样本：\n{sample_text}",
+            },
+        ]
+        client = OpenAICompatibleClient(llm_config)
+        content = client.chat_text(messages, purpose="章节规则探测")
+        _dump_compact_debug("compact_chapter_detect", "chapter_detect", messages, response_text=content)
+        line = next((row.strip() for row in content.splitlines() if row.strip().startswith("PATTERN:")), "")
+        if not line:
+            raise RuntimeError(f"章节规则探测返回格式无效：{content[:200]}")
+        payload = line[len("PATTERN:"):].strip()
+        parts = [part.strip() for part in payload.split("|", 2)]
+        pattern = parts[0] if parts else "none"
+        confidence = parts[1] if len(parts) > 1 else ""
+        reason = parts[2] if len(parts) > 2 else ""
+        return {
+            "pattern": pattern or "none",
+            "confidence": confidence,
+            "reason": reason,
+        }
+
     chapter_prompt = llm_config.chapter_prompt.strip() if llm_config.chapter_prompt else CHAPTER_RULE_DETECTION_PROMPT
     messages = [
         {"role": "system", "content": chapter_prompt},
@@ -848,6 +938,55 @@ def _coerce_chunks(raw_chunks: list[dict[str, Any]], fallback_title: str) -> lis
 
 def intelligent_segment_seed_chunk(seed_chunk: dict[str, str], llm_config: LLMConfig) -> list[dict[str, str]]:
     char_budget = max(1800, min(DEFAULT_CHUNK_MAX_CHARS, int((llm_config.segment_target_chars or 0) or (llm_config.max_tokens * 2.4))))
+    if _is_compact_output_mode(llm_config):
+        compact_chunk = _ensure_chunk_line_index(seed_chunk)
+        numbered_text = str(compact_chunk.get("numbered_text") or "")
+        line_count = len(compact_chunk.get("lines") or [])
+        # LM Studio / OpenAI 兼容本地服务在超长 numbered_text 上容易直接 400。
+        # 这种情况下先用本地保守切块，再让后续更小的块继续尝试 compact。
+        if len(numbered_text) >= 6000 or line_count >= 120:
+            fallback_chunks = split_chunk_if_too_long(seed_chunk, max_chars=char_budget)
+            if len(fallback_chunks) > 1:
+                logging.info(
+                    f"[compact] {seed_chunk['title']} 输入过长（chars={len(numbered_text)}, lines={line_count}），先本地切成 {len(fallback_chunks)} 块再继续。"
+                )
+                return fallback_chunks
+        prompt = (
+            f"{COMPACT_SEGMENT_PLAN_PROMPT}\n\n"
+            f"补充要求：单个 chunk 的 content 尽量控制在 {char_budget} 字以内；如果自然分段后某块略超出也可以接受，但不要过度细碎。"
+        )
+        messages = [
+            {"role": "system", "content": prompt},
+            {
+                "role": "user",
+                "content": f"请对下面文本做智能分段规划。\n\n标题：{seed_chunk['title']}\n\n{compact_chunk['numbered_text']}",
+            },
+        ]
+        try:
+            client = OpenAICompatibleClient(llm_config)
+            compact_text = client.chat_text(messages, purpose="紧凑智能分段")
+            _dump_compact_debug("compact_segment", seed_chunk["title"], messages, response_text=compact_text)
+            chunks = _decode_compact_chunk_plan(compact_text, compact_chunk, seed_chunk["title"])
+            if chunks:
+                return chunks
+        except Exception as exc:
+            fallback_chunks = split_chunk_if_too_long(seed_chunk, max_chars=char_budget)
+            if len(fallback_chunks) > 1:
+                logging.warning(
+                    f"[compact] {seed_chunk['title']} 智能分段失败（{exc}），已改用本地保守切块 {len(fallback_chunks)} 段。"
+                )
+                _dump_compact_debug("compact_segment_error", seed_chunk["title"], messages, response_text=compact_text if 'compact_text' in locals() else "", error=str(exc))
+                return fallback_chunks
+            logging.warning(f"[compact] {seed_chunk['title']} 智能分段解码失败（{exc}），回退 verbose 模式")
+            _dump_compact_debug("compact_segment_error", seed_chunk["title"], messages, response_text=compact_text if 'compact_text' in locals() else "", error=str(exc))
+            fallback_cfg = llm_config.model_copy(update={"output_mode": "verbose"})
+            try:
+                return intelligent_segment_seed_chunk(seed_chunk, fallback_cfg)
+            except Exception as verbose_exc:
+                raise RuntimeError(
+                    f"{seed_chunk['title']} 紧凑智能分段失败（{exc}），且回退 verbose 模式后仍失败：{verbose_exc}"
+                ) from verbose_exc
+
     base_prompt = llm_config.segment_prompt.strip() if llm_config.segment_prompt else SEGMENT_PLAN_PROMPT
     prompt = (
         f"{base_prompt}\n\n"
@@ -868,6 +1007,10 @@ def intelligent_segment_seed_chunk(seed_chunk: dict[str, str], llm_config: LLMCo
 
 
 def segment_and_optimize_seed_chunk(seed_chunk: dict[str, str], llm_config: LLMConfig) -> list[dict[str, str]]:
+    if _is_compact_output_mode(llm_config):
+        planned = intelligent_segment_seed_chunk(seed_chunk, llm_config)
+        return [optimize_chunk_for_tts(chunk, llm_config) for chunk in planned]
+
     char_budget = max(1800, min(DEFAULT_CHUNK_MAX_CHARS, int((llm_config.segment_target_chars or 0) or (llm_config.max_tokens * 2.4))))
     base_prompt = llm_config.segment_optimize_prompt.strip() if llm_config.segment_optimize_prompt else SEGMENT_OPTIMIZE_PROMPT
     prompt = (
@@ -952,6 +1095,28 @@ def segment_and_optimize_text_with_info(text: str, llm_config: LLMConfig) -> tup
 
 def optimize_chunk_for_tts(chunk: dict[str, str], llm_config: LLMConfig) -> dict[str, str]:
     cleaned = basic_tts_text_cleanup(chunk["content"])
+    if _is_compact_output_mode(llm_config):
+        compact_chunk = _ensure_chunk_line_index({"title": chunk["title"], "content": cleaned})
+        messages = [
+            {"role": "system", "content": COMPACT_OPTIMIZATION_PROMPT},
+            {
+                "role": "user",
+                "content": f"请优化下面这段文本，使其更适合 OmniVoice 合成。\n\n标题：{chunk['title']}\n\n{compact_chunk['numbered_text']}",
+            },
+        ]
+        try:
+            client = OpenAICompatibleClient(llm_config)
+            compact_text = client.chat_text(messages, purpose="紧凑文本优化")
+            _dump_compact_debug("compact_optimize", chunk["title"], messages, response_text=compact_text)
+            optimized_content = _decode_compact_optimized_content(compact_text, compact_chunk)
+            if optimized_content:
+                return {"title": chunk["title"], "content": optimized_content}
+        except Exception as exc:
+            logging.warning(f"[compact] {chunk['title']} 语音适配优化解码失败（{exc}），回退 verbose 模式")
+            _dump_compact_debug("compact_optimize_error", chunk["title"], messages, response_text=compact_text if 'compact_text' in locals() else "", error=str(exc))
+            fallback_cfg = llm_config.model_copy(update={"output_mode": "verbose"})
+            return optimize_chunk_for_tts(chunk, fallback_cfg)
+
     opt_prompt = llm_config.optimize_prompt.strip() if llm_config.optimize_prompt else TEXT_OPTIMIZATION_PROMPT
     messages = [
         {"role": "system", "content": opt_prompt},
@@ -999,35 +1164,54 @@ def _chapter_key(title: str) -> str:
 # 角色分析的紧凑输出格式，LLM 只输出行号表而非重复原文，节省 ~80% 输出 token。
 
 COMPACT_ANALYSIS_PROMPT = """
-你是小说文本角色分析器。输入是带行号的文本（L1: ... L2: ...）。
-
-严格按以下格式输出，不输出任何 JSON、markdown 或解释文字：
-
-ROLES: <编号>=<角色名>|<style标签>, ...
+输入是带行号小说文本。只输出：
+ROLES: <编号>=<角色>|<style>, ...
 SEGS:
-<行号> <编号> <情绪> [<锚点>]
+<行号或范围> <编号> <情绪> [<锚点>|rest]
+
+规则：
+- 0=旁白，?=UNKNOWN，其他编号必须先出现在 ROLES
+- 情绪只可用 ne so co se cu an
+- style 用英文标签并以空格分隔
+- 所有输入行必须按顺序完整覆盖；相邻旁白可合并，如 L1-L3 0 ne
+- 只有一行里同时含旁白和对白时才拆成两段：前段写锚点，后段写 rest
+- 锚点必须与原文完全一致
+- 不输出 JSON、markdown 或解释；不确定时优先整行归旁白
+""".strip()
+
+COMPACT_SEGMENT_PLAN_PROMPT = """
+输入是带行号文本。按顺序规划 chunk。
+CHUNKS:
+<行号范围> | <标题>
 ...
+要求：完整覆盖，不重叠；优先章节/场景/自然段/完整对白；标题尽量短。
+""".strip()
 
----格式说明---
+COMPACT_OPTIMIZATION_PROMPT = f"""
+输入是带行号文本。只做必要的 OmniVoice 保守优化。
+OPT:
+<行号范围> =
+<单行号> ~ <优化后的文本>
+...
+规则：每行都要覆盖；无改动用 `=`；改写只能单行；不得删句。
+可用标签：{", ".join(SUPPORTED_NON_VERBAL_TAGS)}
+拼音可用声调数字。
+""".strip()
 
-ROLES 行：列出本章节出现的非旁白角色，style 用空格分隔英文标签。
-  示例：ROLES: 1=林烬|male young adult moderate pitch, 2=苏明|male low pitch
-  0 固定代表"旁白"，无需声明。
+COMPACT_ALIAS_RESOLUTION_PROMPT = """
+输入是一组角色名。只在非常确定同一人时归并。
+GROUPS:
+<规范名> | <别名1>, <别名2>
+...
+没有可归并项时只输出 `GROUPS:`
+""".strip()
 
-SEGS 行：每行描述一个片段，顺序必须与原文一致。
-  整行：  L3 1 cu         （L3 整行，角色=编号1，情绪=cu）
-  前段：  L5 0 ne "他说。" （L5 从行首到"他说。"末尾，旁白）
-  后段：  L5 1 se rest    （L5 接上一锚点之后到行末，角色=编号1）
-  一行最多拆成两段（前段+rest）。
-
-情绪代码：ne=neutral so=soft co=cold se=serious cu=curious an=angry
-说话人：0=旁白，正整数=ROLES 中的角色编号，?=UNKNOWN
-
----要求---
-- 所有行（L1, L2...）必须覆盖，不得遗漏
-- 相邻旁白行可合并，如：L1-L3 0 ne
-- 锚点文本必须与原文完全一致（用于程序精确定位）
-- 仅当确有两个说话人在同一行时才使用锚点；不确定时整行归旁白
+COMPACT_SPEAKER_VERIFICATION_PROMPT = """
+核查 speaker 是否明显有误，只在高置信度时修正。
+FIXES:
+<窗口内index> | <建议speaker>
+...
+无修正时只输出 `FIXES:`；不要修改 text/emotion/style。
 """.strip()
 
 # 情绪代码 → 全称映射
@@ -1207,25 +1391,206 @@ def _build_context_user_content(chunk: dict[str, str], context: AnalysisContext 
     return "\n\n".join(parts)
 
 
+def _is_compact_output_mode(llm_config: LLMConfig) -> bool:
+    return str(getattr(llm_config, "output_mode", "verbose") or "verbose").lower() == "compact"
+
+
+def _ensure_chunk_line_index(chunk: dict[str, Any]) -> dict[str, Any]:
+    if chunk.get("lines") and chunk.get("numbered_text"):
+        return chunk
+    result = number_lines_with_soft_split(chunk.get("content", ""))
+    return {**chunk, "numbered_text": result["numbered_text"], "lines": result["lines"]}
+
+
+def _parse_line_ref_token(line_ref_token: str, lines_index: list[dict[str, Any]]) -> list[str]:
+    raw_token = (line_ref_token or "").strip()
+    normalized_token = raw_token.strip("<>[](){}").replace(" ", "")
+    if re.match(r"^\d+(?:-\d+)?$", normalized_token):
+        if "-" in normalized_token:
+            start_num, end_num = normalized_token.split("-", 1)
+            normalized_token = f"L{start_num}-L{end_num}"
+        else:
+            normalized_token = f"L{normalized_token}"
+    elif re.match(r"^L\d+-\d+$", normalized_token, re.I):
+        start_part, end_num = normalized_token.split("-", 1)
+        normalized_token = f"{start_part.upper()}-L{end_num}"
+    else:
+        normalized_token = normalized_token.upper()
+
+    match = re.match(r"^(L\d+)(?:-(L\d+))?$", normalized_token)
+    if not match:
+        raise ValueError(f"无法解析行号范围：{line_ref_token}")
+    start_id = match.group(1)
+    end_id = match.group(2) or start_id
+    ids_in_range: list[str] = []
+    in_range = False
+    for ln in lines_index:
+        if ln["id"] == start_id:
+            in_range = True
+        if in_range:
+            ids_in_range.append(ln["id"])
+        if ln["id"] == end_id and in_range:
+            break
+    if not ids_in_range:
+        raise ValueError(f"行号范围没有命中任何输入行：{line_ref_token}")
+    return ids_in_range
+
+
+def _decode_compact_chunk_plan(text: str, seed_chunk: dict[str, Any], fallback_title: str) -> list[dict[str, str]]:
+    chunk = _ensure_chunk_line_index(seed_chunk)
+    lines_index: list[dict[str, Any]] = chunk.get("lines", [])
+    if not lines_index:
+        raise ValueError("chunk 缺少 lines 索引，无法解码 compact 分段结果")
+
+    content = str(chunk.get("content", ""))
+    line_by_id = {ln["id"]: ln for ln in lines_index}
+    ordered_ids = [ln["id"] for ln in lines_index]
+    parsed_chunks: list[dict[str, str]] = []
+    covered_ids: list[str] = []
+
+    for raw_line in text.splitlines():
+        row = raw_line.strip()
+        if not row or row.startswith("CHUNKS:"):
+            continue
+        parts = [part.strip() for part in row.split("|", 1)]
+        if not parts or not parts[0]:
+            continue
+        ids_in_range = _parse_line_ref_token(parts[0], lines_index)
+        start_ln = line_by_id[ids_in_range[0]]
+        end_ln = line_by_id[ids_in_range[-1]]
+        chunk_text = content[start_ln["start"]:end_ln["end"]].strip()
+        if not chunk_text:
+            continue
+        title = parts[1] if len(parts) > 1 and parts[1] else f"{fallback_title} - 第{len(parsed_chunks) + 1}块"
+        parsed_chunks.append({"title": title, "content": chunk_text})
+        covered_ids.extend(ids_in_range)
+
+    if not parsed_chunks:
+        raise ValueError("compact 分段结果为空，可能格式有误")
+    if covered_ids != ordered_ids:
+        raise ValueError("compact 分段结果未能按顺序完整覆盖所有输入行")
+    return parsed_chunks
+
+
+def _decode_compact_optimized_content(text: str, raw_chunk: dict[str, Any]) -> str:
+    chunk = _ensure_chunk_line_index(raw_chunk)
+    lines_index: list[dict[str, Any]] = chunk.get("lines", [])
+    if not lines_index:
+        raise ValueError("chunk 缺少 lines 索引，无法解码 compact 优化结果")
+
+    replacements: dict[str, str] = {}
+    covered_ids: list[str] = []
+    ordered_ids = [ln["id"] for ln in lines_index]
+    line_by_id = {ln["id"]: ln for ln in lines_index}
+
+    for raw_line in text.splitlines():
+        row = raw_line.strip()
+        if not row or row.startswith("OPT:"):
+            continue
+        if " ~ " in row:
+            line_ref_token, replacement = row.split(" ~ ", 1)
+            ids_in_range = _parse_line_ref_token(line_ref_token.strip(), lines_index)
+            if len(ids_in_range) != 1:
+                raise ValueError("compact 优化改写只允许作用于单行")
+            lid = ids_in_range[0]
+            replacements[lid] = replacement.strip()
+            covered_ids.append(lid)
+            continue
+        if row.endswith("="):
+            line_ref_token = row[:-1].strip()
+            ids_in_range = _parse_line_ref_token(line_ref_token, lines_index)
+            for lid in ids_in_range:
+                replacements[lid] = line_by_id[lid]["text"]
+            covered_ids.extend(ids_in_range)
+            continue
+        raise ValueError(f"无法解析 compact 优化行：{row}")
+
+    if covered_ids != ordered_ids:
+        raise ValueError("compact 优化结果未能按顺序完整覆盖所有输入行")
+
+    original_content = str(chunk.get("content", ""))
+    rebuilt_parts: list[str] = []
+    cursor = 0
+    for ln in lines_index:
+        start = int(ln["start"])
+        end = int(ln["end"])
+        rebuilt_parts.append(original_content[cursor:start])
+        rebuilt_parts.append(replacements.get(ln["id"], ln["text"]))
+        cursor = end
+    rebuilt_parts.append(original_content[cursor:])
+    return "".join(rebuilt_parts).strip()
+
+
+def _decode_compact_alias_groups(text: str) -> list[dict[str, Any]]:
+    groups: list[dict[str, Any]] = []
+    for raw_line in text.splitlines():
+        row = raw_line.strip()
+        if not row or row.startswith("GROUPS:"):
+            continue
+        parts = [part.strip() for part in row.split("|", 1)]
+        canonical = parts[0] if parts else ""
+        aliases = []
+        if len(parts) > 1 and parts[1]:
+            aliases = [item.strip() for item in parts[1].split(",") if item.strip()]
+        if canonical and aliases:
+            groups.append({"canonical": canonical, "aliases": aliases})
+    return groups
+
+
+def _decode_compact_speaker_fixes(text: str) -> list[dict[str, Any]]:
+    fixes: list[dict[str, Any]] = []
+    for raw_line in text.splitlines():
+        row = raw_line.strip()
+        if not row or row.startswith("FIXES:"):
+            continue
+        parts = [part.strip() for part in row.split("|", 1)]
+        if len(parts) != 2:
+            continue
+        try:
+            idx = int(parts[0])
+        except ValueError:
+            continue
+        speaker = parts[1]
+        if speaker:
+            fixes.append({"index": idx, "suggested_speaker": speaker})
+    return fixes
+
+
+def _dump_compact_debug(stage: str, title: str, messages: list[dict[str, Any]], response_text: str = "", error: str = "") -> None:
+    try:
+        out_dir = Path("outputs") / "llm_debug"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        safe_title = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._-]+", "_", (title or stage))[:80]
+        target = out_dir / f"{stamp}_{stage}_{safe_title}.json"
+        target.write_text(json.dumps({
+            "stage": stage,
+            "title": title,
+            "messages": messages,
+            "response_text": response_text,
+            "error": error,
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _build_compact_user_content(chunk: dict[str, Any], context: AnalysisContext | None) -> str:
-    """构建带上下文的 user 消息内容（compact 模式）。
-    发送的是 numbered_text（行号化文本），而非原始 content。
-    """
+    """构建 compact user 内容。发送 numbered_text，而非原始 content。"""
     parts: list[str] = []
     if context is not None and (
         context.known_characters or context.last_context_summary or context.last_active_speakers
     ):
-        ctx_lines = ["【跨块分析上下文】"]
+        ctx_lines = ["CTX"]
         if context.known_characters:
-            ctx_lines.append(f"已知角色：{', '.join(context.known_characters)}")
+            ctx_lines.append(f"角色: {', '.join(context.known_characters)}")
         if context.last_context_summary:
-            ctx_lines.append(f"上一块剧情摘要：{context.last_context_summary}")
+            ctx_lines.append(f"摘要: {context.last_context_summary}")
         if context.last_active_speakers:
-            ctx_lines.append(f"上一块仍在对话的角色：{', '.join(context.last_active_speakers)}")
+            ctx_lines.append(f"活跃: {', '.join(context.last_active_speakers)}")
         parts.append("\n".join(ctx_lines))
 
     numbered = chunk.get("numbered_text") or chunk.get("content", "")
-    parts.append(f"标题：{chunk['title']}\n\n{numbered}")
+    parts.append(f"标题: {chunk['title']}\n{numbered}")
     return "\n\n".join(parts)
 
 
@@ -1264,16 +1629,37 @@ def _analyze_chunk_with_context(
             result = number_lines_with_soft_split(chunk.get("content", ""))
             chunk = {**chunk, "numbered_text": result["numbered_text"], "lines": result["lines"]}
 
+        compact_char_budget = max(
+            900,
+            min(1600, int(((llm_config.max_tokens or 0) * 0.8) or 1400)),
+        )
+        compact_line_budget = 48
+        if (
+            len(chunk.get("lines") or []) > compact_line_budget
+            or len(str(chunk.get("numbered_text") or "")) > compact_char_budget * 2
+        ):
+            sub_chunks = _split_indexed_chunk_for_compact(
+                chunk,
+                max_chars=compact_char_budget,
+                max_lines=compact_line_budget,
+            )
+            if len(sub_chunks) > 1:
+                logging.info(
+                    "[compact] %s 输入较大（%s 行），先切成 %s 个更小子块继续角色分析",
+                    chunk["title"],
+                    len(chunk.get("lines") or []),
+                    len(sub_chunks),
+                )
+                merged_segments: list[dict[str, Any]] = []
+                current_context = context
+                for sub_chunk in sub_chunks:
+                    sub_segments, current_context = _analyze_chunk_with_context(
+                        sub_chunk, llm_config, current_context
+                    )
+                    merged_segments.extend(sub_segments)
+                return merged_segments, current_context or AnalysisContext()
+
         system_prompt = COMPACT_ANALYSIS_PROMPT
-        if use_context and (context.known_characters or context.last_context_summary):
-            ctx_addon = "\n\n【上下文】"
-            if context.known_characters:
-                ctx_addon += f"\n已知角色：{', '.join(context.known_characters)}"
-            if context.last_context_summary:
-                ctx_addon += f"\n上一块摘要：{context.last_context_summary}"
-            if context.last_active_speakers:
-                ctx_addon += f"\n上一块活跃角色：{', '.join(context.last_active_speakers)}"
-            system_prompt = system_prompt + ctx_addon
 
         user_content = _build_compact_user_content(chunk, context if use_context else None)
         messages = [
@@ -1284,14 +1670,41 @@ def _analyze_chunk_with_context(
         compact_text = ""
         try:
             client = OpenAICompatibleClient(llm_config)
-            compact_text = client.chat_text(messages)
+            compact_text = client.chat_text(messages, purpose="紧凑角色分析")
+            _dump_compact_debug("compact_analyze", chunk["title"], messages, response_text=compact_text)
             segments = _decode_compact_output(compact_text, chunk)
         except Exception as exc:
+            if _is_timeout_like_error(exc):
+                sub_chunks = _split_indexed_chunk_for_compact(
+                    chunk,
+                    max_chars=max(800, compact_char_budget - 200),
+                    max_lines=max(24, compact_line_budget - 12),
+                )
+                if len(sub_chunks) > 1:
+                    logging.warning(
+                        "[compact] %s 超时（%s），已切成 %s 个更小子块继续 compact 角色分析",
+                        chunk["title"],
+                        exc,
+                        len(sub_chunks),
+                    )
+                    _dump_compact_debug(
+                        "compact_analyze_error",
+                        chunk["title"],
+                        messages,
+                        response_text=compact_text,
+                        error=str(exc),
+                    )
+                    merged_segments: list[dict[str, Any]] = []
+                    current_context = context
+                    for sub_chunk in sub_chunks:
+                        sub_segments, current_context = _analyze_chunk_with_context(
+                            sub_chunk, llm_config, current_context
+                        )
+                        merged_segments.extend(sub_segments)
+                    return merged_segments, current_context or AnalysisContext()
             # compact 解码失败 → 回退到 verbose 模式
-            import logging
-            logging.warning(
-                f"[compact] {chunk['title']} 解码失败（{exc}），回退 verbose 模式"
-            )
+            logging.warning(f"[compact] {chunk['title']} 解码失败（{exc}），回退 verbose 模式")
+            _dump_compact_debug("compact_analyze_error", chunk["title"], messages, response_text=compact_text, error=str(exc))
             fallback_cfg = llm_config.model_copy(update={"output_mode": "verbose"})
             return _analyze_chunk_with_context(chunk, fallback_cfg, context)
 
@@ -1369,6 +1782,10 @@ def analyze_chunk_with_retry(chunk: dict[str, str], llm_config: LLMConfig) -> li
 
 
 def optimize_and_analyze_chunk(chunk: dict[str, str], llm_config: LLMConfig) -> list[dict[str, Any]]:
+    if _is_compact_output_mode(llm_config):
+        optimized = optimize_chunk_for_tts(chunk, llm_config)
+        return analyze_chunk_with_retry(optimized, llm_config)
+
     system_prompt = llm_config.optimize_analyze_prompt.strip() if llm_config.optimize_analyze_prompt else OPTIMIZE_ANALYZE_PROMPT
     cleaned = basic_tts_text_cleanup(chunk["content"])
     messages = [
@@ -1519,12 +1936,22 @@ def resolve_character_aliases(
         {"role": "user", "content": f"角色名列表：{', '.join(observed)}"},
     ]
     try:
-        result = _run_chat_json_with_retry(
-            llm_config, messages, "角色别名归并失败", task_kind="general"
-        )
-        groups = result.get("groups") or []
-        if isinstance(groups, list):
-            registry.load_alias_groups(groups)
+        if _is_compact_output_mode(llm_config):
+            client = OpenAICompatibleClient(llm_config)
+            compact_messages = [
+                {"role": "system", "content": COMPACT_ALIAS_RESOLUTION_PROMPT},
+                {"role": "user", "content": f"角色名列表：{', '.join(observed)}"},
+            ]
+            compact_text = client.chat_text(compact_messages, purpose="紧凑别名归并")
+            _dump_compact_debug("compact_alias", "alias_resolution", compact_messages, response_text=compact_text)
+            registry.load_alias_groups(_decode_compact_alias_groups(compact_text))
+        else:
+            result = _run_chat_json_with_retry(
+                llm_config, messages, "角色别名归并失败", task_kind="general"
+            )
+            groups = result.get("groups") or []
+            if isinstance(groups, list):
+                registry.load_alias_groups(groups)
     except Exception:
         pass  # 归并失败不影响主流程
 
@@ -1559,20 +1986,35 @@ def verify_speakers_pass(
         window = segments[i : i + window_size]
         # 只传 speaker + text 给 LLM（节省 token）
         slim = [{"index": j, "speaker": s["speaker"], "text": s["text"]} for j, s in enumerate(window)]
-        messages = [
-            {"role": "system", "content": verif_prompt},
-            {"role": "user", "content": f"请核查以下 segments 的 speaker：\n{slim}"},
-        ]
         try:
-            result = _run_chat_json_with_retry(
-                llm_config, messages, "speaker 核查失败", task_kind="general"
-            )
-            for corr in (result.get("corrections") or []):
-                if str(corr.get("confidence") or "").strip().lower() == "high":
+            if _is_compact_output_mode(llm_config):
+                client = OpenAICompatibleClient(llm_config)
+                compact_messages = [
+                    {"role": "system", "content": COMPACT_SPEAKER_VERIFICATION_PROMPT},
+                    {"role": "user", "content": f"请核查以下 segments 的 speaker：\n{slim}"},
+                ]
+                compact_text = client.chat_text(compact_messages, purpose="紧凑说话人复核")
+                _dump_compact_debug("compact_verify", f"speaker_verify_{i}", compact_messages, response_text=compact_text)
+                compact_fixes = _decode_compact_speaker_fixes(compact_text)
+                for corr in compact_fixes:
                     local_idx = int(corr.get("index", -1))
                     if 0 <= local_idx < len(window):
                         global_idx = i + local_idx
                         corrections[global_idx] = str(corr.get("suggested_speaker") or "").strip()
+            else:
+                messages = [
+                    {"role": "system", "content": verif_prompt},
+                    {"role": "user", "content": f"请核查以下 segments 的 speaker：\n{slim}"},
+                ]
+                result = _run_chat_json_with_retry(
+                    llm_config, messages, "speaker 核查失败", task_kind="general"
+                )
+                for corr in (result.get("corrections") or []):
+                    if str(corr.get("confidence") or "").strip().lower() == "high":
+                        local_idx = int(corr.get("index", -1))
+                        if 0 <= local_idx < len(window):
+                            global_idx = i + local_idx
+                            corrections[global_idx] = str(corr.get("suggested_speaker") or "").strip()
         except Exception:
             pass  # 单窗口失败不中断整体
         i += step

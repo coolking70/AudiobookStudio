@@ -1,4 +1,6 @@
 import json
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -124,6 +126,25 @@ class OpenAICompatibleClient:
 
         raise RuntimeError(f"LLM 没有返回可提取的 JSON：{content[:300]}")
 
+    def _dump_llm_debug(self, kind: str, payload: dict[str, Any], content: str, finish_reason: str | None) -> None:
+        try:
+            out_dir = Path("outputs") / "llm_debug"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            target = out_dir / f"{stamp}_{kind}.json"
+            target.write_text(json.dumps({
+                "kind": kind,
+                "finish_reason": finish_reason,
+                "model": self._resolve_model_id(),
+                "base_url": self.config.base_url,
+                "local_runtime": self.config.local_runtime,
+                "max_tokens": self.config.max_tokens,
+                "payload": payload,
+                "content": content,
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
     def _parse_json_content(self, content: str) -> dict[str, Any]:
         try:
             parsed = json.loads(content)
@@ -137,7 +158,13 @@ class OpenAICompatibleClient:
             raise RuntimeError(f"LLM 返回的 JSON 不是对象：{type(parsed).__name__}")
         return parsed
 
-    def chat_text(self, messages: list[dict[str, Any]]) -> str:
+    def chat_text(
+        self,
+        messages: list[dict[str, Any]],
+        max_tokens: int | None = None,
+        purpose: str = "文本分析",
+    ) -> str:
+        resolved_max_tokens = max(32, int(max_tokens or self.config.max_tokens or 512))
         if self._use_direct_local_runtime():
             runner = get_local_llm_runner(
                 model_path=self.config.local_model_path or self.config.model,
@@ -148,13 +175,13 @@ class OpenAICompatibleClient:
                 threads=self.config.local_threads,
                 batch_size=self.config.local_batch_size,
             )
-            return runner.generate_text(messages, max_tokens=min(self.config.max_tokens, 128), temperature=self.config.temperature)
+            return runner.generate_text(messages, max_tokens=resolved_max_tokens, temperature=self.config.temperature)
 
         payload = {
             "model": self._resolve_model_id(),
             "messages": messages,
             "temperature": self.config.temperature,
-            "max_tokens": min(max(self.config.max_tokens, 256), 512),
+            "max_tokens": resolved_max_tokens,
         }
         self._apply_reasoning_options(payload)
         timeout = httpx.Timeout(connect=30.0, read=180.0, write=30.0, pool=30.0)
@@ -165,17 +192,17 @@ class OpenAICompatibleClient:
             content, _ = self._extract_message_content(response)
         except Exception as exc:
             if APITimeoutError is not None and isinstance(exc, APITimeoutError):
-                raise RuntimeError("LLM 连通性测试超时。") from exc
+                raise RuntimeError(f"LLM {purpose}超时。") from exc
             if APIConnectionError is not None and isinstance(exc, APIConnectionError):
-                raise RuntimeError("LLM 服务在连通性测试中连接失败。") from exc
+                raise RuntimeError(f"LLM 服务在{purpose}时连接失败。") from exc
             if isinstance(exc, httpx.ReadTimeout):
-                raise RuntimeError("LLM 连通性测试超时。") from exc
+                raise RuntimeError(f"LLM {purpose}超时。") from exc
             if isinstance(exc, httpx.RemoteProtocolError):
-                raise RuntimeError("LLM 服务在连通性测试中主动断开连接。") from exc
+                raise RuntimeError(f"LLM 服务在{purpose}时主动断开连接。") from exc
             raise
 
         if not content:
-            raise RuntimeError("LLM 连通性测试返回为空")
+            raise RuntimeError(f"LLM {purpose}返回为空")
         return content
 
     def chat_json(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
@@ -248,6 +275,7 @@ class OpenAICompatibleClient:
             raise RuntimeError("LLM 返回为空")
 
         if finish_reason == "length":
+            self._dump_llm_debug("finish_reason_length", fallback_payload if use_chat_compat else strict_payload, content, finish_reason)
             preview = content[:300]
             raise RuntimeError(
                 f"LLM 输出被截断（finish_reason=length）。可稍微提高 max_tokens，"

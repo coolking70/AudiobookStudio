@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import traceback
+from datetime import datetime
 from pathlib import Path
 from threading import Lock
 from urllib.parse import urljoin
@@ -89,6 +90,17 @@ from schemas import (
 app = FastAPI(title="OmniVoice Reader Studio")
 pipeline_cache: dict[tuple[str, str, str], OmniVoicePipeline] = {}
 voxcpm_pipeline_cache: dict[tuple[str, str], VoxCPMPipeline] = {}
+
+
+def dump_request_debug(name: str, payload: dict[str, object]) -> None:
+    try:
+        out_dir = Path("outputs") / "llm_debug"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        target = out_dir / f"{stamp}_{name}.json"
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 pipeline_lock = Lock()
 
 Path("outputs").mkdir(parents=True, exist_ok=True)
@@ -1604,6 +1616,14 @@ def segment_plan(req: SegmentPlanRequest):
 @app.post("/api/segment-plan-chunks")
 def segment_plan_chunks(req: ChunkOptimizeRequest):
     try:
+        dump_request_debug("segment_plan_request", {
+            "output_mode": getattr(req.llm, "output_mode", None),
+            "analysis_combo": getattr(req.llm, "analysis_combo", None),
+            "local_runtime": getattr(req.llm, "local_runtime", None),
+            "model": getattr(req.llm, "model", None),
+            "max_tokens": getattr(req.llm, "max_tokens", None),
+            "chunk_titles": [item.title for item in req.chunks],
+        })
         source_chunks = [item.model_dump() for item in req.chunks]
         planned = []
         for chunk in source_chunks:
@@ -1613,7 +1633,13 @@ def segment_plan_chunks(req: ChunkOptimizeRequest):
             "chunks": planned,
         }
     except Exception as exc:
-        raise_api_error(exc)
+        mode = getattr(req.llm, "output_mode", None)
+        combo = getattr(req.llm, "analysis_combo", None)
+        runtime = getattr(req.llm, "local_runtime", None)
+        enriched = RuntimeError(
+            f"{exc} [segment-plan-chunks output_mode={mode!r} analysis_combo={combo!r} local_runtime={runtime!r}]"
+        )
+        raise_api_error(enriched)
 
 
 @app.post("/api/optimize-chunks")
@@ -1825,7 +1851,9 @@ def test_connectivity(req: ConnectivityTestRequest):
             [
                 {"role": "system", "content": "Reply in one short sentence."},
                 {"role": "user", "content": "Say hello briefly."},
-            ]
+            ],
+            max_tokens=64,
+            purpose="连通性测试",
         )
         return {
             "ok": True,
@@ -1844,7 +1872,9 @@ def load_llm_model(req: ConnectivityTestRequest):
                 [
                     {"role": "system", "content": "Reply in one short sentence."},
                     {"role": "user", "content": "Say hello briefly."},
-                ]
+                ],
+                max_tokens=64,
+                purpose="连通性测试",
             )
             return {
                 "ok": True,
