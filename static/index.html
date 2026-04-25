@@ -633,13 +633,24 @@
     .segment:hover, .role-card:hover {
       border-color: rgba(125, 154, 192, 0.25);
     }
+    .segment-suspicious { border-left: 3px solid #e67e22; }
+    .segment-unknown { border-left: 3px solid rgba(125, 154, 192, 0.5); }
+    .seg-flag {
+      font-size: 11px; padding: 2px 6px; border-radius: 3px;
+      white-space: nowrap; cursor: default; font-weight: 500;
+    }
+    .seg-flag-suspicious { background: rgba(230, 126, 34, 0.18); color: #e67e22; }
+    .seg-flag-unknown { background: rgba(125, 154, 192, 0.15); color: var(--text-dim); }
     .segment-head {
-      display: grid;
-      grid-template-columns: 1.2fr 1fr 1.5fr auto;
+      display: flex;
+      flex-wrap: wrap;
       gap: 8px;
       align-items: center;
       margin-bottom: 8px;
     }
+    .segment-head input:first-child { flex: 1.2; min-width: 80px; }
+    .segment-head select { flex: 1; min-width: 80px; }
+    .segment-head input:nth-of-type(2) { flex: 1.5; min-width: 100px; }
     .role-head {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -1404,6 +1415,29 @@
                     </select>
                     <div class="mini-note">组合模式在模型配置阶段统一设定。文本分析页会直接按这里的配置执行，不再单独勾选流程。</div>
 
+                    <label>上下文感知模式</label>
+                    <select id="contextMode">
+                      <option value="chapter" selected>章节内串行（推荐）</option>
+                      <option value="full">全文串行（最高质量）</option>
+                      <option value="off">关闭（纯并发，向后兼容）</option>
+                    </select>
+                    <div class="mini-note">
+                      "章节内串行"在章节边界内按顺序传递上下文（已知角色、上一块摘要、活跃说话人），章节间仍并行；能大幅提升跨句 speaker 判断准确性，速度适中。
+                      "全文串行"质量最高但最慢；"关闭"恢复原始并发逻辑。
+                    </div>
+
+                    <div style="display:flex; gap:16px; align-items:center; margin-top:6px;">
+                      <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px;">
+                        <input type="checkbox" id="enableCharacterAliasMerge" checked />
+                        角色别名自动归并
+                      </label>
+                      <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px;">
+                        <input type="checkbox" id="enableSpeakerVerification" />
+                        二轮 speaker 复核（较慢）
+                      </label>
+                    </div>
+                    <div class="mini-note">别名归并：自动检测"米拉"和"琉德米拉"等同一角色的多种叫法并统一。二轮复核：额外一次 LLM 遍历，专门核查 speaker 归属，会显著增加时间和 token 消耗。</div>
+
                     <label>智能分段目标长度（字）</label>
                     <div style="display:flex; gap:8px; align-items:stretch;">
                       <input id="segmentTargetChars" style="flex:1;" type="number" min="800" max="6000" step="100" value="3200" />
@@ -1446,16 +1480,26 @@
                         <textarea id="systemPrompt" rows="6" placeholder="留空则使用后端默认角色分析提示词"></textarea>
                       </details>
 
-                      <details class="prompt-stage-toggle">
+                      <details class=”prompt-stage-toggle”>
+                        <summary>Speaker 复核提示词</summary>
+                        <textarea id=”speakerVerificationPrompt” rows=”6” placeholder=”留空则使用后端默认 speaker 复核提示词（仅二轮复核开启时生效）”></textarea>
+                      </details>
+
+                      <details class=”prompt-stage-toggle”>
+                        <summary>角色别名归并提示词</summary>
+                        <textarea id=”aliasResolutionPrompt” rows=”6” placeholder=”留空则使用后端默认别名归并提示词（仅别名归并开启时生效）”></textarea>
+                      </details>
+
+                      <details class=”prompt-stage-toggle”>
                         <summary>当前整合提示词预览</summary>
-                        <textarea id="combinedPromptPreview" rows="12" readonly placeholder="根据当前在模型配置里选择的组合模式，点击“显示整合提示词”后会在这里展示对应的整合提示词。"></textarea>
+                        <textarea id=”combinedPromptPreview” rows=”12” readonly placeholder=”根据当前在模型配置里选择的组合模式，点击”显示整合提示词”后会在这里展示对应的整合提示词。”></textarea>
                       </details>
                     </div>
                   </div>
                 </details>
               </div>
 
-              <div id="localLlmPanel" class="model-field-group" style="margin-top:14px;" hidden>
+              <div id=”localLlmPanel” class="model-field-group" style="margin-top:14px;" hidden>
                 <h3>必要配置</h3>
                 <div class="mini-note">手动填写模型根目录，扫描后从识别结果里选择一个本地可直载模型。</div>
 
@@ -3540,6 +3584,11 @@ very high pitch, very low pitch, whisper, young adult
       system_prompt: document.getElementById("systemPrompt").value.trim() || null,
       segment_prompt: document.getElementById("segmentPrompt").value.trim() || null,
       optimize_prompt: document.getElementById("optimizePrompt").value.trim() || null,
+      speaker_verification_prompt: document.getElementById("speakerVerificationPrompt").value.trim() || null,
+      alias_resolution_prompt: document.getElementById("aliasResolutionPrompt").value.trim() || null,
+      context_mode: document.getElementById("contextMode").value || "chapter",
+      enable_character_alias_merge: document.getElementById("enableCharacterAliasMerge").checked,
+      enable_speaker_verification: document.getElementById("enableSpeakerVerification").checked,
     };
   }
 
@@ -4113,14 +4162,16 @@ very high pitch, very low pitch, whisper, young adult
       const p = data.prompts;
       if (target === "local") {
         document.getElementById("localChapterPrompt").value = p.chapter_prompt || "";
-        document.getElementById("localLlmSystemPrompt").value = p.system_prompt;
-        document.getElementById("localLlmSegmentPrompt").value = p.segment_prompt;
-        document.getElementById("localLlmOptimizePrompt").value = p.optimize_prompt;
+        document.getElementById("localLlmSystemPrompt").value = p.system_prompt || "";
+        document.getElementById("localLlmSegmentPrompt").value = p.segment_prompt || "";
+        document.getElementById("localLlmOptimizePrompt").value = p.optimize_prompt || "";
       } else {
         document.getElementById("chapterPrompt").value = p.chapter_prompt || "";
-        document.getElementById("systemPrompt").value = p.system_prompt;
-        document.getElementById("segmentPrompt").value = p.segment_prompt;
-        document.getElementById("optimizePrompt").value = p.optimize_prompt;
+        document.getElementById("systemPrompt").value = p.system_prompt || "";
+        document.getElementById("segmentPrompt").value = p.segment_prompt || "";
+        document.getElementById("optimizePrompt").value = p.optimize_prompt || "";
+        document.getElementById("speakerVerificationPrompt").value = p.speaker_verification_prompt || "";
+        document.getElementById("aliasResolutionPrompt").value = p.alias_resolution_prompt || "";
       }
       expandPromptDetails(target);
       setStatus("已显示当前默认提示词，并自动展开章节识别与基础提示词。清空文本框即恢复使用后端默认值。");
@@ -4195,6 +4246,11 @@ very high pitch, very low pitch, whisper, young adult
       document.getElementById("systemPrompt").value = cfg.system_prompt || "";
       document.getElementById("segmentPrompt").value = cfg.segment_prompt || "";
       document.getElementById("optimizePrompt").value = cfg.optimize_prompt || "";
+      document.getElementById("speakerVerificationPrompt").value = cfg.speaker_verification_prompt || "";
+      document.getElementById("aliasResolutionPrompt").value = cfg.alias_resolution_prompt || "";
+      if (cfg.context_mode) document.getElementById("contextMode").value = cfg.context_mode;
+      document.getElementById("enableCharacterAliasMerge").checked = cfg.enable_character_alias_merge !== false;
+      document.getElementById("enableSpeakerVerification").checked = !!cfg.enable_speaker_verification;
     } else {
       try {
         const resp = await fetch("/api/llm-defaults");
@@ -6621,7 +6677,9 @@ very high pitch, very low pitch, whisper, young adult
 
     segmentsState.forEach((seg, idx) => {
       const div = document.createElement("div");
-      div.className = "segment";
+      const isSuspicious = !!seg._suspicious;
+      const wasUnknown = !!seg._was_unknown;
+      div.className = "segment" + (isSuspicious ? " segment-suspicious" : "") + (wasUnknown ? " segment-unknown" : "");
       div.innerHTML = `
         <div class="segment-head">
           <input value="${escapeHtml(seg.speaker || "旁白")}" placeholder="speaker" onchange="updateSegmentField(${idx}, 'speaker', this.value)" />
@@ -6631,6 +6689,8 @@ very high pitch, very low pitch, whisper, young adult
             ).join("")}
           </select>
           <input value="${escapeHtml(seg.style || "")}" placeholder="${escapeHtml(getVoiceStylePlaceholder(seg.voice_engine || ""))}" onchange="updateSegmentField(${idx}, 'style', this.value)" />
+          ${isSuspicious ? `<span class="seg-flag seg-flag-suspicious" title="speaker 不在已知角色列表中，请核实">⚠ 待核查</span>` : ""}
+          ${wasUnknown ? `<span class="seg-flag seg-flag-unknown" title="LLM 无法确定说话人，已自动归入旁白">? 原为UNKNOWN</span>` : ""}
           <button type="button" class="danger" ${taskBusy ? "disabled" : ""} onclick="removeSegment(${idx})">删除</button>
         </div>
         ${renderVoiceEngineSelect("segment", idx, seg.voice_engine || "")}

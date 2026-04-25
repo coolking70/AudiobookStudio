@@ -44,8 +44,46 @@ from audio_utils import build_lrc, join_wavs_auto
 from llm_client import OpenAICompatibleClient
 from local_llm import get_local_llm_runner, get_local_llm_status, unload_all_local_llm_runners
 from pipeline import ASR_MODEL_NAME, HF_CACHE_DIRS, MODEL_NAME, VOXCPM_MODEL_NAME, OmniVoicePipeline, VoxCPMPipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status, get_voxcpm_runtime_dependency_status
-from role_analyzer import analyze_chunks_with_llm, analyze_text_with_llm, detect_chapter_structure_with_info, intelligent_segment_seed_chunk, intelligent_segment_text, intelligent_segment_text_with_info, optimize_and_analyze_chunks_with_llm, optimize_chunks_for_tts, sanitize_segments, segment_and_optimize_seed_chunk, segment_and_optimize_text_with_info
-from schemas import AnalyzeChunksRequest, AutoNarrateRequest, BatchImportVoiceLibraryRequest, ChunkOptimizeRequest, ConnectivityTestRequest, ImportSegmentsRequest, ListLLMModelsRequest, MergeRequest, ModelLoadRequest, NarrateRequest, ParseRequest, ScanLocalModelsRequest, SegmentPlanRequest, TTSRequest, TranscribeRefAudioRequest, UploadRefAudioRequest
+from role_analyzer import (
+    CHARACTER_ALIAS_RESOLUTION_PROMPT,
+    DEFAULT_SYSTEM_PROMPT,
+    SEGMENT_PLAN_PROMPT,
+    SPEAKER_VERIFICATION_PROMPT,
+    TEXT_OPTIMIZATION_PROMPT,
+    analyze_chunks_with_llm,
+    analyze_text_with_llm,
+    detect_chapter_structure_with_info,
+    intelligent_segment_seed_chunk,
+    intelligent_segment_text,
+    intelligent_segment_text_with_info,
+    optimize_and_analyze_chunks_with_llm,
+    optimize_chunks_for_tts,
+    resolve_character_aliases,
+    sanitize_segments,
+    segment_and_optimize_seed_chunk,
+    segment_and_optimize_text_with_info,
+    verify_speakers_pass,
+)
+from schemas import (
+    AnalyzeChunksRequest,
+    AutoNarrateRequest,
+    BatchImportVoiceLibraryRequest,
+    ChunkOptimizeRequest,
+    ConnectivityTestRequest,
+    ImportSegmentsRequest,
+    ListLLMModelsRequest,
+    MergeAliasesRequest,
+    MergeRequest,
+    ModelLoadRequest,
+    NarrateRequest,
+    ParseRequest,
+    ScanLocalModelsRequest,
+    SegmentPlanRequest,
+    TTSRequest,
+    TranscribeRefAudioRequest,
+    UploadRefAudioRequest,
+    VerifySpeakersRequest,
+)
 
 
 app = FastAPI(title="OmniVoice Reader Studio")
@@ -1358,7 +1396,7 @@ def llm_defaults():
 
 @app.get("/api/default-prompts")
 def default_prompts():
-    from role_analyzer import CHAPTER_RULE_DETECTION_PROMPT, DEFAULT_SYSTEM_PROMPT, OPTIMIZE_ANALYZE_PROMPT, SEGMENT_OPTIMIZE_PROMPT, SEGMENT_PLAN_PROMPT, TEXT_OPTIMIZATION_PROMPT
+    from role_analyzer import CHAPTER_RULE_DETECTION_PROMPT, OPTIMIZE_ANALYZE_PROMPT, SEGMENT_OPTIMIZE_PROMPT
     return {
         "ok": True,
         "prompts": {
@@ -1368,8 +1406,36 @@ def default_prompts():
             "optimize_prompt": TEXT_OPTIMIZATION_PROMPT.strip(),
             "segment_optimize_prompt": SEGMENT_OPTIMIZE_PROMPT.strip(),
             "optimize_analyze_prompt": OPTIMIZE_ANALYZE_PROMPT.strip(),
+            "speaker_verification_prompt": SPEAKER_VERIFICATION_PROMPT.strip(),
+            "alias_resolution_prompt": CHARACTER_ALIAS_RESOLUTION_PROMPT.strip(),
         },
     }
+
+
+@app.post("/api/verify-speakers")
+def verify_speakers_endpoint(req: VerifySpeakersRequest):
+    try:
+        segments = [dict(s) for s in req.segments]
+        result = verify_speakers_pass(segments, req.llm)
+        return {"ok": True, "segments": result}
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/merge-aliases")
+def merge_aliases_endpoint(req: MergeAliasesRequest):
+    try:
+        segments = [dict(s) for s in req.segments]
+        registry = resolve_character_aliases(segments, req.llm)
+        registry.apply_to_segments(segments)
+        return {
+            "ok": True,
+            "segments": segments,
+            "alias_map": registry.alias_dict(),
+            "canonical_names": registry.canonical_names(),
+        }
+    except Exception as exc:
+        raise_api_error(exc)
 
 
 @app.get("/favicon.ico")

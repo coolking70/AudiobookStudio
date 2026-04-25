@@ -1,10 +1,12 @@
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import groupby
 from typing import Any
 
+from character_registry import CharacterRegistry
 from llm_client import OpenAICompatibleClient
-from schemas import LLMConfig
+from schemas import AnalysisContext, LLMConfig
 
 VALID_INSTRUCT_ITEMS = {
     "american accent",
@@ -71,7 +73,7 @@ DEFAULT_SYSTEM_PROMPT = """
     }
   ]
 }
-3. speaker 只填角色名或”旁白”。
+3. speaker 只填角色名、”旁白”或”UNKNOWN”（见规则 7）。
 4. emotion 只能从以下值中选：neutral, soft, cold, serious, curious, angry
 5. style 必须只使用以下英文标签，且用英文逗号+空格分隔：
 american accent, australian accent, british accent, canadian accent,
@@ -80,7 +82,7 @@ japanese accent, korean accent, low pitch, male, middle-aged,
 moderate pitch, portuguese accent, russian accent, teenager,
 very high pitch, very low pitch, whisper, young adult
 6. 不要输出任何解释、注释、markdown，只输出 JSON。
-7. 如果无法判断，说话内容归为”旁白”。
+7. 当无法可靠判断说话人时，speaker 填 “UNKNOWN”，不要硬猜成已知角色名；程序会将 UNKNOWN 自动归入旁白，避免错误归属。
 8. 切分粒度：以”一段旁白叙述”或”一轮对白”为基本单位。相邻旁白叙述可合并为 1-3 句一段，但绝不允许省略或丢弃任何旁白内容。
 9. 对白与旁白必须分属不同的 segment。引号内的对白归角色，引号外的叙述（含动作、场景、心理描写）归”旁白”。即使它们在同一个自然句中（如：”你好。”他说。），也必须拆成两个 segment：一个角色对白、一个旁白叙述。
 10. 旁白段只包含叙述，不包含引号对白；角色段只包含该角色说的对白，不包含叙述动作。例如 “李明摇了摇头：”不行。””应拆为：旁白”李明摇了摇头：”+ 李明”不行。”。
@@ -88,6 +90,62 @@ very high pitch, very low pitch, whisper, young adult
 12. 根据角色的性别、年龄、性格特征来选择合适的 style 标签组合。
 13. 根据对白的语境和情绪来选择合适的 emotion。
 14. **严禁省略任何原文内容**：所有 segments 的 text 按顺序拼接起来必须覆盖原文的每一个字。
+15. 判断 speaker 时务必结合上下文语义：
+    a. “A 向/对 B 发问/说道/回答”之后的对白通常是 A 说的，不是 B；
+    b. 内容为”是的/不是/没错/我不知道/嗯”等答复时，说话人优先判断为被提问的 B，而非提问的 A；
+    c. 对白中出现”X 大人/殿下/阁下/您”等敬称时，说话人通常不是被称呼的 X 本人；
+    d. 不要简单沿用上一轮对白的说话人——每句都要重新根据上下文判断。
+""".strip()
+
+# 上下文感知模式追加到 system prompt 的额外规则（context_mode != “off” 时注入）
+_CONTEXT_RULES_ADDON = """
+16. 本次分析的 user 消息中附带了【跨块分析上下文】，请务必结合这些信息判断 speaker：
+    - “已知角色”是全书迄今出现过的角色名，speaker 应优先从中选取；
+    - “上一块剧情摘要”描述紧接本块之前的情节，用于判断谁在说话；
+    - “上一块仍在对话的角色”是对话场景延续的提示。
+17. 对真正无法判断的对白，请填 “UNKNOWN”，切勿把猜测当事实。
+18. 除 segments 之外，输出 JSON 还需包含（供下一块使用，程序自动删除）：
+    “context_summary”: “一句话概括本块结尾的剧情/对话状态”,
+    “active_speakers”: [“本块结尾仍活跃在对话中的角色名”],
+    “new_characters”: [“本块中首次登场的新角色名，无则填 []”]
+""".strip()
+
+SPEAKER_VERIFICATION_PROMPT = """
+你是”TTS 对白说话人核查专员”。你的唯一任务是核查给定 JSON segments 中的 speaker 字段是否与原文上下文一致。
+
+规则：
+1. 只检查和修正 speaker，绝对不修改 text、emotion、style 字段。
+2. 只在高置信度时才输出修正建议；有疑问则跳过，绝不乱猜。
+3. 常见错误场景（优先排查）：
+   - “A 向 B 发问”后的对白被标为 B，实应为 A；
+   - 回答内容（是的/不是/没错）被标为提问方，实应为被提问方；
+   - 对白中称呼”X 大人/殿下”，被错标为 X 本人；
+   - 连续轮次中错把上一段的说话人沿用到下一段。
+4. 对每个有问题的 segment，输出其 index（从 0 起算）和建议 speaker。
+5. 如果所有 speaker 都正确，输出空 corrections 列表。
+
+只输出合法 JSON：
+{
+  “corrections”: [
+    {“index”: 3, “suggested_speaker”: “加雷宁”, “confidence”: “high”, “reason”: “此段是对米拉提问的回答”}
+  ]
+}
+""".strip()
+
+CHARACTER_ALIAS_RESOLUTION_PROMPT = """
+你是”人物别名归并专员”。输入是从小说中识别出的所有说话人名列表，里面可能存在同一个角色的多种叫法（全名、简称、敬称、绰号）。
+
+请整理成别名分组，只有非常确定两个名字指的是同一人时才归并，不确定时保持独立。
+
+只输出合法 JSON：
+{
+  “groups”: [
+    {“canonical”: “规范名”, “aliases”: [“别名1”, “别名2”]}
+  ]
+}
+
+如果没有可以合并的别名，输出 {“groups”: []}。
+不要输出解释或 markdown。
 """.strip()
 
 SEGMENT_PLAN_PROMPT = """
@@ -247,31 +305,49 @@ def fallback_style_by_role(speaker: str, emotion: str) -> str:
     return "male, young adult, moderate pitch"
 
 
-def sanitize_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def sanitize_segments(
+    segments: list[dict[str, Any]],
+    known_characters: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """校验并清理 LLM 返回的 segments。
+
+    known_characters: 可选的已知角色名集合，用于标记 _suspicious 字段。
+    """
+    known_set: set[str] = set(known_characters) if known_characters else set()
     cleaned = []
     for seg in segments:
-        speaker = str(seg.get("speaker", "旁白")).strip() or "旁白"
+        raw_speaker = str(seg.get("speaker", "旁白")).strip() or "旁白"
         text = str(seg.get("text", "")).strip()
         emotion = str(seg.get("emotion", "neutral")).strip().lower() or "neutral"
         style = normalize_style(seg.get("style"))
 
-        if emotion not in VALID_EMOTIONS:
-            emotion = "neutral"
         if not text:
             continue
+        if emotion not in VALID_EMOTIONS:
+            emotion = "neutral"
+
+        # UNKNOWN → 旁白，但记录标志供前端展示
+        was_unknown = raw_speaker == "UNKNOWN"
+        speaker = "旁白" if was_unknown else raw_speaker
+
         if not style:
             style = fallback_style_by_role(speaker, emotion)
 
-        cleaned.append(
-            {
-                "speaker": speaker,
-                "text": text,
-                "emotion": emotion,
-                "style": style,
-                "ref_audio": None,
-                "ref_text": None,
-            }
-        )
+        entry: dict[str, Any] = {
+            "speaker": speaker,
+            "text": text,
+            "emotion": emotion,
+            "style": style,
+            "ref_audio": None,
+            "ref_text": None,
+        }
+        if was_unknown:
+            entry["_was_unknown"] = True
+        # 标记可疑 speaker：不在已知角色中且不是旁白
+        if known_set and speaker != "旁白" and speaker not in known_set:
+            entry["_suspicious"] = True
+
+        cleaned.append(entry)
     return cleaned
 
 
@@ -806,20 +882,109 @@ def optimize_chunks_for_tts(chunks: list[dict[str, str]], llm_config: LLMConfig)
     return [item for item in results if item]
 
 
-def analyze_chunk_with_retry(chunk: dict[str, str], llm_config: LLMConfig) -> list[dict[str, Any]]:
-    system_prompt = llm_config.system_prompt.strip() if llm_config.system_prompt else DEFAULT_SYSTEM_PROMPT
+def _chapter_key(title: str) -> str:
+    """从 chunk title 提取章节标识，用于 chapter 模式分组。
+
+    例："第一章 - 第2块" → "第一章"；"第一章" → "第一章"；"块1" → "块1"
+    """
+    return (title or "").split(" - ")[0].strip()
+
+
+def _build_context_user_content(chunk: dict[str, str], context: AnalysisContext | None) -> str:
+    """构建带上下文的 user 消息内容。"""
+    parts: list[str] = []
+    if context is not None and (
+        context.known_characters or context.last_context_summary or context.last_active_speakers
+    ):
+        ctx_lines = ["【跨块分析上下文】"]
+        if context.known_characters:
+            ctx_lines.append(f"已知角色：{', '.join(context.known_characters)}")
+        if context.last_context_summary:
+            ctx_lines.append(f"上一块剧情摘要：{context.last_context_summary}")
+        if context.last_active_speakers:
+            ctx_lines.append(f"上一块仍在对话的角色：{', '.join(context.last_active_speakers)}")
+        parts.append("\n".join(ctx_lines))
+
+    parts.append(
+        f"请分析下面这段文本，并输出 JSON。\n\n标题：{chunk['title']}\n\n正文：\n{chunk['content']}"
+    )
+    return "\n\n".join(parts)
+
+
+def _merge_known_characters(
+    existing: list[str],
+    new_speakers: list[str],
+    extra: list[str] | None,
+) -> list[str]:
+    """合并已知角色列表，去重保序。"""
+    seen: dict[str, None] = dict.fromkeys(existing)
+    for name in (new_speakers or []) + (extra or []):
+        n = (name or "").strip()
+        if n and n not in ("旁白", "UNKNOWN", ""):
+            seen[n] = None
+    return list(seen.keys())
+
+
+def _analyze_chunk_with_context(
+    chunk: dict[str, str],
+    llm_config: LLMConfig,
+    context: AnalysisContext | None = None,
+) -> tuple[list[dict[str, Any]], AnalysisContext]:
+    """分析单个 chunk，可选择携带跨块上下文。
+
+    返回 (segments, updated_context)。
+    当 context=None 时行为与旧版 analyze_chunk_with_retry 完全一致。
+    """
+    use_context = context is not None
+
+    # ── 构建 system prompt ────────────────────────────────────────────────
+    base_system = llm_config.system_prompt.strip() if llm_config.system_prompt else DEFAULT_SYSTEM_PROMPT
+    system_prompt = (base_system + "\n\n" + _CONTEXT_RULES_ADDON) if use_context else base_system
+
+    # ── 构建 messages ─────────────────────────────────────────────────────
+    user_content = _build_context_user_content(chunk, context if use_context else None)
     messages = [
         {"role": "system", "content": system_prompt},
-        {
-            "role": "user",
-            "content": f"请分析下面这段文本，并输出 JSON。\n\n标题：{chunk['title']}\n\n正文：\n{chunk['content']}",
-        },
+        {"role": "user", "content": user_content},
     ]
-    result = _run_chat_json_with_retry(llm_config, messages, f"{chunk['title']} 角色分析失败", task_kind="analyze")
-    segments = result.get("segments", [])
-    if not isinstance(segments, list):
+
+    # ── LLM 调用 ──────────────────────────────────────────────────────────
+    result = _run_chat_json_with_retry(
+        llm_config, messages, f"{chunk['title']} 角色分析失败", task_kind="analyze"
+    )
+
+    raw_segments = result.get("segments", [])
+    if not isinstance(raw_segments, list):
         raise RuntimeError(f"{chunk['title']} 返回的 segments 不是数组")
-    return sanitize_segments(segments)
+
+    known_chars = context.known_characters if context else []
+    segments = sanitize_segments(raw_segments, known_characters=known_chars)
+
+    # ── 构建更新后的 context ───────────────────────────────────────────────
+    new_speakers = [s["speaker"] for s in segments if s["speaker"] not in ("旁白", "UNKNOWN")]
+    extra_new = result.get("new_characters") or []
+    updated_known = _merge_known_characters(
+        context.known_characters if context else [],
+        new_speakers,
+        extra_new,
+    )
+
+    updated_context = AnalysisContext(
+        known_characters=updated_known,
+        character_aliases=context.character_aliases if context else {},
+        last_context_summary=str(result.get("context_summary") or "").strip(),
+        last_active_speakers=[
+            str(s).strip() for s in (result.get("active_speakers") or []) if s
+        ],
+        chunk_index=(context.chunk_index + 1) if context else 1,
+    )
+    return segments, updated_context
+
+
+def analyze_chunk_with_retry(chunk: dict[str, str], llm_config: LLMConfig) -> list[dict[str, Any]]:
+    """向后兼容接口：无上下文模式分析单个 chunk。"""
+    segments, _ = _analyze_chunk_with_context(chunk, llm_config, context=None)
+    return segments
 
 
 def optimize_and_analyze_chunk(chunk: dict[str, str], llm_config: LLMConfig) -> list[dict[str, Any]]:
@@ -839,28 +1004,89 @@ def optimize_and_analyze_chunk(chunk: dict[str, str], llm_config: LLMConfig) -> 
     return sanitize_segments(segments)
 
 
-def analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_config: LLMConfig) -> list[dict[str, Any]]:
-    if not chunks:
-        return []
-
+def _analyze_chunks_off_mode(
+    chunks: list[dict[str, str]], llm_config: LLMConfig
+) -> list[dict[str, Any]]:
+    """原始并发模式：无跨块上下文，保持向后兼容。"""
     direct_runtime = str(getattr(llm_config, "local_runtime", "") or "").strip().lower() == "direct"
     workers = 1 if direct_runtime else max(1, min(llm_config.workers or 5, len(chunks)))
     results: list[list[dict[str, Any]] | None] = [None] * len(chunks)
 
-    def _work(index: int, chunk: dict[str, str]) -> tuple[int, list[dict[str, Any]]]:
-        return index, analyze_chunk_with_retry(chunk, llm_config)
+    def _work(idx: int, chunk: dict[str, str]) -> tuple[int, list[dict[str, Any]]]:
+        return idx, analyze_chunk_with_retry(chunk, llm_config)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(_work, idx, chunk) for idx, chunk in enumerate(chunks)]
+        futures = [executor.submit(_work, i, c) for i, c in enumerate(chunks)]
         for future in as_completed(futures):
-            index, segments = future.result()
-            results[index] = segments
+            idx, segs = future.result()
+            results[idx] = segs
 
     merged: list[dict[str, Any]] = []
     for item in results:
         if item:
             merged.extend(item)
     return merged
+
+
+def _analyze_chunks_full_mode(
+    chunks: list[dict[str, str]], llm_config: LLMConfig
+) -> list[dict[str, Any]]:
+    """全文串行模式：上下文跨所有 chunk 传递，质量最高但最慢。"""
+    context = AnalysisContext()
+    all_segments: list[dict[str, Any]] = []
+    for chunk in chunks:
+        segs, context = _analyze_chunk_with_context(chunk, llm_config, context)
+        all_segments.extend(segs)
+    return all_segments
+
+
+def _analyze_chunks_chapter_mode(
+    chunks: list[dict[str, str]], llm_config: LLMConfig
+) -> list[dict[str, Any]]:
+    """章节内串行 + 章节间并行：推荐默认，兼顾质量与速度。"""
+    if not chunks:
+        return []
+
+    # 按 chapter_key 对连续 chunk 分组
+    groups: list[tuple[str, list[tuple[int, dict[str, str]]]]] = []
+    for key, items in groupby(enumerate(chunks), key=lambda t: _chapter_key(t[1]["title"])):
+        groups.append((key, list(items)))
+
+    results: list[list[dict[str, Any]] | None] = [None] * len(chunks)
+
+    def _process_group(indexed_chunks: list[tuple[int, dict[str, str]]]) -> None:
+        context = AnalysisContext()
+        for orig_idx, chunk in indexed_chunks:
+            segs, context = _analyze_chunk_with_context(chunk, llm_config, context)
+            results[orig_idx] = segs
+
+    direct_runtime = str(getattr(llm_config, "local_runtime", "") or "").strip().lower() == "direct"
+    num_groups = len(groups)
+    workers = 1 if direct_runtime else max(1, min(llm_config.workers or 5, num_groups))
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(_process_group, indexed_chunks) for _, indexed_chunks in groups]
+        for future in as_completed(futures):
+            future.result()  # 传播异常
+
+    merged: list[dict[str, Any]] = []
+    for item in results:
+        if item:
+            merged.extend(item)
+    return merged
+
+
+def analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_config: LLMConfig) -> list[dict[str, Any]]:
+    if not chunks:
+        return []
+
+    mode = str(getattr(llm_config, "context_mode", "") or "chapter").strip().lower()
+    if mode == "full":
+        return _analyze_chunks_full_mode(chunks, llm_config)
+    if mode == "off":
+        return _analyze_chunks_off_mode(chunks, llm_config)
+    # 默认 "chapter"
+    return _analyze_chunks_chapter_mode(chunks, llm_config)
 
 
 def optimize_and_analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_config: LLMConfig) -> list[dict[str, Any]]:
@@ -887,7 +1113,111 @@ def optimize_and_analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_confi
     return merged
 
 
+def resolve_character_aliases(
+    segments: list[dict[str, Any]], llm_config: LLMConfig
+) -> CharacterRegistry:
+    """用 LLM 对 segments 中的角色名做别名归并，返回更新后的 CharacterRegistry。
+
+    如果 llm_config.enable_character_alias_merge=False 则跳过 LLM 调用，仅收集角色名。
+    """
+    registry = CharacterRegistry()
+    registry.observe_segments(segments)
+    observed = registry.observed_names()
+
+    # 少于 2 个角色不需要归并
+    if not getattr(llm_config, "enable_character_alias_merge", True) or len(observed) < 2:
+        return registry
+
+    alias_prompt = (
+        llm_config.alias_resolution_prompt.strip()
+        if getattr(llm_config, "alias_resolution_prompt", None)
+        else CHARACTER_ALIAS_RESOLUTION_PROMPT
+    )
+    messages = [
+        {"role": "system", "content": alias_prompt},
+        {"role": "user", "content": f"角色名列表：{', '.join(observed)}"},
+    ]
+    try:
+        result = _run_chat_json_with_retry(
+            llm_config, messages, "角色别名归并失败", task_kind="general"
+        )
+        groups = result.get("groups") or []
+        if isinstance(groups, list):
+            registry.load_alias_groups(groups)
+    except Exception:
+        pass  # 归并失败不影响主流程
+
+    return registry
+
+
+def verify_speakers_pass(
+    segments: list[dict[str, Any]],
+    llm_config: LLMConfig,
+) -> list[dict[str, Any]]:
+    """对分析结果做二轮 speaker 核查，采用滑动窗口，只采纳高置信度修正。
+
+    window_size: 每窗口包含的 segment 数
+    overlap: 窗口间重叠 segment 数（避免窗口边界漏判）
+    """
+    if not segments:
+        return segments
+
+    verif_prompt = (
+        llm_config.speaker_verification_prompt.strip()
+        if getattr(llm_config, "speaker_verification_prompt", None)
+        else SPEAKER_VERIFICATION_PROMPT
+    )
+    window_size = 20
+    overlap = 5
+    step = max(1, window_size - overlap)
+
+    corrections: dict[int, str] = {}  # global_index → suggested_speaker
+
+    i = 0
+    while i < len(segments):
+        window = segments[i : i + window_size]
+        # 只传 speaker + text 给 LLM（节省 token）
+        slim = [{"index": j, "speaker": s["speaker"], "text": s["text"]} for j, s in enumerate(window)]
+        messages = [
+            {"role": "system", "content": verif_prompt},
+            {"role": "user", "content": f"请核查以下 segments 的 speaker：\n{slim}"},
+        ]
+        try:
+            result = _run_chat_json_with_retry(
+                llm_config, messages, "speaker 核查失败", task_kind="general"
+            )
+            for corr in (result.get("corrections") or []):
+                if str(corr.get("confidence") or "").strip().lower() == "high":
+                    local_idx = int(corr.get("index", -1))
+                    if 0 <= local_idx < len(window):
+                        global_idx = i + local_idx
+                        corrections[global_idx] = str(corr.get("suggested_speaker") or "").strip()
+        except Exception:
+            pass  # 单窗口失败不中断整体
+        i += step
+
+    # 应用修正（只接受非空且非 UNKNOWN 的建议）
+    for idx, new_speaker in corrections.items():
+        if new_speaker and new_speaker != "UNKNOWN" and 0 <= idx < len(segments):
+            segments[idx]["speaker"] = new_speaker
+            segments[idx].pop("_suspicious", None)  # 修正后清除可疑标记
+
+    return segments
+
+
 def analyze_text_with_llm(text: str, llm_config: LLMConfig) -> list[dict[str, Any]]:
+    """全流程编排：分段 → 优化 → 角色分析 → [别名归并] → [speaker 复核]。"""
     chunks = intelligent_segment_text(text, llm_config)
     optimized_chunks = optimize_chunks_for_tts(chunks, llm_config)
-    return analyze_chunks_with_llm(optimized_chunks, llm_config)
+    segments = analyze_chunks_with_llm(optimized_chunks, llm_config)
+
+    # ── 别名归并 ──────────────────────────────────────────────────────────
+    if getattr(llm_config, "enable_character_alias_merge", True):
+        registry = resolve_character_aliases(segments, llm_config)
+        registry.apply_to_segments(segments)
+
+    # ── 二轮 speaker 复核 ─────────────────────────────────────────────────
+    if getattr(llm_config, "enable_speaker_verification", False):
+        segments = verify_speakers_pass(segments, llm_config)
+
+    return segments
