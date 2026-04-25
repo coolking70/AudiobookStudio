@@ -1907,7 +1907,14 @@ def list_llm_models(req: ListLLMModelsRequest):
         timeout = httpx.Timeout(connect=10.0, read=15.0, write=10.0, pool=10.0)
         with httpx.Client(timeout=timeout, trust_env=False) as client:
             resp = client.get(models_url, headers=headers)
-            data = resp.json()
+            raw_text = resp.text
+            try:
+                data = resp.json()
+            except Exception:
+                raise RuntimeError(
+                    f"服务商 /models 接口返回了非 JSON 内容（HTTP {resp.status_code}）："
+                    f"{raw_text[:200]}"
+                )
             if not resp.is_success:
                 raise RuntimeError(data.get("error", {}).get("message", "") or data.get("detail") or str(data))
         raw_models = data.get("data") or data.get("models") or []

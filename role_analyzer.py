@@ -635,11 +635,116 @@ def detect_chapter_structure_with_info(text: str, llm_config: LLMConfig | None =
     info["seed_chunk_count"] = len(chunks)
     info["target_chars"] = target_chars
     info["max_chars"] = resolved_max_chars
+    attach_line_index_to_chunks(chunks)
     return chunks, info
 
 
 def build_seed_chunks(text: str, llm_config: LLMConfig | None = None, max_chars: int = SEED_CHUNK_MAX_CHARS) -> tuple[list[dict[str, str]], dict[str, Any]]:
     return detect_chapter_structure_with_info(text, llm_config=llm_config, max_chars=max_chars)
+
+
+# ── 预处理：行号化 + 软切 ──────────────────────────────────────────────────
+# 把原文按"自然换行 + 句末标点软切"切成行，每行带绝对偏移量。
+# 这是 compact-output 模式的基础：LLM 用 L1/L2 行号 + 引号锚点定位段落，
+# 程序按 lines 索引精确还原原文 span，避免 LLM 数字符出错。
+
+# 句末终结标点（仅在这些位置软切；逗号/分号/引号内绝不切）
+# 句末标点之后允许跟随的"收尾符"：全角/半角引号、圆括号——保证不会把闭合引号孤立到下一行
+_SENTENCE_END_RE = re.compile(r"[。！？!?…]+[”』」'\")）]*")
+
+
+def _soft_split_paragraph(text: str, base_offset: int, max_line_chars: int) -> list[dict[str, Any]]:
+    """把一个长段落按句末标点切成多个"句行"。
+
+    返回每行的 {start, end, text}，偏移量是相对原文的绝对位置。
+    短段落（<= max_line_chars）原样返回单行。
+    """
+    n = len(text)
+    if n <= max_line_chars:
+        return [{"start": base_offset, "end": base_offset + n, "text": text}]
+
+    splits: list[int] = []  # 候选切点（绝对偏移，切点之前是句末）
+    for m in _SENTENCE_END_RE.finditer(text):
+        splits.append(m.end())
+
+    if not splits or splits[-1] != n:
+        splits.append(n)
+
+    lines: list[dict[str, Any]] = []
+    seg_start = 0
+    cur_start = 0
+    for sp in splits:
+        # 当前累积长度超过阈值时切一段
+        if sp - cur_start >= max_line_chars and seg_start < sp:
+            lines.append({
+                "start": base_offset + cur_start,
+                "end": base_offset + sp,
+                "text": text[cur_start:sp],
+            })
+            cur_start = sp
+        seg_start = sp
+
+    # 收尾
+    if cur_start < n:
+        lines.append({
+            "start": base_offset + cur_start,
+            "end": base_offset + n,
+            "text": text[cur_start:n],
+        })
+    return lines or [{"start": base_offset, "end": base_offset + n, "text": text}]
+
+
+def number_lines_with_soft_split(content: str, max_line_chars: int = 160) -> dict[str, Any]:
+    """把一个 chunk 的纯文本预处理成行号化结构。
+
+    返回:
+        {
+            "numbered_text": "L1: ...\\nL2: ...",  # 喂给 LLM 的版本
+            "lines": [{"id": "L1", "start": 0, "end": 23, "text": "..."}],
+        }
+
+    保证：lines 的 text 拼接后等价于剔除空行后的原文（保留语义完整）。
+    """
+    lines: list[dict[str, Any]] = []
+    raw = str(content or "")
+    if not raw.strip():
+        return {"numbered_text": "", "lines": []}
+
+    # 按自然换行切成段（保留每段的绝对起始偏移）
+    cursor = 0
+    for raw_line in raw.split("\n"):
+        line_len = len(raw_line)
+        stripped = raw_line.strip()
+        if stripped:
+            # 计算 stripped 在原文里的绝对起始偏移（去掉左侧空白）
+            left_skip = len(raw_line) - len(raw_line.lstrip())
+            base = cursor + left_skip
+            for piece in _soft_split_paragraph(stripped, base, max_line_chars):
+                lines.append(piece)
+        cursor += line_len + 1  # +1 for \n
+
+    # 编号
+    for idx, line in enumerate(lines, start=1):
+        line["id"] = f"L{idx}"
+
+    numbered_text = "\n".join(f"{ln['id']}: {ln['text']}" for ln in lines)
+    return {"numbered_text": numbered_text, "lines": lines}
+
+
+def attach_line_index_to_chunks(
+    chunks: list[dict[str, Any]], max_line_chars: int = 160
+) -> list[dict[str, Any]]:
+    """给已切分好的 chunks 列表附加 numbered_text 和 lines 索引。
+
+    不修改原 content，只新增字段。下游若不需要可忽略，向后兼容。
+    """
+    for chunk in chunks:
+        if "lines" in chunk and "numbered_text" in chunk:
+            continue  # 已处理过，跳过
+        result = number_lines_with_soft_split(chunk.get("content", ""), max_line_chars)
+        chunk["numbered_text"] = result["numbered_text"]
+        chunk["lines"] = result["lines"]
+    return chunks
 
 
 def basic_tts_text_cleanup(text: str) -> str:
@@ -890,8 +995,199 @@ def _chapter_key(title: str) -> str:
     return (title or "").split(" - ")[0].strip()
 
 
+# ── Compact 输出模式 ──────────────────────────────────────────────────────────
+# 角色分析的紧凑输出格式，LLM 只输出行号表而非重复原文，节省 ~80% 输出 token。
+
+COMPACT_ANALYSIS_PROMPT = """
+你是小说文本角色分析器。输入是带行号的文本（L1: ... L2: ...）。
+
+严格按以下格式输出，不输出任何 JSON、markdown 或解释文字：
+
+ROLES: <编号>=<角色名>|<style标签>, ...
+SEGS:
+<行号> <编号> <情绪> [<锚点>]
+...
+
+---格式说明---
+
+ROLES 行：列出本章节出现的非旁白角色，style 用空格分隔英文标签。
+  示例：ROLES: 1=林烬|male young adult moderate pitch, 2=苏明|male low pitch
+  0 固定代表"旁白"，无需声明。
+
+SEGS 行：每行描述一个片段，顺序必须与原文一致。
+  整行：  L3 1 cu         （L3 整行，角色=编号1，情绪=cu）
+  前段：  L5 0 ne "他说。" （L5 从行首到"他说。"末尾，旁白）
+  后段：  L5 1 se rest    （L5 接上一锚点之后到行末，角色=编号1）
+  一行最多拆成两段（前段+rest）。
+
+情绪代码：ne=neutral so=soft co=cold se=serious cu=curious an=angry
+说话人：0=旁白，正整数=ROLES 中的角色编号，?=UNKNOWN
+
+---要求---
+- 所有行（L1, L2...）必须覆盖，不得遗漏
+- 相邻旁白行可合并，如：L1-L3 0 ne
+- 锚点文本必须与原文完全一致（用于程序精确定位）
+- 仅当确有两个说话人在同一行时才使用锚点；不确定时整行归旁白
+""".strip()
+
+# 情绪代码 → 全称映射
+_EMOTION_CODES: dict[str, str] = {
+    "ne": "neutral", "so": "soft", "co": "cold",
+    "se": "serious", "cu": "curious", "an": "angry",
+    # 容错：允许全称
+    "neutral": "neutral", "soft": "soft", "cold": "cold",
+    "serious": "serious", "curious": "curious", "angry": "angry",
+}
+
+# 样式标签规范化：下划线 → 空格
+def _norm_style(raw: str) -> str:
+    return raw.replace("_", " ").strip()
+
+
+def _decode_compact_output(
+    text: str, chunk: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """将 compact 格式的 LLM 输出解码为标准 segments 列表。
+
+    chunk 必须已经过 attach_line_index_to_chunks（含 lines 字段）。
+    遇到无法解析的行时，整行降级为旁白，不中断。
+    """
+    lines_index: list[dict[str, Any]] = chunk.get("lines", [])
+    if not lines_index:
+        raise ValueError("chunk 缺少 lines 索引，无法解码 compact 输出")
+
+    line_by_id: dict[str, dict[str, Any]] = {ln["id"]: ln for ln in lines_index}
+    content = chunk["content"]
+
+    # ── 解析 ROLES ────────────────────────────────────────────────────────
+    roles: dict[str, tuple[str, str]] = {"0": ("旁白", "female moderate pitch")}
+    segs_text = text
+    for block in text.split("\n"):
+        block = block.strip()
+        if block.startswith("ROLES:"):
+            roles_raw = block[6:].strip()
+            for entry in roles_raw.split(","):
+                entry = entry.strip()
+                if "=" not in entry:
+                    continue
+                rid, rest_r = entry.split("=", 1)
+                rid = rid.strip()
+                parts_r = rest_r.strip().split("|", 1)
+                rname = parts_r[0].strip()
+                rstyle = _norm_style(parts_r[1]) if len(parts_r) > 1 else ""
+                if rid:
+                    roles[rid] = (rname or "UNKNOWN", rstyle)
+        if block.startswith("SEGS:"):
+            segs_text = text[text.index("SEGS:") + 5:]
+            break
+
+    # ── 解析 SEGS ─────────────────────────────────────────────────────────
+    segments: list[dict[str, Any]] = []
+    # 记录每个 line_id 当前用完的字符偏移（相对 line.text）
+    line_cursors: dict[str, int] = {}
+    # 行号范围正则，如 L1-L3 或 L5
+    _line_ref_re = re.compile(r"^(L\d+)(?:-(L\d+))?$")
+
+    for raw_line in segs_text.splitlines():
+        raw_line = raw_line.strip()
+        if not raw_line or raw_line.startswith("SEGS:") or raw_line.startswith("ROLES:"):
+            continue
+
+        # 拆分为 token，保留引号内的锚点文本作为一个整体
+        # 格式：line_ref  speaker  emotion  [anchor_or_rest]
+        tokens = raw_line.split(None, 3)  # 最多 4 个 token
+        if len(tokens) < 3:
+            continue
+
+        line_ref_token, speaker_token, emotion_token = tokens[0], tokens[1], tokens[2]
+        anchor_token = tokens[3].strip() if len(tokens) > 3 else ""
+
+        # 情绪
+        emotion = _EMOTION_CODES.get(emotion_token.lower(), "neutral")
+
+        # speaker
+        speaker_token = speaker_token.strip()
+        if speaker_token == "?":
+            speaker = "UNKNOWN"
+            style = ""
+        elif speaker_token == "0":
+            speaker = "旁白"
+            style = roles.get("0", ("旁白", "female moderate pitch"))[1]
+        else:
+            role_info = roles.get(speaker_token)
+            if role_info:
+                speaker, style = role_info
+            else:
+                speaker, style = "UNKNOWN", ""
+
+        # 展开行号范围（L1-L3 → [L1, L2, L3]）
+        m = _line_ref_re.match(line_ref_token)
+        if not m:
+            continue
+        start_id = m.group(1)
+        end_id = m.group(2) or start_id
+        # 找到范围内所有行
+        ids_in_range: list[str] = []
+        in_range = False
+        for ln in lines_index:
+            if ln["id"] == start_id:
+                in_range = True
+            if in_range:
+                ids_in_range.append(ln["id"])
+            if ln["id"] == end_id and in_range:
+                break
+
+        if not ids_in_range:
+            continue
+
+        for lid in ids_in_range:
+            ln = line_by_id.get(lid)
+            if not ln:
+                continue
+            line_text = ln["text"]
+            cursor = line_cursors.get(lid, 0)
+
+            is_last_lid = lid == ids_in_range[-1]
+
+            if anchor_token == "rest" or anchor_token == "":
+                # 整行（或从 cursor 到末尾）
+                seg_text = line_text[cursor:]
+                line_cursors[lid] = len(line_text)
+            elif anchor_token.startswith('"') and anchor_token.endswith('"') and len(anchor_token) > 2:
+                # 前段：从 cursor 到锚点末尾
+                anchor = anchor_token[1:-1]
+                idx = line_text.find(anchor, cursor)
+                if idx == -1:
+                    # 锚点找不到，降级整行
+                    seg_text = line_text[cursor:]
+                    line_cursors[lid] = len(line_text)
+                else:
+                    end_pos = idx + len(anchor)
+                    seg_text = line_text[cursor:end_pos]
+                    line_cursors[lid] = end_pos
+            else:
+                seg_text = line_text[cursor:]
+                line_cursors[lid] = len(line_text)
+
+            seg_text = seg_text.strip()
+            if not seg_text:
+                continue
+
+            segments.append({
+                "speaker": speaker,
+                "text": seg_text,
+                "emotion": emotion,
+                "style": style,
+            })
+
+    if not segments:
+        raise ValueError("compact 解码结果为空，可能格式有误")
+
+    return segments
+
+
 def _build_context_user_content(chunk: dict[str, str], context: AnalysisContext | None) -> str:
-    """构建带上下文的 user 消息内容。"""
+    """构建带上下文的 user 消息内容（verbose 模式）。"""
     parts: list[str] = []
     if context is not None and (
         context.known_characters or context.last_context_summary or context.last_active_speakers
@@ -908,6 +1204,28 @@ def _build_context_user_content(chunk: dict[str, str], context: AnalysisContext 
     parts.append(
         f"请分析下面这段文本，并输出 JSON。\n\n标题：{chunk['title']}\n\n正文：\n{chunk['content']}"
     )
+    return "\n\n".join(parts)
+
+
+def _build_compact_user_content(chunk: dict[str, Any], context: AnalysisContext | None) -> str:
+    """构建带上下文的 user 消息内容（compact 模式）。
+    发送的是 numbered_text（行号化文本），而非原始 content。
+    """
+    parts: list[str] = []
+    if context is not None and (
+        context.known_characters or context.last_context_summary or context.last_active_speakers
+    ):
+        ctx_lines = ["【跨块分析上下文】"]
+        if context.known_characters:
+            ctx_lines.append(f"已知角色：{', '.join(context.known_characters)}")
+        if context.last_context_summary:
+            ctx_lines.append(f"上一块剧情摘要：{context.last_context_summary}")
+        if context.last_active_speakers:
+            ctx_lines.append(f"上一块仍在对话的角色：{', '.join(context.last_active_speakers)}")
+        parts.append("\n".join(ctx_lines))
+
+    numbered = chunk.get("numbered_text") or chunk.get("content", "")
+    parts.append(f"标题：{chunk['title']}\n\n{numbered}")
     return "\n\n".join(parts)
 
 
@@ -934,9 +1252,72 @@ def _analyze_chunk_with_context(
 
     返回 (segments, updated_context)。
     当 context=None 时行为与旧版 analyze_chunk_with_retry 完全一致。
+    当 llm_config.output_mode == "compact" 时使用紧凑输出格式。
     """
     use_context = context is not None
+    use_compact = str(getattr(llm_config, "output_mode", "verbose") or "verbose").lower() == "compact"
 
+    # ── compact 模式 ──────────────────────────────────────────────────────
+    if use_compact:
+        if not chunk.get("lines"):
+            # chunk 尚未行号化（如从旧快照恢复），先补充
+            result = number_lines_with_soft_split(chunk.get("content", ""))
+            chunk = {**chunk, "numbered_text": result["numbered_text"], "lines": result["lines"]}
+
+        system_prompt = COMPACT_ANALYSIS_PROMPT
+        if use_context and (context.known_characters or context.last_context_summary):
+            ctx_addon = "\n\n【上下文】"
+            if context.known_characters:
+                ctx_addon += f"\n已知角色：{', '.join(context.known_characters)}"
+            if context.last_context_summary:
+                ctx_addon += f"\n上一块摘要：{context.last_context_summary}"
+            if context.last_active_speakers:
+                ctx_addon += f"\n上一块活跃角色：{', '.join(context.last_active_speakers)}"
+            system_prompt = system_prompt + ctx_addon
+
+        user_content = _build_compact_user_content(chunk, context if use_context else None)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ]
+
+        compact_text = ""
+        try:
+            client = OpenAICompatibleClient(llm_config)
+            compact_text = client.chat_text(messages)
+            segments = _decode_compact_output(compact_text, chunk)
+        except Exception as exc:
+            # compact 解码失败 → 回退到 verbose 模式
+            import logging
+            logging.warning(
+                f"[compact] {chunk['title']} 解码失败（{exc}），回退 verbose 模式"
+            )
+            fallback_cfg = llm_config.model_copy(update={"output_mode": "verbose"})
+            return _analyze_chunk_with_context(chunk, fallback_cfg, context)
+
+        known_chars = context.known_characters if context else []
+        segments = sanitize_segments(segments, known_characters=known_chars)
+
+        # compact 模式：从解码结果推导 context，无需 LLM 额外输出
+        new_speakers = [s["speaker"] for s in segments if s["speaker"] not in ("旁白", "UNKNOWN")]
+        updated_known = _merge_known_characters(
+            context.known_characters if context else [], new_speakers, None
+        )
+        # 取最后出现的活跃非旁白 speaker 作为 active_speakers
+        active = list(dict.fromkeys(
+            s["speaker"] for s in reversed(segments[-10:])
+            if s["speaker"] not in ("旁白", "UNKNOWN")
+        ))
+        updated_context = AnalysisContext(
+            known_characters=updated_known,
+            character_aliases=context.character_aliases if context else {},
+            last_context_summary="",  # compact 模式不输出摘要
+            last_active_speakers=active[:3],
+            chunk_index=(context.chunk_index + 1) if context else 1,
+        )
+        return segments, updated_context
+
+    # ── verbose 模式（原有逻辑）──────────────────────────────────────────
     # ── 构建 system prompt ────────────────────────────────────────────────
     base_system = llm_config.system_prompt.strip() if llm_config.system_prompt else DEFAULT_SYSTEM_PROMPT
     system_prompt = (base_system + "\n\n" + _CONTEXT_RULES_ADDON) if use_context else base_system

@@ -1412,6 +1412,7 @@
                       <option value="segment_then_optimize_analyze">1+2：智能分段 -> 语音适配优化+角色分析</option>
                       <option value="segment_optimize_then_analyze">2+1：智能分段+语音适配优化 -> 角色分析</option>
                       <option value="segment_then_analyze">1+3：智能分段 -> 角色分析（跳过语音适配优化）</option>
+                      <option value="chapter_then_analyze">章节直析：章节识别 -> 角色分析（跳过智能分段和语音适配优化）</option>
                     </select>
                     <div class="mini-note">组合模式在模型配置阶段统一设定。文本分析页会直接按这里的配置执行，不再单独勾选流程。</div>
 
@@ -1426,7 +1427,7 @@
                       "全文串行"质量最高但最慢；"关闭"恢复原始并发逻辑。
                     </div>
 
-                    <div style="display:flex; gap:16px; align-items:center; margin-top:6px;">
+                    <div style="display:flex; gap:16px; align-items:center; margin-top:6px; flex-wrap:wrap;">
                       <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px;">
                         <input type="checkbox" id="enableCharacterAliasMerge" checked />
                         角色别名自动归并
@@ -1434,6 +1435,10 @@
                       <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px;">
                         <input type="checkbox" id="enableSpeakerVerification" />
                         二轮 speaker 复核（较慢）
+                      </label>
+                      <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px;">
+                        <input type="checkbox" id="enableCompactOutput" />
+                        紧凑输出模式（节省 token）
                       </label>
                     </div>
                     <div class="mini-note">别名归并：自动检测"米拉"和"琉德米拉"等同一角色的多种叫法并统一。二轮复核：额外一次 LLM 遍历，专门核查 speaker 归属，会显著增加时间和 token 消耗。</div>
@@ -1480,26 +1485,26 @@
                         <textarea id="systemPrompt" rows="6" placeholder="留空则使用后端默认角色分析提示词"></textarea>
                       </details>
 
-                      <details class=”prompt-stage-toggle”>
+                      <details class="prompt-stage-toggle">
                         <summary>Speaker 复核提示词</summary>
-                        <textarea id=”speakerVerificationPrompt” rows=”6” placeholder=”留空则使用后端默认 speaker 复核提示词（仅二轮复核开启时生效）”></textarea>
+                        <textarea id="speakerVerificationPrompt" rows="6" placeholder="留空则使用后端默认 speaker 复核提示词（仅二轮复核开启时生效）"></textarea>
                       </details>
 
-                      <details class=”prompt-stage-toggle”>
+                      <details class="prompt-stage-toggle">
                         <summary>角色别名归并提示词</summary>
-                        <textarea id=”aliasResolutionPrompt” rows=”6” placeholder=”留空则使用后端默认别名归并提示词（仅别名归并开启时生效）”></textarea>
+                        <textarea id="aliasResolutionPrompt" rows="6" placeholder="留空则使用后端默认别名归并提示词（仅别名归并开启时生效）"></textarea>
                       </details>
 
-                      <details class=”prompt-stage-toggle”>
+                      <details class="prompt-stage-toggle">
                         <summary>当前整合提示词预览</summary>
-                        <textarea id=”combinedPromptPreview” rows=”12” readonly placeholder=”根据当前在模型配置里选择的组合模式，点击”显示整合提示词”后会在这里展示对应的整合提示词。”></textarea>
+                        <textarea id="combinedPromptPreview" rows="12" readonly placeholder="根据当前在模型配置里选择的组合模式，点击“显示整合提示词”后会在这里展示对应的整合提示词。"></textarea>
                       </details>
                     </div>
                   </div>
                 </details>
               </div>
 
-              <div id=”localLlmPanel” class="model-field-group" style="margin-top:14px;" hidden>
+              <div id="localLlmPanel" class="model-field-group" style="margin-top:14px;" hidden>
                 <h3>必要配置</h3>
                 <div class="mini-note">手动填写模型根目录，扫描后从识别结果里选择一个本地可直载模型。</div>
 
@@ -1629,6 +1634,7 @@
                       <option value="segment_then_optimize_analyze">1+2：智能分段 -> 语音适配优化+角色分析</option>
                       <option value="segment_optimize_then_analyze">2+1：智能分段+语音适配优化 -> 角色分析</option>
                       <option value="segment_then_analyze">1+3：智能分段 -> 角色分析（跳过语音适配优化）</option>
+                      <option value="chapter_then_analyze">章节直析：章节识别 -> 角色分析（跳过智能分段和语音适配优化）</option>
                     </select>
                     <div class="mini-note">组合模式在模型配置阶段统一设定。文本分析页会直接按这里的配置执行，不再单独勾选流程。</div>
 
@@ -1874,12 +1880,14 @@
             <input id="sourceFileInput" type="file" accept=".txt,.md,text/plain,text/markdown" style="display:none;" onchange="handleSourceFileChange(event)" />
             <textarea id="sourceText" style="min-height: 300px;" placeholder="在这里粘贴原文"></textarea>
 
+            <input id="taskSnapshotFileInput" type="file" accept=".json,application/json" style="display:none;" onchange="handleTaskSnapshotImport(event)" />
             <div class="actions">
               <button type="button" data-busy-lock class="secondary" onclick="triggerSourceFileImport()">导入 txt/md</button>
               <button type="button" data-busy-lock onclick="runChapterDetectionAction()">章节识别</button>
               <button type="button" id="runSelectedAnalysisButton" data-busy-lock onclick="runSelectedAnalysisFlow()">执行所选流程</button>
               <button type="button" class="secondary" onclick="continueAnalysis()">继续上次分析</button>
-              <button type="button" class="secondary" onclick="exportAnalyzedJson()">导出已分析 JSON</button>
+              <button type="button" class="secondary" onclick="triggerTaskSnapshotImport()">导入任务快照</button>
+              <button type="button" id="exportProgressBtn" class="secondary" onclick="exportTaskSnapshot()">导出当前进度</button>
             </div>
             <div id="sourceImportHint" class="import-hint">支持 .txt / .md 文件导入。请先在“模型配置 -> 文本模型 -> 高级配置”里设定后续分析组合，再回到这里执行。</div>
             <div id="analysisPipelineMeta" class="import-hint" style="margin-top:10px;">当前尚未执行章节识别。</div>
@@ -2699,6 +2707,7 @@ very high pitch, very low pitch, whisper, young adult
     const segmentCount = segmentsState.length;
     if (!chapterCount) {
       el.textContent = "当前尚未执行章节识别。建议先识别章节依据，再按顺序选择智能分段、语音适配优化和分析角色。";
+      updateExportProgressButton();
       return;
     }
     const info = segmentationInfoState || {};
@@ -2735,6 +2744,7 @@ very high pitch, very low pitch, whisper, young adult
       detailParts.push(`抽样辅助判断：${info.llm_pattern}`);
     }
     el.textContent = detailParts.join("；");
+    updateExportProgressButton();
   }
 
   function setWorkspaceTab(tab) {
@@ -2763,10 +2773,22 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function saveParseSnapshot(snapshot) {
-    localStorage.setItem(PARSE_SNAPSHOT_STORAGE_KEY, JSON.stringify({
+    const payload = JSON.stringify({
       ...snapshot,
       updatedAt: new Date().toISOString(),
-    }));
+    });
+    try {
+      localStorage.setItem(PARSE_SNAPSHOT_STORAGE_KEY, payload);
+    } catch (err) {
+      if (!isQuotaExceededError(err)) throw err;
+      try {
+        localStorage.removeItem(LAST_SEGMENTS_STORAGE_KEY);
+        localStorage.setItem(PARSE_SNAPSHOT_STORAGE_KEY, payload);
+      } catch (retryErr) {
+        console.warn("保存分析断点失败:", retryErr);
+        showToast("浏览器本地存储空间不足，本次可能无法恢复断点。", "info", 2600);
+      }
+    }
   }
 
   function getParseSnapshot() {
@@ -2781,6 +2803,78 @@ very high pitch, very low pitch, whisper, young adult
 
   function clearParseSnapshot() {
     localStorage.removeItem(PARSE_SNAPSHOT_STORAGE_KEY);
+  }
+
+  function getChunkChapterKey(chunk) {
+    return String(chunk?.title || "全文").split(" - ")[0].trim() || "全文";
+  }
+
+  function buildResumableChunkUnits(chunks, llm) {
+    const source = Array.isArray(chunks) ? chunks : [];
+    const mode = String(llm?.context_mode || "chapter").trim().toLowerCase();
+    if (mode !== "chapter") {
+      return source.map((chunk, index) => ({
+        label: chunk.title || `工作块 ${index + 1}`,
+        chunks: [chunk],
+      }));
+    }
+
+    const units = [];
+    source.forEach((chunk, index) => {
+      const key = getChunkChapterKey(chunk);
+      const last = units[units.length - 1];
+      if (last && last.key === key) {
+        last.chunks.push(chunk);
+      } else {
+        units.push({
+          key,
+          label: key || `章节 ${index + 1}`,
+          chunks: [chunk],
+        });
+      }
+    });
+    return units;
+  }
+
+  function buildAnalysisFlowSnapshot(text, llm, combo, stage, currentIndex = 0, extra = {}) {
+    return {
+      version: 2,
+      type: "analysis_flow",
+      text,
+      llm,
+      combo,
+      stage,
+      currentIndex,
+      chapterChunks: chapterChunksState,
+      plannedChunks: plannedChunksState,
+      optimizedChunks: optimizedChunksState,
+      segments: segmentsState,
+      segmentationInfo: segmentationInfoState,
+      directAnalysisChunks: extra.directAnalysisChunks,
+      ...extra,
+    };
+  }
+
+  function saveAnalysisFlowSnapshot(text, llm, combo, stage, currentIndex = 0, extra = {}) {
+    saveParseSnapshot(buildAnalysisFlowSnapshot(text, llm, combo, stage, currentIndex, extra));
+  }
+
+  function restoreAnalysisFlowSnapshotState(snapshot) {
+    if (!snapshot) return;
+    chapterChunksState = Array.isArray(snapshot.chapterChunks) ? snapshot.chapterChunks.slice() : [];
+    plannedChunksState = Array.isArray(snapshot.plannedChunks) ? snapshot.plannedChunks.slice() : [];
+    optimizedChunksState = Array.isArray(snapshot.optimizedChunks) ? snapshot.optimizedChunks.slice() : [];
+    segmentationInfoState = snapshot.segmentationInfo || null;
+    if (Array.isArray(snapshot.segments) && snapshot.segments.length) {
+      applySegmentsState(snapshot.segments, { persist: false });
+    } else {
+      segmentsState = [];
+      renderSpeakerMergeList();
+      renderRoleAssignments();
+      renderSegments(segmentsPanelExpanded);
+      updateAnalysisResultActions();
+    }
+    renderAnalysisPipelineMeta();
   }
 
   function isQuotaExceededError(err) {
@@ -3589,6 +3683,7 @@ very high pitch, very low pitch, whisper, young adult
       context_mode: document.getElementById("contextMode").value || "chapter",
       enable_character_alias_merge: document.getElementById("enableCharacterAliasMerge").checked,
       enable_speaker_verification: document.getElementById("enableSpeakerVerification").checked,
+      output_mode: document.getElementById("enableCompactOutput").checked ? "compact" : "verbose",
     };
   }
 
@@ -3948,12 +4043,18 @@ very high pitch, very low pitch, whisper, young adult
       description: "智能分段 -> 角色分析",
       stages: ["segment", "analyze"],
     },
+    chapter_then_analyze: {
+      label: "章节直析",
+      description: "章节识别 -> 角色分析",
+      stages: ["chapter_analyze"],
+    },
   };
 
   const ANALYSIS_STAGE_LABELS = {
     segment: "智能分段",
     optimize: "语音适配优化",
     analyze: "分析角色",
+    chapter_analyze: "按章节分析角色",
     segment_optimize: "智能分段+语音适配优化",
     optimize_analyze: "语音适配优化+角色分析",
   };
@@ -4009,6 +4110,7 @@ very high pitch, very low pitch, whisper, young adult
       segment_then_optimize_analyze: "当前组合采用“先智能分段，再对每个工作块一次性完成语音适配优化与角色分析”的策略。第二阶段必须在一次输出里同时兼顾可合成性与角色拆分正确性，不允许先优化后漏掉角色信息。",
       segment_optimize_then_analyze: "当前组合采用“先智能分段并同步完成语音适配优化，再单独分析角色”的策略。第一阶段重点是得到可直接用于角色分析的优质工作块；第二阶段禁止再大改文本，只围绕角色、情绪和 style 做结构化输出。",
       segment_then_analyze: "当前组合跳过独立语音适配优化阶段。请优先保证分段质量和角色分析结果完整，除非是明显影响结构化分析的噪声，否则不要为了 TTS 润色而改写文本。",
+      chapter_then_analyze: "当前组合跳过智能分段和语音适配优化，只按章节识别结果逐章做角色分析。请直接覆盖章节正文中的全部句子，不要额外拆成工作块；如果章节过长导致上下文超限，应明确返回失败信息，便于用户调整章节规则或切换组合。",
     };
     const def = getAnalysisComboDef(combo);
     const blocks = [
@@ -4026,6 +4128,13 @@ very high pitch, very low pitch, whisper, young adult
       if (stageKey === "segment") body = promptValues.segment;
       if (stageKey === "optimize") body = promptValues.optimize;
       if (stageKey === "analyze") body = promptValues.analyze;
+      if (stageKey === "chapter_analyze") {
+        body = [
+          "本阶段直接按章节正文做角色分析，不执行智能分段和语音适配优化。",
+          "输出必须是 segments；保持原文顺序和完整覆盖，不得丢句。",
+          promptValues.analyze,
+        ].filter(Boolean).join("\n\n");
+      }
       if (stageKey === "segment_optimize") {
         body = [
           "本阶段要在一次调用中同时完成“智能分段 + 语音适配优化”。输出仍是 chunks，而不是 segments。",
@@ -4251,6 +4360,7 @@ very high pitch, very low pitch, whisper, young adult
       if (cfg.context_mode) document.getElementById("contextMode").value = cfg.context_mode;
       document.getElementById("enableCharacterAliasMerge").checked = cfg.enable_character_alias_merge !== false;
       document.getElementById("enableSpeakerVerification").checked = !!cfg.enable_speaker_verification;
+      document.getElementById("enableCompactOutput").checked = cfg.output_mode === "compact";
     } else {
       try {
         const resp = await fetch("/api/llm-defaults");
@@ -4325,6 +4435,9 @@ very high pitch, very low pitch, whisper, young adult
     const snapshot = getParseSnapshot();
     if (snapshot?.text) {
       setSourceText(snapshot.text);
+      if (snapshot.type === "analysis_flow") {
+        restoreAnalysisFlowSnapshotState(snapshot);
+      }
     }
 
     const defaultLoaded = !llmRaw && localStorage.getItem(LLM_DEFAULTS_STORAGE_KEY) === "1";
@@ -4637,12 +4750,16 @@ very high pitch, very low pitch, whisper, young adult
     renderSegments(segmentsPanelExpanded);
     renderAnalysisPipelineMeta();
     updateAnalysisResultActions();
+    updateExportProgressButton();
     return persistResult;
   }
 
   function getExportableSegments() {
     if (segmentsState.length) return segmentsState;
     const snapshot = getParseSnapshot();
+    if (snapshot && Array.isArray(snapshot.segments) && snapshot.segments.length) {
+      return snapshot.segments;
+    }
     if (snapshot && Array.isArray(snapshot.combinedSegments) && snapshot.combinedSegments.length) {
       return snapshot.combinedSegments;
     }
@@ -4671,8 +4788,112 @@ very high pitch, very low pitch, whisper, young adult
     setStatus(`已导出 ${segments.length} 段分析结果。`);
   }
 
+  // ── 任务快照导出/导入 ────────────────────────────────────────────────────
+
+  function _getProgressStageLabel() {
+    if (segmentsState.length) return `已分析 ${segmentsState.length} 段`;
+    if (optimizedChunksState.length) return `已优化 ${optimizedChunksState.length} 块`;
+    if (plannedChunksState.length) return `已分段 ${plannedChunksState.length} 块`;
+    if (chapterChunksState.length) return `章节识别 ${chapterChunksState.length} 块`;
+    return null;
+  }
+
+  function updateExportProgressButton() {
+    const btn = document.getElementById("exportProgressBtn");
+    if (!btn) return;
+    const label = _getProgressStageLabel();
+    btn.textContent = label ? `导出当前进度（${label}）` : "导出当前进度";
+    btn.disabled = !label;
+  }
+
+  function exportTaskSnapshot() {
+    const label = _getProgressStageLabel();
+    if (!label) {
+      setStatus("当前没有可导出的进度，请先执行章节识别或分析流程。");
+      return;
+    }
+
+    // 确定当前最远阶段
+    let stage = "chapter";
+    if (segmentsState.length) stage = "segments";
+    else if (optimizedChunksState.length) stage = "optimized_chunks";
+    else if (plannedChunksState.length) stage = "planned_chunks";
+
+    const snapshot = {
+      type: "task_snapshot",
+      version: 2,
+      stage,
+      exportedAt: new Date().toISOString(),
+      sourceText: document.getElementById("sourceText")?.value || "",
+      segmentationInfo: segmentationInfoState || null,
+      chapterChunks: chapterChunksState,
+      plannedChunks: plannedChunksState,
+      optimizedChunks: optimizedChunksState,
+      segments: segmentsState,
+    };
+
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const ts = new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "");
+    link.download = `task_snapshot_${stage}_${ts}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setStatus(`已导出任务快照（${label}），可在代码调整后重新导入继续。`);
+  }
+
+  function triggerTaskSnapshotImport() {
+    document.getElementById("taskSnapshotFileInput").click();
+  }
+
+  async function handleTaskSnapshotImport(event) {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    if (!file) return;
+    try {
+      const decoded = await readTextFileWithEncoding(file);
+      const data = JSON.parse(decoded.text);
+
+      // 兼容旧格式：纯 {segments:[...]} 或 {type:"analysis_flow",...}
+      if (data.type === "task_snapshot" || data.type === "analysis_flow") {
+        // 还原所有中间状态
+        restoreAnalysisFlowSnapshotState(data);
+        // 把原文填回输入框
+        if (data.sourceText || data.text) {
+          setSourceText(data.sourceText || data.text);
+        }
+        // 也存入 localStorage，方便"继续上次分析"能读取到
+        saveParseSnapshot({
+          ...data,
+          // 保证 continueAnalysis 能判断并选择正确的续跑路径
+          combo: data.combo || getAnalysisComboValue(),
+          llm: data.llm || null,
+        });
+        renderAnalysisPipelineMeta();
+        updateExportProgressButton();
+        const label = _getProgressStageLabel();
+        setStatus(`已导入任务快照（${label}）。可点击"继续上次分析"或手动推进剩余阶段。`);
+        showToast(`任务快照已恢复：${label}`);
+      } else if (Array.isArray(data.segments) || (data.segments && Array.isArray(data.segments))) {
+        // 旧版纯分析结果
+        await importSegmentsContent(decoded.text, `任务快照文件 ${file.name}`);
+      } else {
+        setStatus("无法识别该文件格式，请确认是否为有效的任务快照 JSON。");
+      }
+    } catch (err) {
+      setStatus(`导入任务快照失败：${err.message}`);
+      failTask("导入任务快照失败", err.message || String(err));
+    } finally {
+      input.value = "";
+    }
+  }
+
   function buildParseSnapshotPayload(text, llm, workChunks, index, completedChunks, combinedSegments) {
     return {
+      type: "parse_only",
       text,
       llm,
       workChunks,
@@ -6934,13 +7155,17 @@ very high pitch, very low pitch, whisper, young adult
       signal: activeAbortController.signal,
     });
     try {
-      const data = await resp.json();
+      const text = await resp.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        throw new Error(`服务器返回了非 JSON 响应（HTTP ${resp.status}）：${text.slice(0, 120)}`);
+      }
       if (!resp.ok) {
         throw new Error(data.detail || JSON.stringify(data));
       }
       return data;
-    } catch (err) {
-      throw err;
     } finally {
       activeAbortController = null;
     }
@@ -7086,6 +7311,10 @@ very high pitch, very low pitch, whisper, young adult
       "输出被截断",
       "finish_reason=length",
       "被截断",
+      "无法给到相关内容",
+      "无法提供相关内容",
+      "无法提供该内容",
+      "不能提供相关内容",
       "timeout",
       "timed out",
       "502",
@@ -7118,6 +7347,25 @@ very high pitch, very low pitch, whisper, young adult
 
     const middle = Math.floor(chunk.length / 2);
     return [chunk.slice(0, middle).trim(), chunk.slice(middle).trim()].filter(Boolean);
+  }
+
+  function buildLocalFallbackChunksFromChapter(chapter, llm) {
+    const preset = getAnalysisPreset(llm.analysis_mode);
+    const maxTokens = Math.max(400, Number(llm.max_tokens || 2000));
+    const target = Math.max(
+      800,
+      Math.min(
+        Number(llm.segment_target_chars || 0) || preset.chunkTarget || 2200,
+        Math.floor(maxTokens * 0.9),
+        2600,
+      ),
+    );
+    const hardLimit = Math.max(target + 500, Math.min(3600, Math.floor(maxTokens * 1.2)));
+    const contentChunks = splitTextForLLM(String(chapter.content || ""), target, hardLimit).filter(Boolean);
+    return contentChunks.map((content, index) => ({
+      title: `${chapter.title || "章节"} - 本地切块 ${index + 1}`,
+      content,
+    }));
   }
 
   function sleep(ms) {
@@ -7450,8 +7698,16 @@ very high pitch, very low pitch, whisper, young adult
     return segmentsState;
   }
 
-  async function runChapterDetection(text, llm) {
+  async function runChapterDetection(text, llm, options = {}) {
+    const combo = options.combo || llm.analysis_combo || getAnalysisComboValue();
+    if (Array.isArray(options.resumeSnapshot?.chapterChunks) && options.resumeSnapshot.chapterChunks.length) {
+      restoreAnalysisFlowSnapshotState(options.resumeSnapshot);
+      setStatus(`已恢复章节识别结果，共 ${chapterChunksState.length} 个初始章节块。`);
+      return chapterChunksState;
+    }
+
     const chapterLlm = { ...llm, workers: 1 };
+    saveAnalysisFlowSnapshot(text, llm, combo, "chapter", 0);
     setProgress({
       stage: "segment",
       summary: "正在识别章节依据",
@@ -7468,6 +7724,7 @@ very high pitch, very low pitch, whisper, young adult
     segmentationInfoState = data.info || null;
     applyChapterDetectionFeedback(segmentationInfoState || {});
     renderAnalysisPipelineMeta();
+    saveAnalysisFlowSnapshot(text, llm, combo, "segment", 0);
     setStatus(`章节识别完成，共 ${chapterChunksState.length} 个初始章节块。`);
     return chapterChunksState;
   }
@@ -7506,48 +7763,9 @@ very high pitch, very low pitch, whisper, young adult
 
     const combo = llm.analysis_combo || getAnalysisComboValue();
     const comboDef = getAnalysisComboDef(combo);
-    const stages = getSelectedAnalysisStageDefs(combo);
     beginTask("parse", "准备执行当前配置的文本分析流程", `系统会先完成章节识别，再按模型配置里设定的组合执行：${comboDef.label} ${comboDef.description}。`);
     try {
-      await runChapterDetection(text, llm);
-
-      if (combo === "segment_then_optimize_analyze") {
-        const planned = await runSmartSegmentation(text, llm);
-        const segments = await runOptimizeAnalyze(planned, llm);
-        updateAnalysisFlowUI();
-        finishTask(`组合流程执行完成，共得到 ${segments.length} 条分析结果`, `已按 ${comboDef.label} 组合完成：${comboDef.description}。现在可以检查分析结果并前往音频生成。`, {
-          total: segments.length,
-          done: segments.length,
-        });
-        return;
-      }
-
-      if (combo === "segment_optimize_then_analyze") {
-        const optimizedChunks = await runSegmentOptimize(text, llm);
-        const segments = await runRoleAnalysis(optimizedChunks, llm);
-        updateAnalysisFlowUI();
-        finishTask(`组合流程执行完成，共得到 ${segments.length} 条分析结果`, `已按 ${comboDef.label} 组合完成：${comboDef.description}。现在可以检查分析结果并前往音频生成。`, {
-          total: segments.length,
-          done: segments.length,
-        });
-        return;
-      }
-
-      if (combo === "segment_then_analyze") {
-        const planned = await runSmartSegmentation(text, llm);
-        optimizedChunksState = [];
-        const segments = await runRoleAnalysis(planned, llm);
-        updateAnalysisFlowUI();
-        finishTask(`组合流程执行完成，共得到 ${segments.length} 条分析结果`, `已按 ${comboDef.label} 组合完成：${comboDef.description}。当前跳过了独立语音适配优化阶段。`, {
-          total: segments.length,
-          done: segments.length,
-        });
-        return;
-      }
-
-      const planned = await runSmartSegmentation(text, llm);
-      const optimized = await runTextOptimization(planned, llm);
-      const segments = await runRoleAnalysis(optimized, llm);
+      const segments = await runAnalysisFlow(text, llm, null, combo);
       updateAnalysisFlowUI();
       finishTask(`组合流程执行完成，共得到 ${segments.length} 条分析结果`, `已按 ${comboDef.label} 组合完成：${comboDef.description}。现在可以检查分析结果并前往音频生成。`, {
         total: segments.length,
@@ -7560,22 +7778,79 @@ very high pitch, very low pitch, whisper, young adult
     }
   }
 
-  async function runSmartSegmentation(text, llm) {
-    segmentationInfoState = null;
-    const chapterChunks = chapterChunksState.length ? chapterChunksState : await runChapterDetection(text, llm);
+  async function runAnalysisFlow(text, llm, resumeSnapshot = null, forcedCombo = null) {
+    const combo = forcedCombo || resumeSnapshot?.combo || llm.analysis_combo || getAnalysisComboValue();
+    if (resumeSnapshot?.type === "analysis_flow") {
+      restoreAnalysisFlowSnapshotState(resumeSnapshot);
+    } else {
+      chapterChunksState = [];
+      plannedChunksState = [];
+      optimizedChunksState = [];
+      segmentationInfoState = null;
+      applySegmentsState([], { persist: false });
+    }
+
+    await runChapterDetection(text, llm, { combo, resumeSnapshot });
+
+    let segments = [];
+    if (combo === "segment_then_optimize_analyze") {
+      const planned = await runSmartSegmentation(text, llm, { combo, resumeSnapshot });
+      segments = await runOptimizeAnalyze(planned, llm, { text, combo, resumeSnapshot });
+    } else if (combo === "segment_optimize_then_analyze") {
+      const optimizedChunks = await runSegmentOptimize(text, llm, { combo, resumeSnapshot });
+      segments = await runRoleAnalysis(optimizedChunks, llm, { text, combo, resumeSnapshot });
+    } else if (combo === "chapter_then_analyze") {
+      segments = await runRoleAnalysis(chapterChunksState, llm, {
+        text,
+        combo,
+        resumeSnapshot,
+        snapshotStage: "chapter_analyze",
+        unitKind: "章节",
+        directChapterMode: true,
+      });
+    } else if (combo === "segment_then_analyze") {
+      const planned = await runSmartSegmentation(text, llm, { combo, resumeSnapshot });
+      optimizedChunksState = [];
+      segments = await runRoleAnalysis(planned, llm, { text, combo, resumeSnapshot });
+    } else {
+      const planned = await runSmartSegmentation(text, llm, { combo, resumeSnapshot });
+      const optimized = await runTextOptimization(planned, llm, { text, combo, resumeSnapshot });
+      segments = await runRoleAnalysis(optimized, llm, { text, combo, resumeSnapshot });
+    }
+
+    saveAnalysisFlowSnapshot(text, llm, combo, "done", 0, { segments });
+    clearParseSnapshot();
+    return segments;
+  }
+
+  async function runSmartSegmentation(text, llm, options = {}) {
+    const combo = options.combo || llm.analysis_combo || getAnalysisComboValue();
+    const resumeSnapshot = options.resumeSnapshot;
+    if (resumeSnapshot?.type === "analysis_flow") {
+      restoreAnalysisFlowSnapshotState(resumeSnapshot);
+    }
+    const chapterChunks = chapterChunksState.length ? chapterChunksState : await runChapterDetection(text, llm, { combo, resumeSnapshot });
     const totalChapters = Math.max(chapterChunks.length, 1);
-    const plannedChunks = [];
+    const plannedChunks = Array.isArray(plannedChunksState) ? plannedChunksState.slice() : [];
+    let startIndex = 0;
+    if (resumeSnapshot?.stage === "segment") {
+      startIndex = Math.max(0, Number(resumeSnapshot.currentIndex || 0));
+    } else if (plannedChunks.length && resumeSnapshot?.stage && resumeSnapshot.stage !== "chapter") {
+      setStatus(`已恢复智能分段结果，共 ${plannedChunks.length} 块。`);
+      return plannedChunks;
+    }
+    saveAnalysisFlowSnapshot(text, llm, combo, "segment", startIndex);
     setProgress({
       stage: "segment",
       summary: "正在进行智能分段",
       detail: `已识别 ${totalChapters} 个章节/初始块，将按章节逐个请求 LLM 细化分段。当前单段目标长度约 ${llm.segment_target_chars || 3200} 字。`,
       percent: 16,
       total: totalChapters,
-      done: 0,
+      done: startIndex,
       indeterminate: true,
-    }, { log: "开始进行 LLM 智能分段" });
+    }, { log: startIndex ? `已恢复智能分段进度，将从第 ${startIndex + 1} / ${totalChapters} 章继续` : "开始进行 LLM 智能分段" });
 
-    for (let index = 0; index < chapterChunks.length; index += 1) {
+    for (let index = startIndex; index < chapterChunks.length; index += 1) {
       const chapter = chapterChunks[index];
       const chapterTitle = chapter.title || `章节 ${index + 1}`;
       const basePercent = Math.round(16 + ((index / totalChapters) * 18));
@@ -7603,6 +7878,8 @@ very high pitch, very low pitch, whisper, young adult
         }
       );
       plannedChunks.push(...(data.chunks || []));
+      plannedChunksState = plannedChunks;
+      saveAnalysisFlowSnapshot(text, llm, combo, "segment", index + 1);
       setProgress({
         stage: "segment",
         summary: `已完成第 ${index + 1} / ${totalChapters} 章智能分段`,
@@ -7623,26 +7900,39 @@ very high pitch, very low pitch, whisper, young adult
       planned_chunk_count: plannedChunksState.length,
     };
     renderAnalysisPipelineMeta();
+    saveAnalysisFlowSnapshot(text, llm, combo, "optimize", 0);
     setStatus(`智能分段完成，共 ${plannedChunksState.length} 块。`);
     return plannedChunksState;
   }
 
-  async function runSegmentOptimize(text, llm) {
-    segmentationInfoState = null;
-    const chapterChunks = chapterChunksState.length ? chapterChunksState : await runChapterDetection(text, llm);
+  async function runSegmentOptimize(text, llm, options = {}) {
+    const combo = options.combo || llm.analysis_combo || getAnalysisComboValue();
+    const resumeSnapshot = options.resumeSnapshot;
+    if (resumeSnapshot?.type === "analysis_flow") {
+      restoreAnalysisFlowSnapshotState(resumeSnapshot);
+    }
+    const chapterChunks = chapterChunksState.length ? chapterChunksState : await runChapterDetection(text, llm, { combo, resumeSnapshot });
     const totalChapters = Math.max(chapterChunks.length, 1);
-    const optimizedChunks = [];
+    const optimizedChunks = Array.isArray(optimizedChunksState) ? optimizedChunksState.slice() : [];
+    let startIndex = 0;
+    if (resumeSnapshot?.stage === "segment_optimize") {
+      startIndex = Math.max(0, Number(resumeSnapshot.currentIndex || 0));
+    } else if (optimizedChunks.length && resumeSnapshot?.stage && resumeSnapshot.stage !== "chapter") {
+      setStatus(`已恢复智能分段与语音适配优化结果，共 ${optimizedChunks.length} 块。`);
+      return optimizedChunks;
+    }
+    saveAnalysisFlowSnapshot(text, llm, combo, "segment_optimize", startIndex);
     setProgress({
       stage: "optimize",
       summary: "正在执行智能分段 + 语音适配优化",
       detail: `已识别 ${totalChapters} 个章节/初始块，将按章节逐个完成工作块规划和 OmniVoice 文本整理。`,
       percent: 28,
       total: totalChapters,
-      done: 0,
+      done: startIndex,
       indeterminate: true,
-    }, { log: "开始进行分段与语音适配组合处理" });
+    }, { log: startIndex ? `已恢复分段与语音适配进度，将从第 ${startIndex + 1} / ${totalChapters} 章继续` : "开始进行分段与语音适配组合处理" });
 
-    for (let index = 0; index < chapterChunks.length; index += 1) {
+    for (let index = startIndex; index < chapterChunks.length; index += 1) {
       const chapter = chapterChunks[index];
       const chapterTitle = chapter.title || `章节 ${index + 1}`;
       const basePercent = Math.round(28 + ((index / totalChapters) * 18));
@@ -7661,6 +7951,9 @@ very high pitch, very low pitch, whisper, young adult
         }
       );
       optimizedChunks.push(...(data.chunks || []));
+      plannedChunksState = optimizedChunks;
+      optimizedChunksState = optimizedChunks;
+      saveAnalysisFlowSnapshot(text, llm, combo, "segment_optimize", index + 1);
       setProgress({
         stage: "optimize",
         summary: `已完成第 ${index + 1} / ${totalChapters} 章分段与语音适配`,
@@ -7681,93 +7974,242 @@ very high pitch, very low pitch, whisper, young adult
       planned_chunk_count: optimizedChunksState.length,
     };
     renderAnalysisPipelineMeta();
+    saveAnalysisFlowSnapshot(text, llm, combo, "analyze", 0);
     setStatus(`智能分段与语音适配优化完成，共 ${optimizedChunksState.length} 块。`);
     return optimizedChunksState;
   }
 
-  async function runTextOptimization(chunks, llm) {
+  async function runTextOptimization(chunks, llm, options = {}) {
+    const text = options.text || document.getElementById("sourceText").value || "";
+    const combo = options.combo || llm.analysis_combo || getAnalysisComboValue();
+    const resumeSnapshot = options.resumeSnapshot;
+    if (resumeSnapshot?.type === "analysis_flow") {
+      restoreAnalysisFlowSnapshotState(resumeSnapshot);
+    }
+    const sourceChunks = Array.isArray(chunks) && chunks.length ? chunks : plannedChunksState;
+    const optimizedChunks = Array.isArray(optimizedChunksState) ? optimizedChunksState.slice() : [];
+    let startIndex = 0;
+    if (resumeSnapshot?.stage === "optimize") {
+      startIndex = Math.max(0, Number(resumeSnapshot.currentIndex || 0));
+    } else if (optimizedChunks.length && resumeSnapshot?.stage && ["analyze", "optimize_analyze", "done"].includes(resumeSnapshot.stage)) {
+      setStatus(`已恢复语音适配优化结果，共 ${optimizedChunks.length} 块。`);
+      return optimizedChunks;
+    }
+    saveAnalysisFlowSnapshot(text, llm, combo, "optimize", startIndex);
     setProgress({
       stage: "optimize",
       summary: "正在进行语音适配优化",
       detail: "将依据 OmniVoice 官方支持的标签、拼音和标点习惯优化文本。",
       percent: 34,
-      total: chunks.length,
-      done: 0,
+      total: sourceChunks.length,
+      done: startIndex,
       indeterminate: true,
-    }, { log: `开始对 ${chunks.length} 个工作块做语音适配优化` });
-    const data = await withLlmRequestProgress(
-      () => fetchJson("/api/optimize-chunks", { chunks, llm }),
-      {
+    }, { log: startIndex ? `已恢复语音适配优化进度，将从第 ${startIndex + 1} / ${sourceChunks.length} 块继续` : `开始对 ${sourceChunks.length} 个工作块做语音适配优化` });
+
+    for (let index = startIndex; index < sourceChunks.length; index += 1) {
+      const chunk = sourceChunks[index];
+      const data = await withLlmRequestProgress(
+        () => fetchJson("/api/optimize-chunks", { chunks: [chunk], llm }),
+        {
         stage: "optimize",
-        summary: "语音适配优化请求进行中",
-        detail: `正在等待 LLM 优化 ${chunks.length} 个工作块，完成后会一次性刷新优化结果。`,
+        summary: `正在优化第 ${index + 1} / ${sourceChunks.length} 个工作块`,
+        detail: `当前工作块：${chunk.title || `工作块 ${index + 1}`}。完成后会立即保存断点进度。`,
         hint: "如果模型较大，单个工作块完成前不会产生中间 JSON。",
-        basePercent: 34,
-        ceilingPercent: 52,
-        total: chunks.length,
-        done: 0,
-      }
-    );
-    optimizedChunksState = data.chunks || [];
+        basePercent: Math.round(34 + ((index / Math.max(sourceChunks.length, 1)) * 14)),
+        ceilingPercent: Math.round(36 + (((index + 1) / Math.max(sourceChunks.length, 1)) * 16)),
+        total: sourceChunks.length,
+        done: index,
+        }
+      );
+      optimizedChunks.push(...(data.chunks || []));
+      optimizedChunksState = optimizedChunks;
+      saveAnalysisFlowSnapshot(text, llm, combo, "optimize", index + 1);
+      setProgress({
+        stage: "optimize",
+        summary: `已完成 ${index + 1} / ${sourceChunks.length} 个工作块优化`,
+        detail: `当前已累计得到 ${optimizedChunks.length} 个优化工作块。`,
+        percent: Math.round(36 + (((index + 1) / Math.max(sourceChunks.length, 1)) * 16)),
+        total: sourceChunks.length,
+        done: index + 1,
+        indeterminate: false,
+      }, { log: `完成第 ${index + 1} 个工作块语音适配优化` });
+    }
     renderAnalysisPipelineMeta();
+    saveAnalysisFlowSnapshot(text, llm, combo, "analyze", 0);
     setStatus(`语音适配优化完成，共 ${optimizedChunksState.length} 块。`);
     return optimizedChunksState;
   }
 
-  async function runOptimizeAnalyze(chunks, llm) {
+  async function runOptimizeAnalyze(chunks, llm, options = {}) {
+    const text = options.text || document.getElementById("sourceText").value || "";
+    const combo = options.combo || llm.analysis_combo || getAnalysisComboValue();
+    const resumeSnapshot = options.resumeSnapshot;
+    if (resumeSnapshot?.type === "analysis_flow") {
+      restoreAnalysisFlowSnapshotState(resumeSnapshot);
+    }
+    const units = buildResumableChunkUnits(chunks, llm);
+    const segments = Array.isArray(segmentsState) ? segmentsState.slice() : [];
+    let startIndex = resumeSnapshot?.stage === "optimize_analyze" ? Math.max(0, Number(resumeSnapshot.currentIndex || 0)) : 0;
+    saveAnalysisFlowSnapshot(text, llm, combo, "optimize_analyze", startIndex);
     setProgress({
       stage: "analyze",
       summary: "正在执行语音适配优化 + 角色分析",
-      detail: `当前会使用最多 ${llm.workers || 5} 个并发请求，对 ${chunks.length} 个工作块一次性完成语音适配和角色分析。`,
+      detail: `当前会按可恢复单位处理 ${chunks.length} 个工作块，每完成一组都会保存断点。`,
       percent: 58,
-      total: chunks.length,
-      done: 0,
+      total: units.length,
+      done: startIndex,
       indeterminate: true,
-    }, { log: `开始并发执行优化与角色分析，共 ${chunks.length} 个工作块` });
-    const data = await withLlmRequestProgress(
-      () => fetchJson("/api/optimize-analyze-chunks", { chunks, llm }),
-      {
+    }, { log: startIndex ? `已恢复优化与角色分析进度，将从第 ${startIndex + 1} / ${units.length} 组继续` : `开始执行优化与角色分析，共 ${chunks.length} 个工作块` });
+
+    for (let index = startIndex; index < units.length; index += 1) {
+      const unit = units[index];
+      const data = await withLlmRequestProgress(
+        () => fetchJson("/api/optimize-analyze-chunks", { chunks: unit.chunks, llm }),
+        {
         stage: "analyze",
-        summary: "语音适配与角色分析请求进行中",
-        detail: `正在等待 LLM 对 ${chunks.length} 个工作块完成优化和角色分析。`,
-        hint: "后端会在所有工作块返回后统一合并结果，因此前端会显示等待心跳。",
-        basePercent: 58,
-        ceilingPercent: 78,
-        total: chunks.length,
-        done: 0,
-      }
-    );
-    const segments = data.segments || [];
+        summary: `正在处理第 ${index + 1} / ${units.length} 组优化与角色分析`,
+        detail: `当前组：${unit.label}，包含 ${unit.chunks.length} 个工作块。完成后会立即保存断点进度。`,
+        hint: "LM Studio 后台持续生成 token 说明模型仍在工作；当前组完成后会进入下一组。",
+        basePercent: Math.round(58 + ((index / Math.max(units.length, 1)) * 18)),
+        ceilingPercent: Math.round(60 + (((index + 1) / Math.max(units.length, 1)) * 20)),
+        total: units.length,
+        done: index,
+        }
+      );
+      segments.push(...(data.segments || []));
+      applySegmentsState(segments);
+      saveAnalysisFlowSnapshot(text, llm, combo, "optimize_analyze", index + 1);
+      setProgress({
+        stage: "analyze",
+        summary: `已完成 ${index + 1} / ${units.length} 组优化与角色分析`,
+        detail: `当前已累计 ${segments.length} 个分析分段。`,
+        percent: Math.round(60 + (((index + 1) / Math.max(units.length, 1)) * 20)),
+        total: units.length,
+        done: index + 1,
+        indeterminate: false,
+      }, { log: `完成第 ${index + 1} 组优化与角色分析，累计 ${segments.length} 段` });
+    }
     applySegmentsState(segments);
     renderAnalysisPipelineMeta();
     setStatus(`语音适配优化与角色分析完成，共 ${segments.length} 段。`);
     return segments;
   }
 
-  async function runRoleAnalysis(chunks, llm) {
+  async function runRoleAnalysis(chunks, llm, options = {}) {
+    const text = options.text || document.getElementById("sourceText").value || "";
+    const combo = options.combo || llm.analysis_combo || getAnalysisComboValue();
+    const resumeSnapshot = options.resumeSnapshot;
+    const snapshotStage = options.snapshotStage || "analyze";
+    const unitKind = options.unitKind || "组";
+    const directChapterMode = !!options.directChapterMode;
+    if (resumeSnapshot?.type === "analysis_flow") {
+      restoreAnalysisFlowSnapshotState(resumeSnapshot);
+    }
+    const directSourceChunks = directChapterMode
+      ? (Array.isArray(resumeSnapshot?.directAnalysisChunks) && resumeSnapshot.directAnalysisChunks.length
+          ? resumeSnapshot.directAnalysisChunks.slice()
+          : (Array.isArray(chunks) ? chunks.slice() : []))
+      : null;
+    const units = directChapterMode
+      ? directSourceChunks.map((chunk, index) => ({
+          label: chunk.title || `章节 ${index + 1}`,
+          chunks: [chunk],
+        }))
+      : buildResumableChunkUnits(chunks, llm);
+    const segments = Array.isArray(segmentsState) ? segmentsState.slice() : [];
+    let startIndex = resumeSnapshot?.stage === snapshotStage ? Math.max(0, Number(resumeSnapshot.currentIndex || 0)) : 0;
+    saveAnalysisFlowSnapshot(text, llm, combo, snapshotStage, startIndex);
     setProgress({
       stage: "analyze",
-      summary: "正在并发分析角色与分段",
-      detail: `当前会使用最多 ${llm.workers || 5} 个并发请求处理 ${chunks.length} 个工作块。`,
+      summary: directChapterMode ? "正在按章节直接分析角色" : "正在并发分析角色与分段",
+      detail: directChapterMode
+        ? `当前跳过智能分段和语音适配优化，按 ${units.length} 个章节依次发送角色分析请求。`
+        : `当前会按可恢复单位处理 ${chunks.length} 个工作块，每完成一组都会保存断点。`,
       percent: 58,
-      total: chunks.length,
-      done: 0,
+      total: units.length,
+      done: startIndex,
       indeterminate: true,
-    }, { log: `开始并发分析 ${chunks.length} 个工作块` });
-    const data = await withLlmRequestProgress(
-      () => fetchJson("/api/analyze-chunks", { chunks, llm }),
-      {
-        stage: "analyze",
-        summary: "角色分析请求进行中",
-        detail: `正在等待 LLM 分析 ${chunks.length} 个工作块的 speaker、emotion 和 style。`,
-        hint: "LM Studio 后台持续生成 token 说明模型仍在工作；结果返回前不会有逐 token 进度。",
-        basePercent: 58,
-        ceilingPercent: 84,
-        total: chunks.length,
-        done: 0,
+    }, { log: startIndex ? `已恢复角色分析进度，将从第 ${startIndex + 1} / ${units.length} ${unitKind}继续` : directChapterMode ? `开始按章节直接分析角色，共 ${units.length} 个章节` : `开始分析 ${chunks.length} 个工作块` });
+
+    for (let index = startIndex; index < units.length; index += 1) {
+      const unit = units[index];
+      let data;
+      try {
+        data = await withLlmRequestProgress(
+          () => fetchJson("/api/analyze-chunks", { chunks: unit.chunks, llm }),
+          {
+          stage: "analyze",
+          summary: `正在分析第 ${index + 1} / ${units.length} ${unitKind}角色`,
+          detail: directChapterMode
+            ? `当前章节：${unit.label}，长度 ${String(unit.chunks[0]?.content || "").length} 字符。若模型上下文不足，会在失败信息中保留该章节信息。`
+            : `当前组：${unit.label}，包含 ${unit.chunks.length} 个工作块。完成后会立即保存断点进度。`,
+          hint: directChapterMode
+            ? "当前章节完成后会立刻保存断点并进入下一章；若章节过长，请改用智能分段组合或调整章节规则。"
+            : "LM Studio 后台持续生成 token 说明模型仍在工作；当前组完成后会进入下一组。",
+          basePercent: Math.round(58 + ((index / Math.max(units.length, 1)) * 22)),
+          ceilingPercent: Math.round(60 + (((index + 1) / Math.max(units.length, 1)) * 24)),
+          total: units.length,
+          done: index,
+          }
+        );
+      } catch (err) {
+        const unitLength = unit.chunks.reduce((sum, chunk) => sum + String(chunk.content || "").length, 0);
+        const canSplitDirectChapter = directChapterMode
+          && unit.chunks.length === 1
+          && shouldRetryChunking(err)
+          && unitLength > 1000;
+        if (canSplitDirectChapter) {
+          const preset = getAnalysisPreset(llm.analysis_mode);
+          const sourceChunk = unit.chunks[0];
+          const retryChunks = splitChunkForRetry(String(sourceChunk.content || ""), preset, true);
+          if (retryChunks.length > 1) {
+            const replacementChunks = retryChunks.map((content, retryIndex) => ({
+              title: `${unit.label} - 子段 ${retryIndex + 1}`,
+              content,
+            }));
+            const replacementUnits = replacementChunks.map((chunk) => ({
+              label: chunk.title,
+              chunks: [chunk],
+            }));
+            directSourceChunks.splice(index, 1, ...replacementChunks);
+            units.splice(index, 1, ...replacementUnits);
+            saveAnalysisFlowSnapshot(text, llm, combo, snapshotStage, index, {
+              directAnalysisChunks: directSourceChunks,
+            });
+            setProgress({
+              stage: "analyze",
+              summary: `第 ${index + 1} ${unitKind}输出被截断，已自动切小重试`,
+              detail: `「${unit.label}」长度 ${unitLength} 字符，已拆成 ${replacementChunks.length} 个本地子段；不会重新执行智能分段。`,
+              percent: Math.round(58 + ((index / Math.max(units.length, 1)) * 22)),
+              total: units.length,
+              done: index,
+              indeterminate: false,
+            }, { log: `章节直析输出被截断，已将「${unit.label}」拆成 ${replacementChunks.length} 个子段` });
+            index -= 1;
+            continue;
+          }
+        }
+        saveAnalysisFlowSnapshot(text, llm, combo, snapshotStage, index, {
+          directAnalysisChunks: directSourceChunks || undefined,
+        });
+        err.message = `第 ${index + 1} / ${units.length} ${unitKind}「${unit.label}」角色分析失败，长度 ${unitLength} 字符。可能是模型上下文超限、输出 token 不足或接口中断。原始错误：${err.message || err}`;
+        throw err;
       }
-    );
-    const segments = data.segments || [];
+      segments.push(...(data.segments || []));
+      applySegmentsState(segments);
+      saveAnalysisFlowSnapshot(text, llm, combo, snapshotStage, index + 1, {
+        directAnalysisChunks: directSourceChunks || undefined,
+      });
+      setProgress({
+        stage: "analyze",
+        summary: `已完成 ${index + 1} / ${units.length} ${unitKind}角色分析`,
+        detail: `当前已累计 ${segments.length} 个分析分段。`,
+        percent: Math.round(60 + (((index + 1) / Math.max(units.length, 1)) * 24)),
+        total: units.length,
+        done: index + 1,
+        indeterminate: false,
+      }, { log: `完成第 ${index + 1} ${unitKind}角色分析，累计 ${segments.length} 段` });
+    }
     applySegmentsState(segments);
     renderAnalysisPipelineMeta();
     setStatus(`角色分析完成，共 ${segments.length} 段。`);
@@ -7961,9 +8403,7 @@ very high pitch, very low pitch, whisper, young adult
     beginTask("parse", "准备开始完整文本分析", '将按「智能分段 -> 语音适配优化 -> 角色分析」的顺序执行完整流程。');
 
     try {
-      const planned = await runSmartSegmentation(text, llm);
-      const optimized = await runTextOptimization(planned, llm);
-      const segments = await runRoleAnalysis(optimized, llm);
+      const segments = await runAnalysisFlow(text, llm, null, "separate");
       finishTask(`文本分析完成，共 ${segments.length} 段`, "智能分段、语音适配优化和角色分析都已完成，结果已经更新到右侧分段区域。", {
         total: segments.length,
         done: segments.length,
@@ -7983,15 +8423,21 @@ very high pitch, very low pitch, whisper, young adult
       return;
     }
 
-    applyLLMConfigToForm(snapshot.llm);
     setSourceText(snapshot.text || "");
+    const currentLlm = validateLLMConfig();
+    if (!currentLlm) return;
+    if (!warnIfThinkingModel(currentLlm)) return;
+    const currentCombo = currentLlm.analysis_combo || getAnalysisComboValue();
     beginTask("parse", "准备继续上次文本分析", "正在恢复中断前的分析快照，并从未完成的文本块继续。");
 
     try {
-      const segments = await runParseOnly(snapshot.text || "", snapshot.llm || getLLMConfig(), snapshot);
+      const snapshotText = snapshot.text || "";
+      const segments = snapshot.type === "analysis_flow"
+        ? await runAnalysisFlow(snapshotText, currentLlm, snapshot, currentCombo)
+        : await runParseOnly(snapshotText, currentLlm, snapshot);
       finishTask(`续跑完成，共 ${segments.length} 段`, "之前中断的文本分析已继续完成，现在可以直接导出 JSON 或前往音频生成。", {
         total: segments.length,
-        done: 0,
+        done: segments.length,
       });
       setStatus(`已继续完成文本分析，共 ${segments.length} 段。`);
     } catch (err) {
