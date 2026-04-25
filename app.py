@@ -40,7 +40,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from audio_utils import build_lrc, join_wavs
+from audio_utils import build_lrc, join_wavs_auto
 from llm_client import OpenAICompatibleClient
 from local_llm import get_local_llm_runner, get_local_llm_status, unload_all_local_llm_runners
 from pipeline import ASR_MODEL_NAME, HF_CACHE_DIRS, MODEL_NAME, VOXCPM_MODEL_NAME, OmniVoicePipeline, VoxCPMPipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status, get_voxcpm_runtime_dependency_status
@@ -466,6 +466,68 @@ def sanitize_output_name(name: str, fallback: str = "result") -> str:
 
 def build_segment_wav_paths(base_name: str, segment_count: int) -> list[Path]:
     return [OUTPUT_DIR / f"{base_name}_{idx:03d}.wav" for idx in range(1, segment_count + 1)]
+
+
+def build_output_file_url(path: str | Path | None) -> str | None:
+    if not path:
+        return None
+    target = Path(path)
+    return f"/file/{target.relative_to(OUTPUT_DIR).as_posix()}"
+
+
+def build_merge_response_payload(
+    *,
+    merge_result: dict,
+    wav_paths: list[Path],
+    lyric_lines: list[str] | None,
+    output_name: str,
+    silence_ms: int,
+) -> dict:
+    parts_payload = []
+    split_applied = bool(merge_result.get("split_applied"))
+
+    for part in merge_result.get("parts", []):
+        start_index = int(part["start_index"])
+        end_index = int(part["end_index"])
+        lrc_url = None
+        if lyric_lines:
+            part_lrc_path = Path(part["path"]).with_suffix(".lrc")
+            build_lrc(
+                wav_paths[start_index - 1 : end_index],
+                lyric_lines[start_index - 1 : end_index],
+                part_lrc_path,
+                silence_ms=silence_ms,
+            )
+            lrc_url = build_output_file_url(part_lrc_path)
+        parts_payload.append(
+            {
+                "index": int(part["index"]),
+                "file": part["path"],
+                "audio_url": build_output_file_url(part["path"]),
+                "lrc_url": lrc_url,
+                "segment_count": int(part["segment_count"]),
+                "start_index": start_index,
+                "end_index": end_index,
+                "duration_seconds": float(part["duration_seconds"]),
+                "size_bytes": int(part["size_bytes"]),
+            }
+        )
+
+    primary_part = parts_payload[0] if parts_payload else None
+    payload = {
+        "ok": True,
+        "segments": len(wav_paths),
+        "file": merge_result["primary_path"],
+        "audio_url": primary_part["audio_url"] if primary_part else None,
+        "lrc_url": primary_part["lrc_url"] if primary_part else None,
+        "parts": parts_payload,
+        "split_applied": split_applied,
+        "manifest_file": merge_result.get("manifest_path"),
+        "manifest_url": build_output_file_url(merge_result.get("manifest_path")),
+    }
+    if split_applied:
+        payload["message"] = f"音频体积较大，已自动拆分为 {len(parts_payload)} 个分卷。播放器当前加载第 1 卷。"
+    return payload
 
 
 def raise_api_error(exc: Exception) -> None:
@@ -1098,26 +1160,26 @@ def synthesize_local_narration_with_fallback(
     resolved_device = normalize_inference_device(inference_device)
     pipeline = get_pipeline(resolved_device, model_name=model_name, asr_model_name=asr_model_name)
     try:
-        merged_path = pipeline.synthesize_segments(
+        merge_result = pipeline.synthesize_segments(
             segments=segments,
             base_name=output_name,
             silence_ms=silence_ms,
             role_profiles=role_profiles,
         )
-        return {"merged_path": merged_path, "device": resolved_device, "fallback_device": None}
+        return {"merge_result": merge_result, "device": resolved_device, "fallback_device": None}
     except Exception as exc:
         if resolved_device != "mps" or not is_mps_oom_error(exc):
             raise
         pipeline.unload()
         cpu_pipeline = get_pipeline("cpu", model_name=model_name, asr_model_name=asr_model_name)
-        merged_path = cpu_pipeline.synthesize_segments(
+        merge_result = cpu_pipeline.synthesize_segments(
             segments=segments,
             base_name=output_name,
             silence_ms=silence_ms,
             role_profiles=role_profiles,
         )
         return {
-            "merged_path": merged_path,
+            "merge_result": merge_result,
             "device": "cpu",
             "fallback_device": "cpu",
             "original_device": resolved_device,
@@ -1593,20 +1655,19 @@ def narrate(req: NarrateRequest):
             silence_ms=req.silence_ms,
             role_profiles=role_profiles,
         )
-        merged_path = result["merged_path"]
+        merge_result = result["merge_result"]
         wav_paths = build_segment_wav_paths(output_name, len(segments))
-        lrc_path = OUTPUT_DIR / f"{output_name}_merged.lrc"
-        build_lrc(wav_paths, build_lyric_lines(segments), lrc_path, silence_ms=req.silence_ms)
-        return {
-            "ok": True,
-            "segments": len(segments),
-            "file": merged_path,
-            "audio_url": f"/file/{Path(merged_path).name}",
-            "lrc_url": f"/file/{lrc_path.name}",
-            "device": result.get("device"),
-            "fallback_device": result.get("fallback_device"),
-            "original_device": result.get("original_device"),
-        }
+        response = build_merge_response_payload(
+            merge_result=merge_result,
+            wav_paths=wav_paths,
+            lyric_lines=build_lyric_lines(segments),
+            output_name=output_name,
+            silence_ms=req.silence_ms,
+        )
+        response["device"] = result.get("device")
+        response["fallback_device"] = result.get("fallback_device")
+        response["original_device"] = result.get("original_device")
+        return response
     except Exception as exc:
         raise_api_error(exc)
 
@@ -1650,20 +1711,20 @@ def auto_narrate(req: AutoNarrateRequest):
             silence_ms=req.silence_ms,
             role_profiles=role_profiles,
         )
-        merged_path = result["merged_path"]
+        merge_result = result["merge_result"]
         wav_paths = build_segment_wav_paths(output_name, len(segments))
-        lrc_path = OUTPUT_DIR / f"{output_name}_merged.lrc"
-        build_lrc(wav_paths, build_lyric_lines(segments), lrc_path, silence_ms=req.silence_ms)
-        return {
-            "ok": True,
-            "segments": segments,
-            "file": merged_path,
-            "audio_url": f"/file/{Path(merged_path).name}",
-            "lrc_url": f"/file/{lrc_path.name}",
-            "device": result.get("device"),
-            "fallback_device": result.get("fallback_device"),
-            "original_device": result.get("original_device"),
-        }
+        response = build_merge_response_payload(
+            merge_result=merge_result,
+            wav_paths=wav_paths,
+            lyric_lines=build_lyric_lines(segments),
+            output_name=output_name,
+            silence_ms=req.silence_ms,
+        )
+        response["segments"] = segments
+        response["device"] = result.get("device")
+        response["fallback_device"] = result.get("fallback_device")
+        response["original_device"] = result.get("original_device")
+        return response
     except Exception as exc:
         raise_api_error(exc)
 
@@ -2083,24 +2144,21 @@ def merge_audio(req: MergeRequest):
             wav_paths.append(wav_path)
 
         output_path = OUTPUT_DIR / f"{output_name}_merged.wav"
-        merged_path = join_wavs(wav_paths, output_path, silence_ms=req.silence_ms)
-        lrc_url = None
+        merge_result = join_wavs_auto(wav_paths, output_path, silence_ms=req.silence_ms)
+        lyric_lines = None
         if req.lyrics:
-            lrc_path = OUTPUT_DIR / f"{output_name}_merged.lrc"
             lyric_lines = []
             for line in req.lyrics:
                 speaker = (line.speaker or "").strip()
                 text = line.text.strip()
                 lyric_lines.append(f"{speaker}：{text}" if speaker and speaker != "旁白" else text)
-            build_lrc(wav_paths, lyric_lines, lrc_path, silence_ms=req.silence_ms)
-            lrc_url = f"/file/{lrc_path.name}"
-        return {
-            "ok": True,
-            "segments": len(wav_paths),
-            "file": merged_path,
-            "audio_url": f"/file/{Path(merged_path).name}",
-            "lrc_url": lrc_url,
-        }
+        return build_merge_response_payload(
+            merge_result=merge_result,
+            wav_paths=wav_paths,
+            lyric_lines=lyric_lines,
+            output_name=output_name,
+            silence_ms=req.silence_ms,
+        )
     except Exception as exc:
         raise_api_error(exc)
 

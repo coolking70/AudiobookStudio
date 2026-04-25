@@ -38,7 +38,7 @@ try:
 except ImportError:
     VoxCPM = None
 
-from audio_utils import ensure_dir, join_wavs
+from audio_utils import ensure_dir, join_wavs_auto
 
 
 MODEL_NAME = "k2-fsa/OmniVoice"
@@ -540,7 +540,7 @@ class OmniVoicePipeline:
         base_name: str = "result",
         silence_ms: int = 350,
         role_profiles: Optional[dict] = None,
-    ) -> str:
+    ) -> dict:
         ensure_runtime_dependencies()
         out_dir = ensure_dir(OUTPUT_DIR)
         wav_paths: list[str] = []
@@ -566,7 +566,7 @@ class OmniVoicePipeline:
             wav_paths.append(str(wav_path))
 
         final_path = out_dir / f"{base_name}_merged.wav"
-        return join_wavs(wav_paths, final_path, silence_ms=silence_ms)
+        return join_wavs_auto(wav_paths, final_path, silence_ms=silence_ms)
 
 
 class VoxCPMPipeline:

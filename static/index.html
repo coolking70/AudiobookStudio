@@ -8091,8 +8091,9 @@ very high pitch, very low pitch, whisper, young adult
       }
 
       const fallbackNote = merged.fallback_device ? `检测到 ${String(merged.original_device || "mps").toUpperCase()} 显存不足，已自动回退到 ${String(merged.fallback_device).toUpperCase()}。` : "";
-      setStatus(`自动合成成功，共 ${segments.length} 段，音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}`);
-      finishTask(`自动合成完成，共 ${segments.length} 段`, `最终音频已经生成并加载到播放器，可以直接试听。当前音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}`, {
+      const splitNote = merged.split_applied ? `后端已自动拆分为 ${Array.isArray(merged.parts) ? merged.parts.length : 0} 个分卷，播放器当前加载第 1 卷。` : "";
+      setStatus(`自动合成成功，共 ${segments.length} 段，音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}${splitNote}`);
+      finishTask(`自动合成完成，共 ${segments.length} 段`, `最终音频已经生成并加载到播放器，可以直接试听。当前音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}${splitNote}`, {
         total: segments.length,
         done: segments.length,
       });
@@ -8153,8 +8154,9 @@ very high pitch, very low pitch, whisper, young adult
       }
 
       const fallbackNote = merged.fallback_device ? `检测到 ${String(merged.original_device || "mps").toUpperCase()} 显存不足，已自动回退到 ${String(merged.fallback_device).toUpperCase()}。` : "";
-      setStatus(`合成成功，共 ${segmentsState.length} 段，音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}`);
-      finishTask(`分段合成完成，共 ${segmentsState.length} 段`, `所有段落已经成功合并，播放器已切换到最新音频。当前音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}`, {
+      const splitNote = merged.split_applied ? `后端已自动拆分为 ${Array.isArray(merged.parts) ? merged.parts.length : 0} 个分卷，播放器当前加载第 1 卷。` : "";
+      setStatus(`合成成功，共 ${segmentsState.length} 段，音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}${splitNote}`);
+      finishTask(`分段合成完成，共 ${segmentsState.length} 段`, `所有段落已经成功合并，播放器已切换到最新音频。当前音频后端：${getAudioBackendLabel(backend)}。${fallbackNote}${splitNote}`, {
         total: segmentsState.length,
         done: segmentsState.length,
       });
