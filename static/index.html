@@ -2006,6 +2006,7 @@
               <button type="button" class="secondary" onclick="continueAnalysis()">继续上次分析</button>
               <button type="button" class="secondary" onclick="triggerTaskSnapshotImport()">导入任务快照</button>
               <button type="button" id="exportProgressBtn" class="secondary" onclick="exportTaskSnapshot()">导出当前进度</button>
+              <button type="button" data-busy-lock class="danger" onclick="clearTextAndCache()">清空文本与缓存</button>
             </div>
             <div id="sourceImportHint" class="import-hint">支持 .txt / .md 文件导入。请先在“模型配置 -> 文本模型 -> 高级配置”里设定后续分析组合，再回到这里执行。</div>
             <div id="analysisPipelineMeta" class="import-hint" style="margin-top:10px;">当前尚未执行章节识别。</div>
@@ -2192,7 +2193,8 @@
   let pendingDirectorySelectionTarget = "";
   let localPathPresetsCache = null;
 
-  let _inMemoryResumeSnapshot = null;  // fallback when localStorage quota exceeded
+  let _inMemoryResumeSnapshot = null;  // 导入的快照（来自文件）
+  let _inMemoryLatestSnapshot = null;  // in-flight 实时进度的内存镜像（localStorage 写失败时的兜底）
   let _snapshotQuotaWarned = false;    // 只弹一次空间不足 toast
 
   const PARSE_SNAPSHOT_STORAGE_KEY = "ov_parse_snapshot";
@@ -2900,10 +2902,10 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function saveParseSnapshot(snapshot) {
-    const payload = JSON.stringify({
-      ...snapshot,
-      updatedAt: new Date().toISOString(),
-    });
+    const enriched = { ...snapshot, updatedAt: new Date().toISOString() };
+    // 始终先更新内存镜像（即使 localStorage 写入失败，"继续上次分析"仍能用上）
+    _inMemoryLatestSnapshot = enriched;
+    const payload = JSON.stringify(enriched);
     try {
       localStorage.setItem(PARSE_SNAPSHOT_STORAGE_KEY, payload);
     } catch (err) {
@@ -2912,11 +2914,12 @@ very high pitch, very low pitch, whisper, young adult
         localStorage.removeItem(LAST_SEGMENTS_STORAGE_KEY);
         localStorage.setItem(PARSE_SNAPSHOT_STORAGE_KEY, payload);
       } catch (retryErr) {
-        console.warn("保存分析断点失败:", retryErr);
         if (!_snapshotQuotaWarned) {
           _snapshotQuotaWarned = true;
+          console.warn("保存分析断点到 localStorage 失败（后续将只保留内存镜像）:", retryErr);
           showToast("浏览器本地存储空间不足，断点将仅保存在内存中（刷新页面会丢失）。", "info", 4000);
         }
+        // 已经写过 _inMemoryLatestSnapshot，无需进一步处理
       }
     }
   }
@@ -2933,6 +2936,7 @@ very high pitch, very low pitch, whisper, young adult
 
   function clearParseSnapshot() {
     _inMemoryResumeSnapshot = null;
+    _inMemoryLatestSnapshot = null;
     localStorage.removeItem(PARSE_SNAPSHOT_STORAGE_KEY);
   }
 
@@ -2981,7 +2985,10 @@ very high pitch, very low pitch, whisper, young adult
       optimizedChunks: optimizedChunksState,
       segments: segmentsState,
       segmentationInfo: segmentationInfoState,
-      directAnalysisChunks: extra.directAnalysisChunks,
+      // 章节直析时 directAnalysisChunks 通常等同 chapterChunks，去重避免双倍体积
+      directAnalysisChunks: (extra.directAnalysisChunks && extra.directAnalysisChunks !== chapterChunksState)
+        ? extra.directAnalysisChunks
+        : undefined,
       ...extra,
     };
   }
@@ -4956,7 +4963,8 @@ very high pitch, very low pitch, whisper, young adult
     else if (plannedChunksState.length) stage = "planned_chunks";
 
     // 读取 in-flight 断点信息（中断时的具体进度），用于精确续跑
-    const inflight = _inMemoryResumeSnapshot || getParseSnapshot();
+    // 优先用最新内存镜像（一定最新），localStorage 仅作回退
+    const inflight = _inMemoryLatestSnapshot || getParseSnapshot();
     const pipelineStage = inflight?.stage || null;        // "segment" / "optimize" / "analyze" 等
     const pipelineIndex = Number(inflight?.currentIndex || 0);
     const pipelineCombo = inflight?.combo || null;
@@ -5000,6 +5008,13 @@ very high pitch, very low pitch, whisper, young adult
     const file = input.files && input.files[0];
     if (!file) return;
     try {
+      // 任务运行中禁止导入（避免破坏正在进行的状态）
+      if (taskBusy) {
+        setStatus("当前有任务正在运行，请先停止任务再导入快照。");
+        showToast("任务运行中，无法导入快照", "warn", 3000);
+        return;
+      }
+
       const decoded = await readTextFileWithEncoding(file);
       const data = JSON.parse(decoded.text);
 
@@ -5036,6 +5051,7 @@ very high pitch, very low pitch, whisper, young adult
           text: resumeText,
           combo: flowCombo || getAnalysisComboValue(),
           llm: data.llm || null,
+          importedAt: new Date().toISOString(),
         };
 
         // 优先存内存（空间不足时 localStorage 写入失败也能正常续跑）
@@ -7264,6 +7280,53 @@ very high pitch, very low pitch, whisper, young adult
     applySegmentsState(segmentsState);
   }
 
+  function clearTextAndCache() {
+    if (taskBusy) {
+      setStatus("当前有任务正在运行，请先停止任务再清空。");
+      showToast("任务运行中，无法清空", "warn", 2600);
+      return;
+    }
+    const hasContent = !!(document.getElementById("sourceText").value
+      || segmentsState.length || plannedChunksState.length
+      || optimizedChunksState.length || chapterChunksState.length
+      || _inMemoryResumeSnapshot || _inMemoryLatestSnapshot || getParseSnapshot());
+    if (hasContent) {
+      const ok = confirm(
+        "将清空：\n" +
+        "  · 原文输入框内容\n" +
+        "  · 章节识别 / 智能分段 / 语音适配优化结果\n" +
+        "  · 角色分析结果\n" +
+        "  · 内存中的导入快照与实时进度镜像\n" +
+        "  · 浏览器本地缓存的分析断点\n\n" +
+        "此操作不可撤销。确定继续？"
+      );
+      if (!ok) return;
+    }
+    document.getElementById("sourceText").value = "";
+    chapterChunksState = [];
+    plannedChunksState = [];
+    optimizedChunksState = [];
+    segmentationInfoState = null;
+    applySegmentsState([], { persist: true });
+    clearParseSnapshot();           // 同时清掉 _inMemoryResumeSnapshot / _inMemoryLatestSnapshot / localStorage
+    _snapshotQuotaWarned = false;   // 重置空间不足提示标志
+    try { localStorage.removeItem(LAST_SEGMENTS_STORAGE_KEY); } catch (_) {}
+    renderAnalysisPipelineMeta();
+    updateAnalysisFlowUI();
+    updateExportProgressButton();
+    setStatus("已清空原文、所有阶段结果，以及内存与浏览器缓存。");
+    showToast("已彻底清空文本与缓存", "success", 2400);
+    setProgress({
+      summary: "已清空",
+      detail: "原文、各阶段结果、内存断点与本地缓存都已清空，可开始新任务。",
+      stage: "idle",
+      percent: 0,
+      total: 0,
+      done: 0,
+      indeterminate: false,
+    }, { log: "用户手动清空了文本和所有缓存" });
+  }
+
   function clearSegments() {
     if (taskBusy) return;
     chapterChunksState = [];
@@ -8693,9 +8756,62 @@ very high pitch, very low pitch, whisper, young adult
     }
   }
 
+  function _formatSnapshotTime(snapshot) {
+    if (!snapshot) return "未知时间";
+    const raw = snapshot.exportedAt || snapshot.updatedAt || snapshot.importedAt;
+    if (!raw) return "未知时间";
+    try {
+      const d = new Date(raw);
+      return d.toLocaleString("zh-CN", { hour12: false });
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  function _describeSnapshot(snapshot) {
+    if (!snapshot) return "（空）";
+    const seg = Array.isArray(snapshot.segments) ? snapshot.segments.length : 0;
+    const opt = Array.isArray(snapshot.optimizedChunks) ? snapshot.optimizedChunks.length : 0;
+    const plan = Array.isArray(snapshot.plannedChunks) ? snapshot.plannedChunks.length : 0;
+    const chap = Array.isArray(snapshot.chapterChunks) ? snapshot.chapterChunks.length : 0;
+    const parts = [];
+    if (seg) parts.push(`${seg} 段已分析`);
+    if (opt) parts.push(`${opt} 块已优化`);
+    if (plan) parts.push(`${plan} 块已分段`);
+    if (chap) parts.push(`${chap} 章节`);
+    const stage = snapshot.stage || snapshot.pipelineStage;
+    if (stage) parts.push(`stage=${stage}`);
+    const idx = Number(snapshot.currentIndex || snapshot.pipelineIndex || 0);
+    if (idx) parts.push(`断点 #${idx}`);
+    return parts.join(" / ") || "无明细";
+  }
+
+  function _pickResumeSnapshot() {
+    const importedSnap = _inMemoryResumeSnapshot;
+    // in-flight 实时进度：优先用内存镜像（一定最新），localStorage 仅作刷新后的回退
+    const inflightSnap = _inMemoryLatestSnapshot || getParseSnapshot();
+    // 只有一份或都没有：直接返回
+    if (!importedSnap && !inflightSnap) return null;
+    if (!importedSnap) return inflightSnap;
+    if (!inflightSnap) return importedSnap;
+    // 两份都存在：让用户选
+    const impTime = _formatSnapshotTime(importedSnap);
+    const flowTime = _formatSnapshotTime(inflightSnap);
+    const impDesc = _describeSnapshot(importedSnap);
+    const flowDesc = _describeSnapshot(inflightSnap);
+    const ok = confirm(
+      `检测到两份可恢复的分析进度：\n\n` +
+      `【A · 导入的快照】\n  时间：${impTime}\n  内容：${impDesc}\n\n` +
+      `【B · 实时进度（内存/浏览器缓存）】\n  时间：${flowTime}\n  内容：${flowDesc}\n\n` +
+      `点击「确定」恢复 A（导入的快照）\n` +
+      `点击「取消」恢复 B（实时进度）`
+    );
+    return ok ? importedSnap : inflightSnap;
+  }
+
   async function continueAnalysis() {
     if (taskBusy) return;
-    const snapshot = _inMemoryResumeSnapshot || getParseSnapshot();
+    const snapshot = _pickResumeSnapshot();
     if (!snapshot) {
       setStatus("当前没有可继续的分析任务快照。");
       return;
@@ -8984,6 +9100,22 @@ very high pitch, very low pitch, whisper, young adult
   loadConfig();
   updateAnalysisFlowUI();
   initProgressPanelPrefs();
+
+  // 离开/刷新页面前的进度丢失提示
+  window.addEventListener("beforeunload", function (e) {
+    // 任务运行中：必弹（一旦刷新就丢失任务）
+    // localStorage 写入失败过：内存断点和未保存的中间结果会随刷新一起消失
+    // 有未保存到 localStorage 的内存快照：同上
+    const inMemoryOnly = _snapshotQuotaWarned && (!!_inMemoryResumeSnapshot || segmentsState.length || plannedChunksState.length || optimizedChunksState.length);
+    if (taskBusy || inMemoryOnly) {
+      const msg = taskBusy
+        ? "当前有分析任务正在运行，离开页面会中断任务。确定要离开吗？"
+        : "本地存储空间不足，当前进度仅保存在内存中，离开页面将永久丢失。建议先「导出当前进度」后再刷新。";
+      e.preventDefault();
+      e.returnValue = msg;
+      return msg;
+    }
+  });
 </script>
 </body>
 </html>
