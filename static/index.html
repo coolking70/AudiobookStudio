@@ -2192,6 +2192,9 @@
   let pendingDirectorySelectionTarget = "";
   let localPathPresetsCache = null;
 
+  let _inMemoryResumeSnapshot = null;  // fallback when localStorage quota exceeded
+  let _snapshotQuotaWarned = false;    // 只弹一次空间不足 toast
+
   const PARSE_SNAPSHOT_STORAGE_KEY = "ov_parse_snapshot";
   const LAST_SEGMENTS_STORAGE_KEY = "ov_last_segments";
   const VOICE_LIBRARY_STORAGE_KEY = "ov_voice_library";
@@ -2736,6 +2739,7 @@ very high pitch, very low pitch, whisper, young adult
   function beginTask(mode, summary, detail) {
     setBusy(true);
     taskCancelled = false;
+    _snapshotQuotaWarned = false;
     startElapsedTimer();
     progressState.mode = mode;
     progressState.logs = [];
@@ -2909,7 +2913,10 @@ very high pitch, very low pitch, whisper, young adult
         localStorage.setItem(PARSE_SNAPSHOT_STORAGE_KEY, payload);
       } catch (retryErr) {
         console.warn("保存分析断点失败:", retryErr);
-        showToast("浏览器本地存储空间不足，本次可能无法恢复断点。", "info", 2600);
+        if (!_snapshotQuotaWarned) {
+          _snapshotQuotaWarned = true;
+          showToast("浏览器本地存储空间不足，断点将仅保存在内存中（刷新页面会丢失）。", "info", 4000);
+        }
       }
     }
   }
@@ -2925,6 +2932,7 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function clearParseSnapshot() {
+    _inMemoryResumeSnapshot = null;
     localStorage.removeItem(PARSE_SNAPSHOT_STORAGE_KEY);
   }
 
@@ -4947,6 +4955,12 @@ very high pitch, very low pitch, whisper, young adult
     else if (optimizedChunksState.length) stage = "optimized_chunks";
     else if (plannedChunksState.length) stage = "planned_chunks";
 
+    // 读取 in-flight 断点信息（中断时的具体进度），用于精确续跑
+    const inflight = _inMemoryResumeSnapshot || getParseSnapshot();
+    const pipelineStage = inflight?.stage || null;        // "segment" / "optimize" / "analyze" 等
+    const pipelineIndex = Number(inflight?.currentIndex || 0);
+    const pipelineCombo = inflight?.combo || null;
+
     const snapshot = {
       type: "task_snapshot",
       version: 2,
@@ -4958,6 +4972,10 @@ very high pitch, very low pitch, whisper, young adult
       plannedChunks: plannedChunksState,
       optimizedChunks: optimizedChunksState,
       segments: segmentsState,
+      // 保留 in-flight 流水线断点，导入后可精确续跑
+      pipelineStage,
+      pipelineIndex,
+      pipelineCombo,
     };
 
     const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json;charset=utf-8" });
@@ -4990,16 +5008,40 @@ very high pitch, very low pitch, whisper, young adult
         // 还原所有中间状态
         restoreAnalysisFlowSnapshotState(data);
         // 把原文填回输入框
-        if (data.sourceText || data.text) {
-          setSourceText(data.sourceText || data.text);
+        const resumeText = data.sourceText || data.text || "";
+        if (resumeText) setSourceText(resumeText);
+
+        // 将 task_snapshot 统一转换为 analysis_flow 格式，使 continueAnalysis 能正确续跑
+        let flowStage = data.stage;
+        let flowIndex = 0;
+        let flowCombo = data.combo;
+        if (data.type === "task_snapshot") {
+          if (data.pipelineStage) {
+            // 优先使用导出时保留的 in-flight 断点（精确续跑）
+            flowStage = data.pipelineStage;
+            flowIndex = Math.max(0, Number(data.pipelineIndex || 0));
+            flowCombo = data.pipelineCombo || flowCombo;
+          } else {
+            // 旧版快照没有 pipelineStage，按已有 chunks 推断
+            const hasChunks = (data.optimizedChunks?.length || data.plannedChunks?.length || data.chapterChunks?.length);
+            flowStage = hasChunks ? "analyze" : "chapter";
+            flowIndex = 0;
+          }
         }
-        // 也存入 localStorage，方便"继续上次分析"能读取到
-        saveParseSnapshot({
+        const flowSnapshot = {
           ...data,
-          // 保证 continueAnalysis 能判断并选择正确的续跑路径
-          combo: data.combo || getAnalysisComboValue(),
+          type: "analysis_flow",
+          stage: flowStage,
+          currentIndex: flowIndex,
+          text: resumeText,
+          combo: flowCombo || getAnalysisComboValue(),
           llm: data.llm || null,
-        });
+        };
+
+        // 优先存内存（空间不足时 localStorage 写入失败也能正常续跑）
+        _inMemoryResumeSnapshot = flowSnapshot;
+        // 也尝试写 localStorage，方便刷新后读取
+        saveParseSnapshot(flowSnapshot);
         renderAnalysisPipelineMeta();
         updateExportProgressButton();
         const label = _getProgressStageLabel();
@@ -8351,8 +8393,9 @@ very high pitch, very low pitch, whisper, young adult
           chunks: [chunk],
         }))
       : buildResumableChunkUnits(chunks, llm);
-    const segments = Array.isArray(segmentsState) ? segmentsState.slice() : [];
     let startIndex = resumeSnapshot?.stage === snapshotStage ? Math.max(0, Number(resumeSnapshot.currentIndex || 0)) : 0;
+    // startIndex=0 时全新开始，不继承旧 segmentsState（避免导入快照后段落叠加）
+    const segments = startIndex > 0 ? (Array.isArray(segmentsState) ? segmentsState.slice() : []) : [];
     saveAnalysisFlowSnapshot(text, llm, combo, snapshotStage, startIndex);
     setProgress({
       stage: "analyze",
@@ -8652,7 +8695,7 @@ very high pitch, very low pitch, whisper, young adult
 
   async function continueAnalysis() {
     if (taskBusy) return;
-    const snapshot = getParseSnapshot();
+    const snapshot = _inMemoryResumeSnapshot || getParseSnapshot();
     if (!snapshot) {
       setStatus("当前没有可继续的分析任务快照。");
       return;
