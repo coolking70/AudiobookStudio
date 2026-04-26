@@ -233,6 +233,67 @@ def allow_asr_autoload() -> bool:
     return os.getenv("OMNIVOICE_ALLOW_ASR_AUTOLOAD", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _iter_exception_chain(exc: Exception):
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        current = current.__cause__ or current.__context__
+
+
+def _looks_like_asr_autoload_failure(exc: Exception) -> bool:
+    type_tokens = (
+        "connecttimeout",
+        "readtimeout",
+        "timeouterror",
+        "localentrynotfounderror",
+        "entrynotfounderror",
+        "repositorynotfounderror",
+        "gatedrepoerror",
+        "hfhubhttperror",
+    )
+    message_tokens = (
+        "huggingface",
+        "hf.co",
+        "list_repo_tree",
+        "from_pretrained",
+        "connect timeout",
+        "connecttimeout",
+        "read timeout",
+        "readtimeout",
+        "timed out",
+        "winerror 10060",
+        "connection attempt failed",
+        "automatic-speech-recognition",
+    )
+    for current in _iter_exception_chain(exc):
+        type_name = type(current).__name__.lower()
+        message = str(current or "").lower()
+        if any(token in type_name for token in type_tokens):
+            return True
+        if any(token in message for token in message_tokens):
+            return True
+    return False
+
+
+def _format_asr_autoload_failure_message(asr_model_name: str) -> str:
+    asr_target = str(asr_model_name or "").strip() or ASR_MODEL_NAME
+    resolved_path = Path(asr_target).expanduser()
+    if resolved_path.exists():
+        return (
+            "当前参考音频未填写 ref_text，系统尝试自动转写参考音频时加载 ASR 模型失败。"
+            f"请检查本地 ASR 模型目录是否完整可用：{resolved_path}。"
+            "你也可以先手动填写这段参考音频对应的 ref_text，再重新试听。"
+        )
+    return (
+        "当前参考音频未填写 ref_text，系统尝试自动加载 Whisper ASR 进行转写，但未能成功连接 HuggingFace "
+        f"或读取本地缓存模型（当前目标：{asr_target}）。"
+        "请优先手动填写这段参考音频对应的 ref_text；"
+        "或者先在模型配置页预加载音频识别模型/配置本地 ASR 模型目录后，再重新试听。"
+    )
+
+
 class OmniVoicePipeline:
     def __init__(
         self,
@@ -511,10 +572,15 @@ class OmniVoicePipeline:
             cache_key = (normalized_ref_audio, normalized_ref_text)
             voice_clone_prompt = self.voice_clone_prompt_cache.get(cache_key)
             if voice_clone_prompt is None:
-                voice_clone_prompt = model.create_voice_clone_prompt(
-                    ref_audio=normalized_ref_audio,
-                    ref_text=normalized_ref_text or None,
-                )
+                try:
+                    voice_clone_prompt = model.create_voice_clone_prompt(
+                        ref_audio=normalized_ref_audio,
+                        ref_text=normalized_ref_text or None,
+                    )
+                except Exception as exc:
+                    if not normalized_ref_text and _looks_like_asr_autoload_failure(exc):
+                        raise RuntimeError(_format_asr_autoload_failure_message(self.asr_model_name)) from exc
+                    raise
                 self.voice_clone_prompt_cache[cache_key] = voice_clone_prompt
             kwargs["voice_clone_prompt"] = voice_clone_prompt
         else:

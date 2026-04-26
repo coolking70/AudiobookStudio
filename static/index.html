@@ -1070,6 +1070,18 @@
       font-size: 12px;
       line-height: 1.5;
     }
+    .character-card-select {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--sub);
+      font-size: 12px;
+      cursor: default;
+      flex: 0 0 auto;
+    }
+    .character-card-select input[type="checkbox"] {
+      margin: 0;
+    }
     .analysis-editor-shell {
       min-width: 0;
     }
@@ -2025,7 +2037,11 @@
               <div class="toolbar">
                 <button type="button" class="secondary" onclick="setAnalysisSpeakerFilter('')">显示全部</button>
                 <button type="button" class="secondary" onclick="focusSelectedSpeakerInSegments()">定位到筛选结果</button>
+                <button type="button" class="secondary" onclick="selectAllMergeRoles()">全选角色</button>
+                <button type="button" class="secondary" onclick="clearMergeSelection()">清空勾选</button>
+                <button type="button" onclick="mergeSelectedRoles()">合并所选角色</button>
               </div>
+              <div class="mini-note">勾选框用于手动合并角色，点击角色卡片本身则用于筛选下方分析结果。</div>
               <div id="speakerMergeList" class="character-roster-list"></div>
             </div>
 
@@ -5094,6 +5110,8 @@ very high pitch, very low pitch, whisper, young adult
     const meta = document.getElementById("speakerMergeMeta");
     const counts = countSegmentsBySpeaker();
     const speakers = Object.keys(counts);
+    cleanupMergeSelection(speakers);
+    const selectedCount = getSelectedMergeSpeakers(speakers).length;
     if (!speakers.length) {
       if (meta) meta.textContent = "完成文本分析后，这里会列出角色与对应段数";
       container.innerHTML = `<div class="analysis-empty">完成文本分析后，这里会列出当前识别到的角色清单。</div>`;
@@ -5103,9 +5121,12 @@ very high pitch, very low pitch, whisper, young adult
       activeAnalysisSpeaker = "";
     }
     if (meta) {
-      meta.textContent = activeAnalysisSpeaker
+      const filterText = activeAnalysisSpeaker
         ? `当前选中角色「${activeAnalysisSpeaker}」，展开分析结果时会只显示该角色`
         : `当前共 ${speakers.length} 个角色，点击角色可筛选下方分析结果`;
+      meta.textContent = selectedCount
+        ? `${filterText}；已勾选 ${selectedCount} 个待合并角色`
+        : filterText;
     }
 
     const roster = speakers.map((speaker) => {
@@ -5114,25 +5135,30 @@ very high pitch, very low pitch, whisper, young adult
       const gender = inferGenderLabel(sampleStyle);
       const tone = inferToneLabel(sampleStyle);
       const activeClass = activeAnalysisSpeaker === speaker ? " active" : "";
+      const checked = !!mergeSelectionState[speaker];
       return `
-        <button type="button" class="character-card${activeClass}" onclick="setAnalysisSpeakerFilter('${escapeJs(speaker)}')">
+        <div class="character-card${activeClass}" onclick="setAnalysisSpeakerFilter('${escapeJs(speaker)}')">
           <div class="character-card-head">
+            <label class="character-card-select" onclick="event.stopPropagation()">
+              <input type="checkbox" ${checked ? "checked" : ""} onchange="toggleMergeRole('${escapeJs(speaker)}', this.checked)" />
+              <span>合并</span>
+            </label>
             <span class="character-card-name">${escapeHtml(speaker)}</span>
             <span class="pill">${counts[speaker]} 段</span>
           </div>
           <div class="character-card-meta">性别：${escapeHtml(gender)} · 语气：${escapeHtml(tone)}</div>
-        </button>
+        </div>
       `;
     }).join("");
 
     container.innerHTML = `
-      <button type="button" class="character-card${!activeAnalysisSpeaker ? " active" : ""}" onclick="setAnalysisSpeakerFilter('')">
+      <div class="character-card${!activeAnalysisSpeaker ? " active" : ""}" onclick="setAnalysisSpeakerFilter('')">
         <div class="character-card-head">
           <span class="character-card-name">全部角色</span>
           <span class="pill">${segmentsState.length} 段</span>
         </div>
         <div class="character-card-meta">显示当前 JSON 分析结果中的全部内容</div>
-      </button>
+      </div>
       ${roster}
     `;
   }
@@ -5157,21 +5183,122 @@ very high pitch, very low pitch, whisper, young adult
 
   function toggleMergeRole(speaker, checked) {
     mergeSelectionState[speaker] = checked;
+    renderSpeakerMergeList();
   }
 
-  function selectAllMergeRoles() {}
+  function cleanupMergeSelection(validSpeakers = getSpeakerList()) {
+    const valid = new Set(validSpeakers || []);
+    Object.keys(mergeSelectionState).forEach((speaker) => {
+      if (!valid.has(speaker) || !mergeSelectionState[speaker]) {
+        delete mergeSelectionState[speaker];
+      }
+    });
+  }
+
+  function getSelectedMergeSpeakers(validSpeakers = getSpeakerList()) {
+    const valid = new Set(validSpeakers || []);
+    return Object.keys(mergeSelectionState).filter((speaker) => mergeSelectionState[speaker] && valid.has(speaker));
+  }
+
+  function selectAllMergeRoles() {
+    getSpeakerList().forEach((speaker) => {
+      mergeSelectionState[speaker] = true;
+    });
+    renderSpeakerMergeList();
+  }
 
   function clearMergeSelection() {
-    activeAnalysisSpeaker = "";
+    mergeSelectionState = {};
     renderSpeakerMergeList();
-    updateSegmentsMeta();
+  }
+
+  function buildMergedRoleProfile(targetSpeaker, selectedSpeakers) {
+    const merged = roleProfilesState[targetSpeaker]
+      ? { ...roleProfilesState[targetSpeaker], speaker: targetSpeaker }
+      : {
+          speaker: targetSpeaker,
+          style: "",
+          ref_audio: "",
+          ref_text: "",
+          voice_engine: "",
+          voice_name: "",
+          voice_locale: "",
+          cfg_value: "",
+          inference_timesteps: "",
+        };
+    selectedSpeakers.forEach((speaker) => {
+      const profile = roleProfilesState[speaker] || {};
+      if (profile.style) {
+        merged.style = mergeStyleTags(merged.style || "", profile.style);
+      }
+      if (!merged.ref_audio && profile.ref_audio) merged.ref_audio = profile.ref_audio;
+      if (!merged.ref_text && profile.ref_text) merged.ref_text = profile.ref_text;
+      if (!merged.voice_engine && profile.voice_engine) merged.voice_engine = profile.voice_engine;
+      if (!merged.voice_name && profile.voice_name) merged.voice_name = profile.voice_name;
+      if (!merged.voice_locale && profile.voice_locale) merged.voice_locale = profile.voice_locale;
+      if (!merged.cfg_value && profile.cfg_value) merged.cfg_value = profile.cfg_value;
+      if (!merged.inference_timesteps && profile.inference_timesteps) merged.inference_timesteps = profile.inference_timesteps;
+    });
+    return merged;
+  }
+
+  function mergeSelectedRoles() {
+    const selected = getSelectedMergeSpeakers();
+    if (selected.length < 2) {
+      setStatus("请先勾选至少两个角色，再执行合并。");
+      return;
+    }
+    const defaultTarget = selected.includes(activeAnalysisSpeaker) && activeAnalysisSpeaker
+      ? activeAnalysisSpeaker
+      : selected[0];
+    const targetInput = window.prompt(
+      `请输入合并后的角色名。\n已选角色：${selected.join("、")}`,
+      defaultTarget
+    );
+    if (targetInput === null) return;
+    const targetSpeaker = String(targetInput || "").trim() || defaultTarget;
+    const sourceSet = new Set(selected);
+    const mergedProfile = buildMergedRoleProfile(targetSpeaker, selected);
+    if (!(targetSpeaker in roleVoiceAssignments)) {
+      roleVoiceAssignments[targetSpeaker] = "";
+    }
+    if (!roleVoiceAssignments[targetSpeaker]) {
+      for (const speaker of selected) {
+        if (roleVoiceAssignments[speaker]) {
+          roleVoiceAssignments[targetSpeaker] = roleVoiceAssignments[speaker];
+          break;
+        }
+      }
+    }
+    selected.forEach((speaker) => {
+      if (speaker !== targetSpeaker) {
+        delete roleProfilesState[speaker];
+        delete roleVoiceAssignments[speaker];
+      }
+    });
+    if (activeAnalysisSpeaker && sourceSet.has(activeAnalysisSpeaker)) {
+      activeAnalysisSpeaker = targetSpeaker;
+    }
+    mergeSelectionState = {};
+    const mergedSegments = segmentsState.map((seg) => {
+      const speaker = seg.speaker || "旁白";
+      if (!sourceSet.has(speaker)) return { ...seg };
+      return { ...seg, speaker: targetSpeaker };
+    });
+    applySegmentsState(mergedSegments);
+    roleProfilesState[targetSpeaker] = mergedProfile;
+    ensureRoleAssignments();
+    localStorage.setItem("ov_role_profiles", JSON.stringify(roleProfilesState));
+    localStorage.setItem("ov_role_voice_assignments", JSON.stringify(roleVoiceAssignments));
+    renderRoles();
+    renderRoleAssignments();
+    renderSpeakerMergeList();
     updateAnalysisFilterState();
     if (segmentsPanelExpanded) {
       renderSegments(true);
     }
+    setStatus(`已将 ${selected.length} 个角色合并为「${targetSpeaker}」。`);
   }
-
-  function mergeSelectedRoles() {}
 
   function goToAudioGeneration() {
     if (!segmentsState.length) {
@@ -7153,6 +7280,53 @@ very high pitch, very low pitch, whisper, young adult
     }
   }
 
+  function clearTextAndCache() {
+    if (taskBusy) {
+      setStatus("当前有任务正在运行，请先停止任务再清空。");
+      showToast("任务运行中，无法清空", "warn", 2600);
+      return;
+    }
+    const hasContent = !!(document.getElementById("sourceText").value
+      || segmentsState.length || plannedChunksState.length
+      || optimizedChunksState.length || chapterChunksState.length
+      || _inMemoryResumeSnapshot || _inMemoryLatestSnapshot || getParseSnapshot());
+    if (hasContent) {
+      const ok = confirm(
+        "将清空：\n" +
+        "  · 原文输入框内容\n" +
+        "  · 章节识别 / 智能分段 / 语音适配优化结果\n" +
+        "  · 角色分析结果\n" +
+        "  · 内存中的导入快照与实时进度镜像\n" +
+        "  · 浏览器本地缓存的分析断点\n\n" +
+        "此操作不可撤销。确定继续？"
+      );
+      if (!ok) return;
+    }
+    document.getElementById("sourceText").value = "";
+    chapterChunksState = [];
+    plannedChunksState = [];
+    optimizedChunksState = [];
+    segmentationInfoState = null;
+    applySegmentsState([], { persist: true });
+    clearParseSnapshot();
+    _snapshotQuotaWarned = false;
+    try { localStorage.removeItem(LAST_SEGMENTS_STORAGE_KEY); } catch (_) {}
+    renderAnalysisPipelineMeta();
+    updateAnalysisFlowUI();
+    updateExportProgressButton();
+    setStatus("已清空原文、所有阶段结果，以及内存与浏览器缓存。");
+    showToast("已彻底清空文本与缓存", "success", 2400);
+    setProgress({
+      summary: "已清空",
+      detail: "原文、各阶段结果、内存断点与本地缓存都已清空，可开始新任务。",
+      stage: "idle",
+      percent: 0,
+      total: 0,
+      done: 0,
+      indeterminate: false,
+    }, { log: "用户手动清空了文本和所有缓存" });
+  }
+
   function renderSegments(force = false) {
     syncRoleProfilesFromSegments();
     if (!segmentsPanelExpanded && !force) {
@@ -7278,53 +7452,6 @@ very high pitch, very low pitch, whisper, young adult
     if (taskBusy) return;
     segmentsState.splice(index, 1);
     applySegmentsState(segmentsState);
-  }
-
-  function clearTextAndCache() {
-    if (taskBusy) {
-      setStatus("当前有任务正在运行，请先停止任务再清空。");
-      showToast("任务运行中，无法清空", "warn", 2600);
-      return;
-    }
-    const hasContent = !!(document.getElementById("sourceText").value
-      || segmentsState.length || plannedChunksState.length
-      || optimizedChunksState.length || chapterChunksState.length
-      || _inMemoryResumeSnapshot || _inMemoryLatestSnapshot || getParseSnapshot());
-    if (hasContent) {
-      const ok = confirm(
-        "将清空：\n" +
-        "  · 原文输入框内容\n" +
-        "  · 章节识别 / 智能分段 / 语音适配优化结果\n" +
-        "  · 角色分析结果\n" +
-        "  · 内存中的导入快照与实时进度镜像\n" +
-        "  · 浏览器本地缓存的分析断点\n\n" +
-        "此操作不可撤销。确定继续？"
-      );
-      if (!ok) return;
-    }
-    document.getElementById("sourceText").value = "";
-    chapterChunksState = [];
-    plannedChunksState = [];
-    optimizedChunksState = [];
-    segmentationInfoState = null;
-    applySegmentsState([], { persist: true });
-    clearParseSnapshot();           // 同时清掉 _inMemoryResumeSnapshot / _inMemoryLatestSnapshot / localStorage
-    _snapshotQuotaWarned = false;   // 重置空间不足提示标志
-    try { localStorage.removeItem(LAST_SEGMENTS_STORAGE_KEY); } catch (_) {}
-    renderAnalysisPipelineMeta();
-    updateAnalysisFlowUI();
-    updateExportProgressButton();
-    setStatus("已清空原文、所有阶段结果，以及内存与浏览器缓存。");
-    showToast("已彻底清空文本与缓存", "success", 2400);
-    setProgress({
-      summary: "已清空",
-      detail: "原文、各阶段结果、内存断点与本地缓存都已清空，可开始新任务。",
-      stage: "idle",
-      percent: 0,
-      total: 0,
-      done: 0,
-      indeterminate: false,
-    }, { log: "用户手动清空了文本和所有缓存" });
   }
 
   function clearSegments() {
@@ -8388,8 +8515,8 @@ very high pitch, very low pitch, whisper, young adult
       restoreAnalysisFlowSnapshotState(resumeSnapshot);
     }
     const units = buildResumableChunkUnits(chunks, llm);
-    const segments = Array.isArray(segmentsState) ? segmentsState.slice() : [];
     let startIndex = resumeSnapshot?.stage === "optimize_analyze" ? Math.max(0, Number(resumeSnapshot.currentIndex || 0)) : 0;
+    const segments = startIndex > 0 ? (Array.isArray(segmentsState) ? segmentsState.slice() : []) : [];
     saveAnalysisFlowSnapshot(text, llm, combo, "optimize_analyze", startIndex);
     setProgress({
       stage: "analyze",
