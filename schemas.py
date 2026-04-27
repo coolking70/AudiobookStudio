@@ -97,7 +97,7 @@ class LLMConfig(BaseModel):
     context_mode: str = "chapter"
     enable_speaker_verification: bool = False   # 二轮 speaker 复核（额外 LLM 调用）
     enable_character_alias_merge: bool = True    # 别名归并归一化
-    output_mode: str = "verbose"                 # "verbose"（完整 JSON）或 "compact"（紧凑行表格）
+    output_mode: str = "compact"                 # "verbose"（完整 JSON）或 "compact"（紧凑行表格）
 
 
 class ParseRequest(BaseModel):

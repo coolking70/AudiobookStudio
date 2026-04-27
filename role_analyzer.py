@@ -41,6 +41,7 @@ VALID_INSTRUCT_ITEMS = {
 VALID_EMOTIONS = {"neutral", "soft", "cold", "serious", "curious", "angry"}
 MAX_RETRIES = 3
 RETRY_DELAY_SECONDS = 1.2
+COMPACT_DECODE_RETRIES = 2
 DEFAULT_CHUNK_MAX_CHARS = 6000
 SEED_CHUNK_MAX_CHARS = 12000
 SAMPLE_DETECT_MAX_CHARS = 5000
@@ -86,12 +87,12 @@ japanese accent, korean accent, low pitch, male, middle-aged,
 moderate pitch, portuguese accent, russian accent, teenager,
 very high pitch, very low pitch, whisper, young adult
 6. 不要输出任何解释、注释、markdown，只输出 JSON。
-7. 当无法可靠判断说话人时，speaker 填 “UNKNOWN”，不要硬猜成已知角色名；程序会将 UNKNOWN 自动归入旁白，避免错误归属。
+7. 当无法可靠判断说话人时，speaker 填 “UNKNOWN”，不要硬猜成已知角色名；UNKNOWN 会保留给后续人工复核。
 8. 切分粒度：以”一段旁白叙述”或”一轮对白”为基本单位。相邻旁白叙述可合并为 1-3 句一段，但绝不允许省略或丢弃任何旁白内容。
-9. 对白与旁白必须分属不同的 segment。引号内的对白归角色，引号外的叙述（含动作、场景、心理描写）归”旁白”。即使它们在同一个自然句中（如：”你好。”他说。），也必须拆成两个 segment：一个角色对白、一个旁白叙述。
-10. 旁白段只包含叙述，不包含引号对白；角色段只包含该角色说的对白，不包含叙述动作。例如 “李明摇了摇头：”不行。””应拆为：旁白”李明摇了摇头：”+ 李明”不行。”。
+9. 对白与旁白必须分属不同的 segment。引号内的对白归角色，引号外的叙述（含动作、表情、场景、心理描写、”说道/问道/答道/苦笑/点头”等提示语）归”旁白”。
+10. 遇到 “「对白。」某某说道。” 必须拆成两段：某某 “「对白。」” + 旁白 “某某说道。”；遇到 “某某说道：「对白。」” 必须拆成：旁白 “某某说道：” + 某某 “「对白。」”。
 11. 只有当单段明显过长时，才继续往下细分。
-12. 根据角色的性别、年龄、性格特征来选择合适的 style 标签组合。
+12. style 只作为粗略初值；同一 speaker 必须保持稳定性别标签，不要因为情绪把女性角色改成 male，也不要因为严肃语气把男性角色改成 female。
 13. 根据对白的语境和情绪来选择合适的 emotion。
 14. **严禁省略任何原文内容**：所有 segments 的 text 按顺序拼接起来必须覆盖原文的每一个字。
 15. 判断 speaker 时务必结合上下文语义：
@@ -99,6 +100,15 @@ very high pitch, very low pitch, whisper, young adult
     b. 内容为”是的/不是/没错/我不知道/嗯”等答复时，说话人优先判断为被提问的 B，而非提问的 A；
     c. 对白中出现”X 大人/殿下/阁下/您”等敬称时，说话人通常不是被称呼的 X 本人；
     d. 不要简单沿用上一轮对白的说话人——每句都要重新根据上下文判断。
+    e. 对话密集场景中要维护“当前对话参与者”与“上一句实际说话人”；没有新提示语时，通常在参与者之间轮流，但遇到叙述插入后必须重新判断。
+    f. 角色名称是专有名词，speaker 应优先使用原文中出现的完整称呼；不要把“拉菲纳克”这类名字按语义或字面截断成“菲纳克”，除非原文明确只以该称呼出现。
+16. 分析每一句前，先判断它的文本功能：
+    - 引号内且确实是角色说出口的话：归实际说话人；
+    - 非引号行默认归旁白，除非它是明确的内心独白或文本本身就是角色直接话语；
+    - “某某说道/问道/笑道/点头/走来/心想/觉得/看着……” 等提示语、动作、心理、表情、场景说明：归旁白；
+    - 引号内如果是称号、传闻标题、比喻或被叙述引用的短语（如“像猫狗般水火不容”），不是角色对白，归旁白；
+    - “露出『某句话』的表情/神色”这类引号短语不是对白，整句归旁白。
+17. speaker 判断要优先找明确提示语和上下文轮次，不要只因为某个角色名离对白最近就归给该角色。无法高置信度判断时填 UNKNOWN。
 """.strip()
 
 # 上下文感知模式追加到 system prompt 的额外规则（context_mode != “off” 时注入）
@@ -118,13 +128,15 @@ SPEAKER_VERIFICATION_PROMPT = """
 你是”TTS 对白说话人核查专员”。你的唯一任务是核查给定 JSON segments 中的 speaker 字段是否与原文上下文一致。
 
 规则：
-1. 只检查和修正 speaker，绝对不修改 text、emotion、style 字段。
+1. 只检查和修正 speaker，必要时可把明显的动作叙述改为旁白；绝对不修改 text、emotion、style 字段。
 2. 只在高置信度时才输出修正建议；有疑问则跳过，绝不乱猜。
 3. 常见错误场景（优先排查）：
    - “A 向 B 发问”后的对白被标为 B，实应为 A；
    - 回答内容（是的/不是/没错）被标为提问方，实应为被提问方；
    - 对白中称呼”X 大人/殿下”，被错标为 X 本人；
    - 连续轮次中错把上一段的说话人沿用到下一段。
+   - 只有动作/心理/提示语的叙述段（如“米拉说道”“堤格尔苦笑着”）被错标成该角色，实应为旁白。
+   - 引号内容只是称号、传闻标题、比喻或“露出『某句话』的表情”，被误当成对白。
 4. 对每个有问题的 segment，输出其 index（从 0 起算）和建议 speaker。
 5. 如果所有 speaker 都正确，输出空 corrections 列表。
 
@@ -308,11 +320,107 @@ def normalize_style(style: str | None) -> str | None:
 
 
 def fallback_style_by_role(speaker: str, emotion: str) -> str:
-    if speaker == "旁白":
+    if speaker in {"旁白", "UNKNOWN"}:
         return "female, moderate pitch"
+    gender = infer_speaker_gender(speaker)
+    if gender == "female":
+        return "female, young adult, moderate pitch"
+    if gender == "male":
+        return "male, young adult, moderate pitch" if emotion not in {"cold", "serious", "angry"} else "male, low pitch"
     if emotion in {"cold", "serious", "angry"}:
         return "male, low pitch"
     return "male, young adult, moderate pitch"
+
+
+KNOWN_FEMALE_SPEAKERS = {
+    "米拉", "琉德米拉", "琉德米拉·露利叶", "苏菲", "苏菲亚", "艾莲", "艾蕾欧诺拉", "艾蕾欧诺拉·维尔塔利亚",
+    "莉姆", "莉姆亚莉夏", "菈娜", "史薇特菈娜", "蒂塔", "凡伦蒂娜", "宓莉莎", "茨魅", "艾榭",
+}
+KNOWN_MALE_SPEAKERS = {
+    "堤格尔", "堤格尔维尔穆德", "堤格尔维尔穆德·冯伦", "拉菲纳克", "加雷宁", "村长", "艾略特",
+    "嘉奴隆", "卢里克", "列许", "达马德", "邦纳", "嘉洛诺夫", "塔拉多", "泰纳帝", "罗兰",
+    "莱榭克", "萨安", "克雷伊修", "王子", "国王",
+}
+
+
+def infer_speaker_gender(speaker: str) -> str:
+    name = str(speaker or "").strip()
+    if not name or name in {"旁白", "UNKNOWN"}:
+        return "unknown"
+    if name in KNOWN_FEMALE_SPEAKERS or any(alias and alias in name for alias in KNOWN_FEMALE_SPEAKERS):
+        return "female"
+    if name in KNOWN_MALE_SPEAKERS or any(alias and alias in name for alias in KNOWN_MALE_SPEAKERS):
+        return "male"
+    return "unknown"
+
+
+def style_with_gender(style: str | None, speaker: str, emotion: str) -> str:
+    if str(speaker or "").strip() in {"旁白", "UNKNOWN"}:
+        return "female, moderate pitch"
+    normalized = normalize_style(style)
+    gender = infer_speaker_gender(speaker)
+    if not normalized:
+        return fallback_style_by_role(speaker, emotion)
+    parts = [item.strip() for item in normalized.split(",") if item.strip()]
+    if gender in {"female", "male"}:
+        parts = [item for item in parts if item not in {"female", "male"}]
+        parts.insert(0, gender)
+    if not any(item in {"moderate pitch", "low pitch", "high pitch", "very low pitch", "very high pitch"} for item in parts):
+        parts.append("moderate pitch")
+    dedup: list[str] = []
+    for item in parts:
+        if item in VALID_INSTRUCT_ITEMS and item not in dedup:
+            dedup.append(item)
+    return ", ".join(dedup) or fallback_style_by_role(speaker, emotion)
+
+
+def mark_suspicious_speakers(
+    segments: list[dict[str, Any]],
+    known_characters: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    known_set = set(known_characters) if known_characters else set()
+    for seg in segments:
+        speaker = str(seg.get("speaker") or "旁白").strip() or "旁白"
+        seg["speaker"] = speaker
+        if speaker == "UNKNOWN":
+            seg["_needs_review"] = True
+            seg.pop("_suspicious", None)
+        elif known_set and speaker != "旁白" and speaker not in known_set:
+            seg["_suspicious"] = True
+            seg.pop("_needs_review", None)
+        else:
+            seg.pop("_suspicious", None)
+            seg.pop("_needs_review", None)
+    return segments
+
+
+def stabilize_segment_styles(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    speaker_styles: dict[str, dict[str, int]] = {}
+    for seg in segments:
+        speaker = str(seg.get("speaker") or "旁白")
+        style = style_with_gender(seg.get("style"), speaker, str(seg.get("emotion") or "neutral"))
+        speaker_styles.setdefault(speaker, {})
+        speaker_styles[speaker][style] = speaker_styles[speaker].get(style, 0) + 1
+
+    dominant = {
+        speaker: max(counts.items(), key=lambda item: item[1])[0]
+        for speaker, counts in speaker_styles.items()
+        if counts
+    }
+    for seg in segments:
+        speaker = str(seg.get("speaker") or "旁白")
+        emotion = str(seg.get("emotion") or "neutral")
+        seg["style"] = style_with_gender(dominant.get(speaker) or seg.get("style"), speaker, emotion)
+    return segments
+
+
+def postprocess_segments(
+    segments: list[dict[str, Any]],
+    known_characters: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """统一收口角色分析结果，只做元数据清洗与音色稳定。"""
+    marked = mark_suspicious_speakers(segments, known_characters)
+    return stabilize_segment_styles(marked)
 
 
 def sanitize_segments(
@@ -336,9 +444,7 @@ def sanitize_segments(
         if emotion not in VALID_EMOTIONS:
             emotion = "neutral"
 
-        # UNKNOWN → 旁白，但记录标志供前端展示
-        was_unknown = raw_speaker == "UNKNOWN"
-        speaker = "旁白" if was_unknown else raw_speaker
+        speaker = raw_speaker
 
         if not style:
             style = fallback_style_by_role(speaker, emotion)
@@ -351,14 +457,12 @@ def sanitize_segments(
             "ref_audio": None,
             "ref_text": None,
         }
-        if was_unknown:
-            entry["_was_unknown"] = True
-        # 标记可疑 speaker：不在已知角色中且不是旁白
-        if known_set and speaker != "旁白" and speaker not in known_set:
-            entry["_suspicious"] = True
-
+        # 保留所有以 _ 开头的元数据字段（_confidence / _needs_review 等）
+        for k, v in seg.items():
+            if k.startswith("_"):
+                entry[k] = v
         cleaned.append(entry)
-    return cleaned
+    return postprocess_segments(cleaned, list(known_set) if known_set else None)
 
 
 def detect_heading_pattern_by_rules(text: str) -> tuple[re.Pattern[str] | None, str, int]:
@@ -547,6 +651,30 @@ def _is_timeout_like_error(exc: Exception) -> bool:
     return any(token in message for token in ("超时", "timeout", "timed out"))
 
 
+def _is_transient_llm_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    transient_tokens = (
+        "超时",
+        "timeout",
+        "timed out",
+        "连接失败",
+        "connection",
+        "主动断开",
+        "remote protocol",
+        "server disconnected",
+        "返回为空",
+        "temporarily",
+        "try again",
+        "rate limit",
+        "429",
+        "500",
+        "502",
+        "503",
+        "504",
+    )
+    return any(token in message for token in transient_tokens)
+
+
 def _extract_detection_sample(text: str, limit: int = SAMPLE_DETECT_MAX_CHARS) -> str:
     normalized = str(text or "").strip()
     if len(normalized) <= limit:
@@ -577,8 +705,7 @@ def infer_heading_pattern_with_llm(sample_text: str, llm_config: LLMConfig) -> d
                 "content": f"请判断下面文本样本最像哪一种章节标题模式。\n\n文本样本：\n{sample_text}",
             },
         ]
-        client = OpenAICompatibleClient(llm_config)
-        content = client.chat_text(messages, purpose="章节规则探测")
+        content = _run_chat_text_with_retry(llm_config, messages, purpose="章节规则探测")
         _dump_compact_debug("compact_chapter_detect", "chapter_detect", messages, response_text=content)
         line = next((row.strip() for row in content.splitlines() if row.strip().startswith("PATTERN:")), "")
         if not line:
@@ -926,6 +1053,39 @@ def _run_chat_json_with_retry(
     raise RuntimeError(f"{error_prefix}：{last_error}") from last_error
 
 
+def _run_chat_text_with_retry(
+    llm_config: LLMConfig,
+    messages: list[dict[str, Any]],
+    purpose: str,
+    max_tokens: int | None = None,
+) -> str:
+    """对 compact/text 调用增加瞬时错误重试。
+
+    不重试 finish_reason=length 这类确定性容量错误，避免重复浪费 token。
+    """
+    last_error: Exception | None = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        client = OpenAICompatibleClient(llm_config)
+        try:
+            return client.chat_text(messages, max_tokens=max_tokens, purpose=purpose)
+        except Exception as exc:
+            last_error = exc
+            if "finish_reason=length" in str(exc):
+                break
+            if attempt >= MAX_RETRIES or not _is_transient_llm_error(exc):
+                break
+            logging.warning(
+                "[llm] %s 第 %s/%s 次调用失败（%s），稍后重试",
+                purpose,
+                attempt,
+                MAX_RETRIES,
+                exc,
+            )
+            time.sleep(RETRY_DELAY_SECONDS * attempt)
+    assert last_error is not None
+    raise last_error
+
+
 def _coerce_chunks(raw_chunks: list[dict[str, Any]], fallback_title: str) -> list[dict[str, str]]:
     normalized = []
     for index, chunk in enumerate(raw_chunks, start=1):
@@ -963,8 +1123,7 @@ def intelligent_segment_seed_chunk(seed_chunk: dict[str, str], llm_config: LLMCo
             },
         ]
         try:
-            client = OpenAICompatibleClient(llm_config)
-            compact_text = client.chat_text(messages, purpose="紧凑智能分段")
+            compact_text = _run_chat_text_with_retry(llm_config, messages, purpose="紧凑智能分段")
             _dump_compact_debug("compact_segment", seed_chunk["title"], messages, response_text=compact_text)
             chunks = _decode_compact_chunk_plan(compact_text, compact_chunk, seed_chunk["title"])
             if chunks:
@@ -977,15 +1136,11 @@ def intelligent_segment_seed_chunk(seed_chunk: dict[str, str], llm_config: LLMCo
                 )
                 _dump_compact_debug("compact_segment_error", seed_chunk["title"], messages, response_text=compact_text if 'compact_text' in locals() else "", error=str(exc))
                 return fallback_chunks
-            logging.warning(f"[compact] {seed_chunk['title']} 智能分段解码失败（{exc}），回退 verbose 模式")
+            logging.warning(
+                f"[compact] {seed_chunk['title']} 智能分段失败（{exc}），保留本地切块结果继续 compact 流程。"
+            )
             _dump_compact_debug("compact_segment_error", seed_chunk["title"], messages, response_text=compact_text if 'compact_text' in locals() else "", error=str(exc))
-            fallback_cfg = llm_config.model_copy(update={"output_mode": "verbose"})
-            try:
-                return intelligent_segment_seed_chunk(seed_chunk, fallback_cfg)
-            except Exception as verbose_exc:
-                raise RuntimeError(
-                    f"{seed_chunk['title']} 紧凑智能分段失败（{exc}），且回退 verbose 模式后仍失败：{verbose_exc}"
-                ) from verbose_exc
+            return fallback_chunks or [seed_chunk]
 
     base_prompt = llm_config.segment_prompt.strip() if llm_config.segment_prompt else SEGMENT_PLAN_PROMPT
     prompt = (
@@ -1105,17 +1260,17 @@ def optimize_chunk_for_tts(chunk: dict[str, str], llm_config: LLMConfig) -> dict
             },
         ]
         try:
-            client = OpenAICompatibleClient(llm_config)
-            compact_text = client.chat_text(messages, purpose="紧凑文本优化")
+            compact_text = _run_chat_text_with_retry(llm_config, messages, purpose="紧凑文本优化")
             _dump_compact_debug("compact_optimize", chunk["title"], messages, response_text=compact_text)
             optimized_content = _decode_compact_optimized_content(compact_text, compact_chunk)
             if optimized_content:
                 return {"title": chunk["title"], "content": optimized_content}
         except Exception as exc:
-            logging.warning(f"[compact] {chunk['title']} 语音适配优化解码失败（{exc}），回退 verbose 模式")
+            logging.warning(
+                f"[compact] {chunk['title']} 语音适配优化失败（{exc}），保留基础清理文本继续 compact 流程。"
+            )
             _dump_compact_debug("compact_optimize_error", chunk["title"], messages, response_text=compact_text if 'compact_text' in locals() else "", error=str(exc))
-            fallback_cfg = llm_config.model_copy(update={"output_mode": "verbose"})
-            return optimize_chunk_for_tts(chunk, fallback_cfg)
+            return {"title": chunk["title"], "content": cleaned}
 
     opt_prompt = llm_config.optimize_prompt.strip() if llm_config.optimize_prompt else TEXT_OPTIMIZATION_PROMPT
     messages = [
@@ -1164,19 +1319,60 @@ def _chapter_key(title: str) -> str:
 # 角色分析的紧凑输出格式，LLM 只输出行号表而非重复原文，节省 ~80% 输出 token。
 
 COMPACT_ANALYSIS_PROMPT = """
-输入是带行号小说文本。只输出：
+输入是带行号小说文本。判断每行 speaker 之前必须先检查以下三大陷阱：
+
+═══ 陷阱A：被谈论 ≠ 说话人 ═══
+对白中出现以下任一情况时，说话人**绝对不是**该名字/被称呼者：
+  · 出现称谓「少爷/大人/殿下/阁下/陛下/老师/师父/姐姐/哥哥」→ 说话人不是被称呼方
+  · 出现第三方名字+助词「的事/的话/怎样/如何/为人」→ 说话人不是该名字本人
+  · 用第三人称提及某角色（”她/他+名字”）→ 说话人不是该角色
+示例：
+  「还是要请少爷多考虑一下蒂塔的事。」
+  → 正确：拉菲纳克（”少爷”=堤格尔被称呼→不是堤格尔；”蒂塔的事”=蒂塔被谈论→不是蒂塔）
+  → 错误：蒂塔（× 仅看名字出现就归给该名字）
+
+═══ 陷阱B：紧跟的叙述行揭示真实说话人 ═══
+对白下一行若出现”某某挥手/点头/否定/笑道/沉吟/抱头/转身”等动作或情绪描写，**这个主语就是上一行对白的说话人**——不要被前文谁在提问/前文焦点干扰。
+示例：
+  L1: 「隔壁邻居，难道是莱德梅里兹吗？」
+  L2: [中间插入旁白介绍背景]
+  L3: 「不，不是那边的邻居。」
+  L4: 村长大大地挥手，否定了堤格尔的猜测。
+  → 正确：L3 = 村长（L4 明确”村长否定堤格尔的猜测”，L3 就是被否定的回答）
+  → 错误：L3 = 堤格尔（× 仅因前文 L1 是堤格尔在问就让他自答）
+
+═══ 陷阱C：动作叙述行（无引号）必为 0=旁白 ═══
+形如”XXX喝了一口酒，把话题转回来：”、”XXX抓了抓头发，焦躁地呼出一口气”这类句子，**没有引号 → 必是旁白**。即使主语是某角色、即使后面跟了冒号引出对白也不例外，冒号是旁白的过渡标点，不是该角色在说话。
+示例：
+  L1: 堤格尔喝了一口陶杯中的酒，把话题转回来：
+  L2: 「说到战姬大人……」
+  → 正确：L1 = 0（旁白，描写动作）；L2 = 堤格尔
+  → 错误：L1 = 堤格尔（× 即便提到他，没引号就不算他说话）
+
+──────────────────────────────────────────────
+
+完成上述检查后再按以下规则输出：
+
 ROLES: <编号>=<角色>|<style>, ...
 SEGS:
-<行号或范围> <编号> <情绪> [<锚点>|rest]
+<行号或范围> <编号> <情绪> <置信度> [<锚点>|rest]
 
 规则：
 - 0=旁白，?=UNKNOWN，其他编号必须先出现在 ROLES
 - 情绪只可用 ne so co se cu an
-- style 用英文标签并以空格分隔
-- 所有输入行必须按顺序完整覆盖；相邻旁白可合并，如 L1-L3 0 ne
-- 只有一行里同时含旁白和对白时才拆成两段：前段写锚点，后段写 rest
+- 置信度只可用 h（高，有明确提示语/动作主语指向，三大陷阱已排除）m（中，从对话轮次推断）l（低，仍有歧义或难以排除陷阱）；? 必须配 l
+- style 只能从以下短标签选 1-3 个并用空格分隔：male female child teenager young_adult middle-aged elderly low_pitch moderate_pitch high_pitch very_low_pitch very_high_pitch whisper
+- style 禁止写性格、身份、职业、剧情描述或长形容词
+- ROLES 示例：`ROLES: 1=堤格尔|male young_adult moderate_pitch, 2=拉菲纳克|male young_adult moderate_pitch`
+- 所有输入行必须按顺序完整覆盖；相邻旁白可合并，如 L1-L3 0 ne h
+- 一行里同时含对白和提示语时必须拆段：`「对白」某某说道` 写 `Lx 角色 ne h “「对白」”` 再写 `Lx 0 ne h rest`
+- 动作、表情、心理、提示语（说道/问道/答道/苦笑/点头/走来/心想/觉得等）默认 0=旁白
+- 非引号行默认 0=旁白
+- 引号内不一定都是对白：称号、传闻、比喻、”露出「某句话」的表情”都归 0=旁白
+- 没有新提示语的连续对白，通常在当前参与者之间轮流；但插入旁白后要根据提示语重新判断
+- 角色名优先用原文完整称呼；不确定用 ?
 - 锚点必须与原文完全一致
-- 不输出 JSON、markdown 或解释；不确定时优先整行归旁白
+- 不输出 JSON、markdown 或解释
 """.strip()
 
 COMPACT_SEGMENT_PLAN_PROMPT = """
@@ -1211,6 +1407,7 @@ COMPACT_SPEAKER_VERIFICATION_PROMPT = """
 FIXES:
 <窗口内index> | <建议speaker>
 ...
+优先修正：纯动作/心理/提示语被标为角色时改为旁白；非对白引号被误当对白时改为旁白；对白 speaker 明显错位时改为实际说话人。
 无修正时只输出 `FIXES:`；不要修改 text/emotion/style。
 """.strip()
 
@@ -1221,6 +1418,13 @@ _EMOTION_CODES: dict[str, str] = {
     # 容错：允许全称
     "neutral": "neutral", "soft": "soft", "cold": "cold",
     "serious": "serious", "curious": "curious", "angry": "angry",
+}
+
+# 置信度代码 → 全称映射
+_CONFIDENCE_CODES: dict[str, str] = {
+    "h": "high", "m": "medium", "l": "low",
+    # 容错：允许全称
+    "high": "high", "medium": "medium", "low": "low",
 }
 
 # 样式标签规范化：下划线 → 空格
@@ -1278,13 +1482,23 @@ def _decode_compact_output(
             continue
 
         # 拆分为 token，保留引号内的锚点文本作为一个整体
-        # 格式：line_ref  speaker  emotion  [anchor_or_rest]
-        tokens = raw_line.split(None, 3)  # 最多 4 个 token
+        # 格式（新）：line_ref  speaker  emotion  confidence  [anchor_or_rest]
+        # 格式（旧）：line_ref  speaker  emotion  [anchor_or_rest]
+        tokens = raw_line.split(None, 4)  # 最多 5 个 token
         if len(tokens) < 3:
             continue
 
         line_ref_token, speaker_token, emotion_token = tokens[0], tokens[1], tokens[2]
-        anchor_token = tokens[3].strip() if len(tokens) > 3 else ""
+
+        # 判断第 4 个 token 是置信度代码（h/m/l）还是旧格式的锚点/rest
+        raw_token3 = tokens[3].strip() if len(tokens) > 3 else ""
+        if raw_token3 in _CONFIDENCE_CODES:
+            confidence = _CONFIDENCE_CODES[raw_token3]
+            anchor_token = tokens[4].strip() if len(tokens) > 4 else ""
+        else:
+            # 旧格式（无置信度字段），默认 high
+            confidence = "high"
+            anchor_token = raw_token3
 
         # 情绪
         emotion = _EMOTION_CODES.get(emotion_token.lower(), "neutral")
@@ -1362,6 +1576,7 @@ def _decode_compact_output(
                 "text": seg_text,
                 "emotion": emotion,
                 "style": style,
+                "_confidence": confidence,
             })
 
     if not segments:
@@ -1669,10 +1884,25 @@ def _analyze_chunk_with_context(
 
         compact_text = ""
         try:
-            client = OpenAICompatibleClient(llm_config)
-            compact_text = client.chat_text(messages, purpose="紧凑角色分析")
-            _dump_compact_debug("compact_analyze", chunk["title"], messages, response_text=compact_text)
-            segments = _decode_compact_output(compact_text, chunk)
+            last_decode_error: Exception | None = None
+            for decode_attempt in range(1, COMPACT_DECODE_RETRIES + 1):
+                compact_text = _run_chat_text_with_retry(llm_config, messages, purpose="紧凑角色分析")
+                _dump_compact_debug("compact_analyze", chunk["title"], messages, response_text=compact_text)
+                try:
+                    segments = _decode_compact_output(compact_text, chunk)
+                    break
+                except Exception as decode_exc:
+                    last_decode_error = decode_exc
+                    if decode_attempt >= COMPACT_DECODE_RETRIES:
+                        raise
+                    logging.warning(
+                        "[compact] %s 第 %s/%s 次解码失败（%s），原块重试一次",
+                        chunk["title"],
+                        decode_attempt,
+                        COMPACT_DECODE_RETRIES,
+                        decode_exc,
+                    )
+                    time.sleep(RETRY_DELAY_SECONDS * decode_attempt)
         except Exception as exc:
             if _is_timeout_like_error(exc):
                 sub_chunks = _split_indexed_chunk_for_compact(
@@ -1702,11 +1932,31 @@ def _analyze_chunk_with_context(
                         )
                         merged_segments.extend(sub_segments)
                     return merged_segments, current_context or AnalysisContext()
-            # compact 解码失败 → 回退到 verbose 模式
-            logging.warning(f"[compact] {chunk['title']} 解码失败（{exc}），回退 verbose 模式")
             _dump_compact_debug("compact_analyze_error", chunk["title"], messages, response_text=compact_text, error=str(exc))
-            fallback_cfg = llm_config.model_copy(update={"output_mode": "verbose"})
-            return _analyze_chunk_with_context(chunk, fallback_cfg, context)
+            sub_chunks = _split_indexed_chunk_for_compact(
+                chunk,
+                max_chars=max(500, compact_char_budget // 2),
+                max_lines=max(8, compact_line_budget // 2),
+            )
+            if len(sub_chunks) > 1:
+                logging.warning(
+                    "[compact] %s 解码失败（%s），已切成 %s 个更小子块继续 compact 角色分析",
+                    chunk["title"],
+                    exc,
+                    len(sub_chunks),
+                )
+                merged_segments: list[dict[str, Any]] = []
+                current_context = context
+                for sub_chunk in sub_chunks:
+                    sub_segments, current_context = _analyze_chunk_with_context(
+                        sub_chunk, llm_config, current_context
+                    )
+                    merged_segments.extend(sub_segments)
+                return merged_segments, current_context or AnalysisContext()
+            raise RuntimeError(
+                f"{chunk['title']} 紧凑角色分析失败：模型输出不符合 compact 格式，"
+                f"且当前块已无法继续细分。原始错误：{exc}"
+            ) from exc
 
         known_chars = context.known_characters if context else []
         segments = sanitize_segments(segments, known_characters=known_chars)
@@ -1880,11 +2130,11 @@ def analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_config: LLMConfig)
 
     mode = str(getattr(llm_config, "context_mode", "") or "chapter").strip().lower()
     if mode == "full":
-        return _analyze_chunks_full_mode(chunks, llm_config)
+        return postprocess_segments(_analyze_chunks_full_mode(chunks, llm_config))
     if mode == "off":
-        return _analyze_chunks_off_mode(chunks, llm_config)
+        return postprocess_segments(_analyze_chunks_off_mode(chunks, llm_config))
     # 默认 "chapter"
-    return _analyze_chunks_chapter_mode(chunks, llm_config)
+    return postprocess_segments(_analyze_chunks_chapter_mode(chunks, llm_config))
 
 
 def optimize_and_analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_config: LLMConfig) -> list[dict[str, Any]]:
@@ -1908,7 +2158,7 @@ def optimize_and_analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_confi
     for item in results:
         if item:
             merged.extend(item)
-    return merged
+    return postprocess_segments(merged)
 
 
 def resolve_character_aliases(
@@ -1937,12 +2187,11 @@ def resolve_character_aliases(
     ]
     try:
         if _is_compact_output_mode(llm_config):
-            client = OpenAICompatibleClient(llm_config)
             compact_messages = [
                 {"role": "system", "content": COMPACT_ALIAS_RESOLUTION_PROMPT},
                 {"role": "user", "content": f"角色名列表：{', '.join(observed)}"},
             ]
-            compact_text = client.chat_text(compact_messages, purpose="紧凑别名归并")
+            compact_text = _run_chat_text_with_retry(llm_config, compact_messages, purpose="紧凑别名归并")
             _dump_compact_debug("compact_alias", "alias_resolution", compact_messages, response_text=compact_text)
             registry.load_alias_groups(_decode_compact_alias_groups(compact_text))
         else:
@@ -1988,12 +2237,11 @@ def verify_speakers_pass(
         slim = [{"index": j, "speaker": s["speaker"], "text": s["text"]} for j, s in enumerate(window)]
         try:
             if _is_compact_output_mode(llm_config):
-                client = OpenAICompatibleClient(llm_config)
                 compact_messages = [
                     {"role": "system", "content": COMPACT_SPEAKER_VERIFICATION_PROMPT},
                     {"role": "user", "content": f"请核查以下 segments 的 speaker：\n{slim}"},
                 ]
-                compact_text = client.chat_text(compact_messages, purpose="紧凑说话人复核")
+                compact_text = _run_chat_text_with_retry(llm_config, compact_messages, purpose="紧凑说话人复核")
                 _dump_compact_debug("compact_verify", f"speaker_verify_{i}", compact_messages, response_text=compact_text)
                 compact_fixes = _decode_compact_speaker_fixes(compact_text)
                 for corr in compact_fixes:
@@ -2025,7 +2273,7 @@ def verify_speakers_pass(
             segments[idx]["speaker"] = new_speaker
             segments[idx].pop("_suspicious", None)  # 修正后清除可疑标记
 
-    return segments
+    return postprocess_segments(segments)
 
 
 def analyze_text_with_llm(text: str, llm_config: LLMConfig) -> list[dict[str, Any]]:
@@ -2043,4 +2291,4 @@ def analyze_text_with_llm(text: str, llm_config: LLMConfig) -> list[dict[str, An
     if getattr(llm_config, "enable_speaker_verification", False):
         segments = verify_speakers_pass(segments, llm_config)
 
-    return segments
+    return postprocess_segments(segments)

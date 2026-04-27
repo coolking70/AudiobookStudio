@@ -635,12 +635,16 @@
     }
     .segment-suspicious { border-left: 3px solid #e67e22; }
     .segment-unknown { border-left: 3px solid rgba(125, 154, 192, 0.5); }
+    .segment-conf-low { border-left: 3px solid #e53935; background: rgba(229,57,53,0.04); }
+    .segment-conf-medium { border-left: 3px solid #f9a825; }
     .seg-flag {
       font-size: 11px; padding: 2px 6px; border-radius: 3px;
       white-space: nowrap; cursor: default; font-weight: 500;
     }
     .seg-flag-suspicious { background: rgba(230, 126, 34, 0.18); color: #e67e22; }
     .seg-flag-unknown { background: rgba(125, 154, 192, 0.15); color: var(--text-dim); }
+    .seg-flag-conf-low { background: rgba(229,57,53,0.15); color: #e53935; }
+    .seg-flag-conf-medium { background: rgba(249,168,37,0.18); color: #c47d00; }
     .segment-head {
       display: flex;
       flex-wrap: wrap;
@@ -1567,7 +1571,7 @@
                         二轮 speaker 复核（较慢）
                       </label>
                       <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px;">
-                        <input type="checkbox" id="enableCompactOutput" />
+                        <input type="checkbox" id="enableCompactOutput" checked />
                         紧凑输出模式（节省 token）
                       </label>
                     </div>
@@ -3308,6 +3312,11 @@ very high pitch, very low pitch, whisper, young adult
       analysis_mode: document.getElementById("localLlmAnalysisMode").value || "stable",
       output_mode: document.getElementById("enableCompactOutput").checked ? "compact" : "verbose",
       system_prompt: document.getElementById("localLlmSystemPrompt").value.trim() || null,
+      speaker_verification_prompt: document.getElementById("speakerVerificationPrompt").value.trim() || null,
+      alias_resolution_prompt: document.getElementById("aliasResolutionPrompt").value.trim() || null,
+      context_mode: document.getElementById("contextMode").value || "chapter",
+      enable_character_alias_merge: document.getElementById("enableCharacterAliasMerge").checked,
+      enable_speaker_verification: document.getElementById("enableSpeakerVerification").checked,
       base_url: "",
       api_key: "",
     };
@@ -3806,6 +3815,11 @@ very high pitch, very low pitch, whisper, young adult
         system_prompt: localCfg.system_prompt,
         segment_prompt: localCfg.segment_prompt,
         optimize_prompt: localCfg.optimize_prompt,
+        speaker_verification_prompt: localCfg.speaker_verification_prompt,
+        alias_resolution_prompt: localCfg.alias_resolution_prompt,
+        context_mode: localCfg.context_mode,
+        enable_character_alias_merge: localCfg.enable_character_alias_merge,
+        enable_speaker_verification: localCfg.enable_speaker_verification,
       };
     }
     return {
@@ -4153,6 +4167,11 @@ very high pitch, very low pitch, whisper, young adult
       system_prompt: document.getElementById("localLlmSystemPrompt").value.trim() || null,
       segment_prompt: document.getElementById("localLlmSegmentPrompt").value.trim() || null,
       optimize_prompt: document.getElementById("localLlmOptimizePrompt").value.trim() || null,
+      speaker_verification_prompt: document.getElementById("speakerVerificationPrompt").value.trim() || null,
+      alias_resolution_prompt: document.getElementById("aliasResolutionPrompt").value.trim() || null,
+      context_mode: document.getElementById("contextMode").value || "chapter",
+      enable_character_alias_merge: document.getElementById("enableCharacterAliasMerge").checked,
+      enable_speaker_verification: document.getElementById("enableSpeakerVerification").checked,
     };
   }
 
@@ -4482,7 +4501,7 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("localLlmWorkers").value = cfg.workers ?? 3;
     document.getElementById("localLlmCompatMode").value = cfg.compatibility_mode || "chat_compat";
     document.getElementById("localLlmAnalysisMode").value = cfg.analysis_mode || "stable";
-    document.getElementById("enableCompactOutput").checked = cfg.output_mode === "compact";
+    document.getElementById("enableCompactOutput").checked = cfg.output_mode !== "verbose";
     document.getElementById("localChapterSampleChars").value = cfg.chapter_sample_chars ?? 5000;
     document.getElementById("localAnalysisCombo").value = cfg.analysis_combo || "separate";
     document.getElementById("localSegmentTargetChars").value = cfg.segment_target_chars ?? 3200;
@@ -4517,8 +4536,8 @@ very high pitch, very low pitch, whisper, young adult
       document.getElementById("aliasResolutionPrompt").value = cfg.alias_resolution_prompt || "";
       if (cfg.context_mode) document.getElementById("contextMode").value = cfg.context_mode;
       document.getElementById("enableCharacterAliasMerge").checked = cfg.enable_character_alias_merge !== false;
-      document.getElementById("enableSpeakerVerification").checked = !!cfg.enable_speaker_verification;
-      document.getElementById("enableCompactOutput").checked = cfg.output_mode === "compact";
+      document.getElementById("enableSpeakerVerification").checked = cfg.enable_speaker_verification === true;
+      document.getElementById("enableCompactOutput").checked = cfg.output_mode !== "verbose";
     } else {
       try {
         const resp = await fetch("/api/llm-defaults");
@@ -4651,6 +4670,12 @@ very high pitch, very low pitch, whisper, young adult
     document.getElementById("systemPrompt").value = cfg.system_prompt || "";
     document.getElementById("segmentPrompt").value = cfg.segment_prompt || "";
     document.getElementById("optimizePrompt").value = cfg.optimize_prompt || "";
+    document.getElementById("speakerVerificationPrompt").value = cfg.speaker_verification_prompt || "";
+    document.getElementById("aliasResolutionPrompt").value = cfg.alias_resolution_prompt || "";
+    if (cfg.context_mode) document.getElementById("contextMode").value = cfg.context_mode;
+    document.getElementById("enableCharacterAliasMerge").checked = cfg.enable_character_alias_merge !== false;
+    document.getElementById("enableSpeakerVerification").checked = cfg.enable_speaker_verification === true;
+    document.getElementById("enableCompactOutput").checked = cfg.output_mode !== "verbose";
   }
 
   function formatSystemStatus(data) {
@@ -7352,14 +7377,23 @@ very high pitch, very low pitch, whisper, young adult
     visibleSegments.forEach(({ seg, idx }) => {
       const div = document.createElement("div");
       const isSuspicious = !!seg._suspicious;
-      const wasUnknown = !!seg._was_unknown;
+      const needsReview = !!seg._needs_review || seg.speaker === "UNKNOWN";
+      const conf = seg._confidence || "";  // "high" | "medium" | "low" | ""
+      const isLowConf = conf === "low";
+      const isMedConf = conf === "medium";
       const gender = inferGenderValue(seg.style || "");
-      div.className = "segment" + (isSuspicious ? " segment-suspicious" : "") + (wasUnknown ? " segment-unknown" : "");
+      div.className = "segment"
+        + (isSuspicious ? " segment-suspicious" : "")
+        + (needsReview ? " segment-unknown" : "")
+        + (isLowConf ? " segment-conf-low" : "")
+        + (isMedConf && !needsReview && !isSuspicious ? " segment-conf-medium" : "");
       div.innerHTML = `
         <div class="segment-index-badge">
           <span>第 ${idx + 1} 段</span>
           ${isSuspicious ? `<span class="seg-flag seg-flag-suspicious" title="speaker 不在已知角色列表中，请核实">待核查</span>` : ""}
-          ${wasUnknown ? `<span class="seg-flag seg-flag-unknown" title="LLM 无法确定说话人，已自动归入旁白">原为 UNKNOWN</span>` : ""}
+          ${needsReview ? `<span class="seg-flag seg-flag-unknown" title="LLM 无法确定说话人，请人工复核">UNKNOWN</span>` : ""}
+          ${isLowConf && !needsReview ? `<span class="seg-flag seg-flag-conf-low" title="LLM 对此处 speaker 置信度低，建议人工复核">低置信</span>` : ""}
+          ${isMedConf ? `<span class="seg-flag seg-flag-conf-medium" title="LLM 对此处 speaker 置信度中等，从对话轮次推断">中置信</span>` : ""}
         </div>
         <div class="segment-grid">
           <input value="${escapeHtml(seg.speaker || "旁白")}" placeholder="角色名" onchange="updateSegmentField(${idx}, 'speaker', this.value)" />
@@ -8936,7 +8970,7 @@ very high pitch, very low pitch, whisper, young adult
     return ok ? importedSnap : inflightSnap;
   }
 
-  async function continueAnalysis() {
+  async function continueAnalysis(configMode = "ask") {
     if (taskBusy) return;
     const snapshot = _pickResumeSnapshot();
     if (!snapshot) {
@@ -8944,18 +8978,43 @@ very high pitch, very low pitch, whisper, young adult
       return;
     }
 
+    let resolvedConfigMode = configMode;
+    if (resolvedConfigMode === "ask") {
+      resolvedConfigMode = snapshot.llm
+        ? (confirm(
+            "本次续跑可以选择模型与流程配置：\n\n" +
+            "点击「确定」使用当前页面配置继续。\n" +
+            "点击「取消」使用快照中保存的配置继续。"
+          ) ? "current" : "snapshot")
+        : "current";
+    }
+    const useCurrentConfig = resolvedConfigMode === "current" || !snapshot.llm;
+    if (!useCurrentConfig && snapshot.llm) {
+      applyLLMConfigToForm(snapshot.llm);
+    }
     setSourceText(snapshot.text || "");
-    const currentLlm = validateLLMConfig();
-    if (!currentLlm) return;
-    if (!warnIfThinkingModel(currentLlm)) return;
-    const currentCombo = currentLlm.analysis_combo || getAnalysisComboValue();
-    beginTask("parse", "准备继续上次文本分析", "正在恢复中断前的分析快照，并从未完成的文本块继续。");
+
+    const resumeLlm = useCurrentConfig
+      ? validateLLMConfig()
+      : (snapshot.llm || validateLLMConfig());
+    if (!resumeLlm) return;
+    if (!warnIfThinkingModel(resumeLlm)) return;
+    const resumeCombo = useCurrentConfig
+      ? (resumeLlm.analysis_combo || getAnalysisComboValue())
+      : (snapshot.combo || resumeLlm.analysis_combo || getAnalysisComboValue());
+    beginTask(
+      "parse",
+      useCurrentConfig ? "准备使用当前配置继续分析" : "准备继续上次文本分析",
+      useCurrentConfig
+        ? "正在恢复中断前的分析进度，并使用当前页面上的模型和流程配置继续。"
+        : "正在恢复中断前的分析快照，并使用快照中保存的模型和流程配置继续。"
+    );
 
     try {
       const snapshotText = snapshot.text || "";
       const segments = snapshot.type === "analysis_flow"
-        ? await runAnalysisFlow(snapshotText, currentLlm, snapshot, currentCombo)
-        : await runParseOnly(snapshotText, currentLlm, snapshot);
+        ? await runAnalysisFlow(snapshotText, resumeLlm, snapshot, resumeCombo)
+        : await runParseOnly(snapshotText, resumeLlm, snapshot);
       finishTask(`续跑完成，共 ${segments.length} 段`, "之前中断的文本分析已继续完成，现在可以直接导出 JSON 或前往音频生成。", {
         total: segments.length,
         done: segments.length,

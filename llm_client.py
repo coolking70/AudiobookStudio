@@ -189,7 +189,7 @@ class OpenAICompatibleClient:
             response = self._send_chat_request(payload, timeout)
             if hasattr(response, "raise_for_status"):
                 response.raise_for_status()
-            content, _ = self._extract_message_content(response)
+            content, finish_reason = self._extract_message_content(response)
         except Exception as exc:
             if APITimeoutError is not None and isinstance(exc, APITimeoutError):
                 raise RuntimeError(f"LLM {purpose}超时。") from exc
@@ -203,6 +203,13 @@ class OpenAICompatibleClient:
 
         if not content:
             raise RuntimeError(f"LLM {purpose}返回为空")
+        if finish_reason == "length":
+            self._dump_llm_debug("finish_reason_length", payload, content, finish_reason)
+            preview = content[:300]
+            raise RuntimeError(
+                f"LLM {purpose}输出被截断（finish_reason=length）。可稍微提高 max_tokens，"
+                f"或减小单次分析文本块。返回片段：{preview}"
+            )
         return content
 
     def chat_json(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
