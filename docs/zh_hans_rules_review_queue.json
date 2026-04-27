@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "profile_name": "zh_hans_rules_review_queue",
+  "items": [
+    {
+      "id": "review_lianxi",
+      "text": "连系",
+      "suggestion": "联系",
+      "reason": "更像两岸词汇统一，不建议直接做全局自动替换。"
+    },
+    {
+      "id": "review_zhaozhe",
+      "text": "追着着",
+      "suggestion": "追着",
+      "reason": "明显像局部重复字，但不适合抽象成通用规则。"
+    },
+    {
+      "id": "review_lijie",
+      "text": "连系统都没理解",
+      "suggestion": "连系统都没了解 / 连系统都没弄懂",
+      "reason": "属于措辞不顺，不属于稳定字符归一化规则。"
+    }
+  ]
+}

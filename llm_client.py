@@ -1,6 +1,5 @@
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -14,6 +13,7 @@ except ImportError:
 
 from schemas import LLMConfig
 from local_llm import get_local_llm_runner
+from output_layout import get_temp_archive_dir
 
 
 class OpenAICompatibleClient:
@@ -128,8 +128,7 @@ class OpenAICompatibleClient:
 
     def _dump_llm_debug(self, kind: str, payload: dict[str, Any], content: str, finish_reason: str | None) -> None:
         try:
-            out_dir = Path("outputs") / "llm_debug"
-            out_dir.mkdir(parents=True, exist_ok=True)
+            out_dir = get_temp_archive_dir("llm_debug")
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             target = out_dir / f"{stamp}_{kind}.json"
             target.write_text(json.dumps({

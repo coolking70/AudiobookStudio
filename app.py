@@ -44,6 +44,13 @@ from fastapi.staticfiles import StaticFiles
 from audio_utils import build_lrc, join_wavs_auto
 from llm_client import OpenAICompatibleClient
 from local_llm import get_local_llm_runner, get_local_llm_status, unload_all_local_llm_runners
+from output_layout import (
+    build_segment_output_paths,
+    build_temp_archive_path,
+    ensure_output_dir,
+    get_temp_archive_dir,
+    resolve_named_output_path,
+)
 from pipeline import ASR_MODEL_NAME, HF_CACHE_DIRS, MODEL_NAME, VOXCPM_MODEL_NAME, OmniVoicePipeline, VoxCPMPipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status, get_voxcpm_runtime_dependency_status
 from role_analyzer import (
     CHARACTER_ALIAS_RESOLUTION_PROMPT,
@@ -94,8 +101,7 @@ voxcpm_pipeline_cache: dict[tuple[str, str], VoxCPMPipeline] = {}
 
 def dump_request_debug(name: str, payload: dict[str, object]) -> None:
     try:
-        out_dir = Path("outputs") / "llm_debug"
-        out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = get_temp_archive_dir("llm_debug")
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         target = out_dir / f"{stamp}_{name}.json"
         target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -103,12 +109,12 @@ def dump_request_debug(name: str, payload: dict[str, object]) -> None:
         pass
 pipeline_lock = Lock()
 
-Path("outputs").mkdir(parents=True, exist_ok=True)
+ensure_output_dir()
 Path("static").mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-OUTPUT_DIR = Path("outputs")
+OUTPUT_DIR = ensure_output_dir()
 REF_AUDIO_DIR = OUTPUT_DIR / "ref_audio"
 AI_HELPER_CONFIG_CANDIDATES = [
     Path(os.getenv("AUDIOBOOKSTUDIO_LLM_DEFAULTS", "")).expanduser() if os.getenv("AUDIOBOOKSTUDIO_LLM_DEFAULTS") else None,
@@ -401,7 +407,7 @@ def synthesize_microsoft_tts(text: str, output_path: Path, voice_name: str, styl
         raise RuntimeError("微软 TTS 缺少 voice_name。")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_output_path = output_path.parent / f"ms_tmp_{uuid4().hex[:10]}.wav"
+    temp_output_path = build_temp_archive_path(f"ms_tmp_{uuid4().hex[:10]}.wav", category="microsoft_tts")
     if WinSpeechSynthesizer is not None and DataReader is not None and InputStreamOptions is not None:
         async def _synthesize_with_winrt() -> None:
             synth = WinSpeechSynthesizer()
@@ -515,14 +521,18 @@ def sanitize_output_name(name: str, fallback: str = "result") -> str:
 
 
 def build_segment_wav_paths(base_name: str, segment_count: int) -> list[Path]:
-    return [OUTPUT_DIR / f"{base_name}_{idx:03d}.wav" for idx in range(1, segment_count + 1)]
+    return build_segment_output_paths(base_name, segment_count)
 
 
 def build_output_file_url(path: str | Path | None) -> str | None:
     if not path:
         return None
     target = Path(path)
-    return f"/file/{target.relative_to(OUTPUT_DIR).as_posix()}"
+    try:
+        relative = target.resolve().relative_to(OUTPUT_DIR.resolve())
+    except Exception:
+        relative = target.relative_to(OUTPUT_DIR)
+    return f"/file/{relative.as_posix()}"
 
 
 def build_merge_response_payload(
@@ -1464,7 +1474,7 @@ def tts(req: TTSRequest):
         output_name = sanitize_output_name(req.output_name, "tts_result")
         voice_engine = str(req.voice_engine or "").strip().lower()
         if voice_engine == "microsoft":
-            output_path = (OUTPUT_DIR / f"{output_name}.wav").resolve()
+            output_path = resolve_named_output_path(output_name, ".wav", temp_category="preview")
             file_path = synthesize_microsoft_tts(
                 text=req.text,
                 output_path=output_path,
@@ -1474,7 +1484,7 @@ def tts(req: TTSRequest):
             return {
                 "ok": True,
                 "file": file_path,
-                "audio_url": f"/file/{output_path.name}",
+                "audio_url": build_output_file_url(output_path),
                 "engine": "microsoft",
                 "voice_name": req.voice_name,
                 "voice_locale": req.voice_locale,
@@ -1506,7 +1516,7 @@ def tts(req: TTSRequest):
             remote_resp["audio_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("audio_url"))
             return remote_resp
 
-        output_path = OUTPUT_DIR / f"{output_name}.wav"
+        output_path = resolve_named_output_path(output_name, ".wav", temp_category="preview")
         if voice_engine == "voxcpm":
             if get_voxcpm_runtime_dependency_status().get("ready"):
                 result = synthesize_local_voxcpm_tts_with_fallback(
@@ -1544,7 +1554,7 @@ def tts(req: TTSRequest):
             return {
                 "ok": True,
                 "file": str(output_path),
-                "audio_url": f"/file/{output_path.name}",
+                "audio_url": build_output_file_url(output_path),
                 "engine": "voxcpm",
                 "device": result.get("device"),
                 "fallback_device": result.get("fallback_device"),
@@ -1566,7 +1576,7 @@ def tts(req: TTSRequest):
         return {
             "ok": True,
             "file": str(output_path),
-            "audio_url": f"/file/{output_path.name}",
+            "audio_url": build_output_file_url(output_path),
             "device": result.get("device"),
             "fallback_device": result.get("fallback_device"),
             "original_device": result.get("original_device"),
@@ -1748,7 +1758,7 @@ def narrate(req: NarrateRequest):
             role_profiles=role_profiles,
         )
         merge_result = result["merge_result"]
-        wav_paths = build_segment_wav_paths(output_name, len(segments))
+        wav_paths = [Path(path) for path in merge_result.get("wav_paths", build_segment_wav_paths(output_name, len(segments)))]
         response = build_merge_response_payload(
             merge_result=merge_result,
             wav_paths=wav_paths,
@@ -1804,7 +1814,7 @@ def auto_narrate(req: AutoNarrateRequest):
             role_profiles=role_profiles,
         )
         merge_result = result["merge_result"]
-        wav_paths = build_segment_wav_paths(output_name, len(segments))
+        wav_paths = [Path(path) for path in merge_result.get("wav_paths", build_segment_wav_paths(output_name, len(segments)))]
         response = build_merge_response_payload(
             merge_result=merge_result,
             wav_paths=wav_paths,
@@ -2241,12 +2251,15 @@ def merge_audio(req: MergeRequest):
         wav_paths = []
 
         for file_name in req.wav_files:
-            wav_path = OUTPUT_DIR / Path(file_name).name
+            requested = Path(file_name)
+            wav_path = OUTPUT_DIR / requested
             if not wav_path.exists():
-                raise FileNotFoundError(f"找不到分段音频: {wav_path.name}")
+                wav_path = OUTPUT_DIR / requested.name
+            if not wav_path.exists():
+                raise FileNotFoundError(f"找不到分段音频: {requested}")
             wav_paths.append(wav_path)
 
-        output_path = OUTPUT_DIR / f"{output_name}_merged.wav"
+        output_path = resolve_named_output_path(f"{output_name}_merged", ".wav", temp_category="preview_merge")
         merge_result = join_wavs_auto(wav_paths, output_path, silence_ms=req.silence_ms)
         lyric_lines = None
         if req.lyrics:

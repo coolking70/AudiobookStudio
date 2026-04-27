@@ -1,0 +1,195 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-28",
+  "source_snapshot": "C:/Users/coolking/Downloads/task_snapshot_segments_2026-04-27_1822.json",
+  "corrected_snapshots": [
+    "C:/Users/coolking/Downloads/task_snapshot_segments_2026-04-27_1822_corrected.json",
+    "C:/Users/coolking/Downloads/task_snapshot_segments_2026-04-27_1822_merged.json",
+    "C:/Users/coolking/Downloads/task_snapshot_segments_2026-04-27_1822_reviewed.json",
+    "C:/Users/coolking/Downloads/task_snapshot_segments_2026-04-27_1822_final.json"
+  ],
+  "summary": {
+    "cross_title_hallucination_cases": 6,
+    "narration_tagging_errors": 8,
+    "mixed_narration_dialogue_split_errors": 2,
+    "reported_message_retag_cases": 1,
+    "manual_alias_merge_groups": 5
+  },
+  "cases": [
+    {
+      "id": "cross_title_hallucination_tigre_01",
+      "category": "cross_title_hallucination",
+      "priority": "high",
+      "problem": "模型把当前作品中的对白误标成了别部作品角色“堤格尔”。",
+      "indices": [3615, 3616, 3617, 3620, 3622, 3624],
+      "before": [
+        {"index": 3615, "speaker": "堤格尔", "text": "「像是汉堡排、烧烤或是寿喜烧之类的？」"},
+        {"index": 3616, "speaker": "堤格尔", "text": "「嗯，那些类型我都喜欢。牛肉应该是最喜欢的吧。所以我经常会外食。不过频率大概是一个月几次就是。」"},
+        {"index": 3617, "speaker": "堤格尔", "text": "「肉很赞啊。我也爱吃肉。那我们下次一起去吃肉吧？」"},
+        {"index": 3620, "speaker": "堤格尔", "text": "「嗯？啊，嗯，是可以啦……」"},
+        {"index": 3622, "speaker": "堤格尔", "text": "顺便问一下好了……"},
+        {"index": 3624, "speaker": "堤格尔", "text": "「不，其实还好。就味道来说，价格算合理。比方说呢，通常我一个人的话会点五万圆的烧烤套餐，但既然这次是和玲奈子一起，不如就点十万圆的套餐如何？」"}
+      ],
+      "after": [
+        {"index": 3615, "speaker": "甘织玲奈子"},
+        {"index": 3616, "speaker": "王冢真唯"},
+        {"index": 3617, "speaker": "甘织玲奈子"},
+        {"index": 3620, "speaker": "甘织玲奈子"},
+        {"index": 3622, "speaker": "旁白"},
+        {"index": 3624, "speaker": "王冢真唯"}
+      ],
+      "why_wrong": [
+        "原始 sourceText 中根本不存在“堤格尔”这个名字。",
+        "上下文明确仍在玲奈子与真唯的对话场景中。",
+        "属于跨作品角色名幻觉，而非别名问题。"
+      ],
+      "optimization_directions": [
+        "若 speaker 名字不在当前原文中出现，则自动标记待复核。",
+        "减少 prompt 中跨作品示例角色名对当前任务的污染。",
+        "在当前书内角色集合已较稳定时，优先从高频已知角色中选择 speaker。"
+      ]
+    },
+    {
+      "id": "narration_tagging_wangzhenwei_01",
+      "category": "narration_tagging_error",
+      "priority": "high",
+      "problem": "纯叙述句被错误挂在角色 speaker 名下，实际应为旁白。",
+      "indices": [117, 120, 127],
+      "before": [
+        {"index": 117, "speaker": "王冢真唯", "text": "某人紧紧地抓住了我的脚踝。"},
+        {"index": 120, "speaker": "王冢真唯", "text": "她越过护栏，在抱住我的状态下就这样跳向了空中。"},
+        {"index": 127, "speaker": "王冢真唯", "text": "与其说是抱紧着我，王冢同学其实是以双手绕过我的腋下将身体固定，同时耳边也传来了她沉着冷静的声音。"}
+      ],
+      "after": [
+        {"index": 117, "speaker": "旁白"},
+        {"index": 120, "speaker": "旁白"},
+        {"index": 127, "speaker": "旁白"}
+      ],
+      "why_wrong": [
+        "这些句子没有引号，不是角色说出口的话。",
+        "它们是动作与场面描写，应统一归入旁白。"
+      ],
+      "optimization_directions": [
+        "进一步强化“非引号动作/心理/场景描写默认归旁白”的规则。",
+        "对“某人/她 + 动作”这类句式加更强的旁白偏置。"
+      ]
+    },
+    {
+      "id": "narration_tagging_misc_01",
+      "category": "narration_tagging_error",
+      "priority": "medium",
+      "problem": "少量纯叙述句仍被挂到角色 speaker 名下。",
+      "indices": [842, 959, 964, 1584, 2673],
+      "before": [
+        {"index": 842, "speaker": "紫阳花同学", "text": "眼见紫阳花同学笑容可掬地如此回答，我就像是全身都被按摩了那样，也跟着笑逐颜开。"},
+        {"index": 959, "speaker": "王冢真唯", "text": "真唯闻言，莞尔一笑。"},
+        {"index": 964, "speaker": "王冢真唯", "text": "真唯露出有些难为情的表情。"},
+        {"index": 1584, "speaker": "王冢真唯", "text": "简直就像是给雏鸟喂食一样，给了我温柔的一吻。"},
+        {"index": 2673, "speaker": "纱月同学", "text": "纱月同学像是对人生感到绝望似地叹了口气。"}
+      ],
+      "after": [
+        {"index": 842, "speaker": "旁白"},
+        {"index": 959, "speaker": "旁白"},
+        {"index": 964, "speaker": "旁白"},
+        {"index": 1584, "speaker": "旁白"},
+        {"index": 2673, "speaker": "旁白"}
+      ],
+      "why_wrong": [
+        "这些句子都在叙述角色的表情、动作或场景反应，而不是角色台词。",
+        "即使句子主语是某角色，也不应自动把 speaker 设为该角色。"
+      ],
+      "optimization_directions": [
+        "在校验/复核阶段增加“角色名 + 动作叙述”转旁白规则。",
+        "把“闻言、露出、叹了口气、给了我一吻”等模式纳入旁白判断特征。"
+      ]
+    },
+    {
+      "id": "mixed_narration_dialogue_split_01",
+      "category": "split_error",
+      "priority": "medium",
+      "problem": "叙述提示语与角色对白混在同一 segment 中，切分不干净。",
+      "indices": [601, 836],
+      "before": [
+        {"index": 601, "speaker": "香穗", "text": "提议去逛街的香穗也笑着说「那就下次吧，一定要喔！」。"},
+        {"index": 836, "speaker": "紫阳花同学", "text": "当我在休息时间沉吟的时候，紫阳花同学见状就凑过来说「小玲奈，你从刚才开始就很烦恼呢～」"}
+      ],
+      "after": [
+        {"speaker": "旁白", "text": "提议去逛街的香穗也笑着说"},
+        {"speaker": "香穗", "text": "「那就下次吧，一定要喔！」"},
+        {"speaker": "旁白", "text": "当我在休息时间沉吟的时候，紫阳花同学见状就凑过来说"},
+        {"speaker": "紫阳花同学", "text": "「小玲奈，你从刚才开始就很烦恼呢～」"}
+      ],
+      "why_wrong": [
+        "提示语是叙述，应归旁白；只有引号中的内容才是角色对白。",
+        "混在一起会影响 speaker 统计、TTS 切换和后续复核。"
+      ],
+      "optimization_directions": [
+        "对“X 说/笑着说/凑过来说 + 引号”强制拆成旁白段 + 对白段。",
+        "在 prompt 中加入更多这类正反例。"
+      ]
+    },
+    {
+      "id": "reported_message_as_dialogue_01",
+      "category": "reported_message_retag",
+      "priority": "medium",
+      "problem": "转述短信/内容摘要被当成角色直接对白。",
+      "indices": [833],
+      "before": [
+        {"index": 833, "speaker": "王冢真唯", "text": "内容大致上是『前阵子第一次玩游戏真的是非常有趣，今天我可以再去玩吗？』。"}
+      ],
+      "after": [
+        {"index": 833, "speaker": "旁白", "text": "内容大致上是『前阵子第一次玩游戏真的是非常有趣，今天我可以再去玩吗？』。"}
+      ],
+      "why_wrong": [
+        "这是叙述者在转述讯息内容，不是现场直接说出口的对白。",
+        "即便内部带引号，也不等于当前 segment 的 speaker 应是发信角色。"
+      ],
+      "optimization_directions": [
+        "对“内容是/简讯是/信上写着/讯息写着”这类转述句式默认归旁白。",
+        "把“引号不一定等于直接对白”的规则讲得更明确。"
+      ]
+    },
+    {
+      "id": "manual_alias_merge_01",
+      "category": "alias_fragmentation",
+      "priority": "medium",
+      "problem": "同一角色被拆成多个称呼，影响 speaker 稳定性与统计。",
+      "groups": [
+        {
+          "canonical": "甘织玲奈子",
+          "aliases": ["我", "玲奈子", "玲奈", "小玲奈", "甘织同学"]
+        },
+        {
+          "canonical": "王冢真唯",
+          "aliases": ["真唯", "王冢同学", "王冢学姐", "她"]
+        },
+        {
+          "canonical": "紫阳花同学",
+          "aliases": ["紫阳花", "天使紫阳花"]
+        },
+        {
+          "canonical": "纱月同学",
+          "aliases": ["纱月", "小纱月"]
+        },
+        {
+          "canonical": "香穗",
+          "aliases": ["小香穗"]
+        }
+      ],
+      "why_wrong": [
+        "同一人物在导出结果中使用多种名字，会干扰角色配音映射与后续审核。",
+        "尤其“我”与角色实名分裂，容易让第一人称作品的 speaker 统计失真。"
+      ],
+      "optimization_directions": [
+        "增强 alias merge，把第一人称主角的“我”自动并入主角 canonical name。",
+        "在上下文模式下优先沿用已出现的 canonical speaker 名。"
+      ]
+    }
+  ],
+  "recommended_prompt_additions": [
+    "凡是没有引号、且内容是动作/神态/场景/心理/转述说明的句子，默认归旁白，不因句中出现角色名就归给该角色。",
+    "遇到“X说：『……』/X笑着说『……』/X凑过来说『……』”时，必须拆成两个 segment：旁白提示语 + 角色对白。",
+    "遇到“内容大致上是……/简讯写着……/信上写着……”这类转述句，整句归旁白。",
+    "若模型想输出的角色名未在当前原文中出现，优先改为 UNKNOWN 或等待复核，不要借用别部作品角色名。"
+  ]
+}

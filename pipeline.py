@@ -38,13 +38,13 @@ try:
 except ImportError:
     VoxCPM = None
 
-from audio_utils import ensure_dir, join_wavs_auto
+from audio_utils import join_wavs_auto
+from output_layout import build_segment_output_path, resolve_named_output_path
 
 
 MODEL_NAME = "k2-fsa/OmniVoice"
 VOXCPM_MODEL_NAME = "openbmb/VoxCPM2"
 ASR_MODEL_NAME = "openai/whisper-large-v3-turbo"
-OUTPUT_DIR = Path("outputs")
 
 
 def _iter_hf_cache_roots() -> list[Path]:
@@ -608,7 +608,6 @@ class OmniVoicePipeline:
         role_profiles: Optional[dict] = None,
     ) -> dict:
         ensure_runtime_dependencies()
-        out_dir = ensure_dir(OUTPUT_DIR)
         wav_paths: list[str] = []
 
         for idx, seg in enumerate(segments, start=1):
@@ -621,7 +620,7 @@ class OmniVoicePipeline:
             ref_text = seg.get("ref_text") or profile.get("ref_text")
             style = None if ref_audio else (seg.get("style") or profile.get("style"))
 
-            wav_path = out_dir / f"{base_name}_{idx:03d}.wav"
+            wav_path = build_segment_output_path(base_name, idx)
             self.synthesize_segment(
                 text=text,
                 output_path=wav_path,
@@ -631,8 +630,10 @@ class OmniVoicePipeline:
             )
             wav_paths.append(str(wav_path))
 
-        final_path = out_dir / f"{base_name}_merged.wav"
-        return join_wavs_auto(wav_paths, final_path, silence_ms=silence_ms)
+        final_path = resolve_named_output_path(f"{base_name}_merged", ".wav", temp_category="preview_merge")
+        merge_result = join_wavs_auto(wav_paths, final_path, silence_ms=silence_ms)
+        merge_result["wav_paths"] = wav_paths
+        return merge_result
 
 
 class VoxCPMPipeline:

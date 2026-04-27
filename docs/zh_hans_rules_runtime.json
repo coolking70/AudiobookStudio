@@ -1,0 +1,162 @@
+{
+  "schema_version": "3.0",
+  "profile_name": "zh_hans_rules_runtime",
+  "pipeline": [
+    {
+      "id": "decode_html_entities",
+      "type": "builtin",
+      "action": "html_unescape",
+      "enabled": true
+    },
+    {
+      "id": "base_t2s",
+      "type": "builtin",
+      "action": "opencc_t2s",
+      "enabled": true
+    },
+    {
+      "id": "apply_rules",
+      "type": "builtin",
+      "action": "apply_ordered_rules",
+      "enabled": true
+    }
+  ],
+  "preserve": [
+    "祂"
+  ],
+  "rules": [
+    {
+      "id": "phrase_fangfo_01",
+      "match_type": "literal",
+      "source": "彷佛",
+      "target": "仿佛",
+      "priority": 100
+    },
+    {
+      "id": "phrase_fangfo_02",
+      "match_type": "literal",
+      "source": "彷彿",
+      "target": "仿佛",
+      "priority": 100
+    },
+    {
+      "id": "phrase_fangfo_03",
+      "match_type": "literal",
+      "source": "仿彿",
+      "target": "仿佛",
+      "priority": 100
+    },
+    {
+      "id": "char_tiao_after_entity_decode",
+      "match_type": "literal",
+      "source": "䠷",
+      "target": "挑",
+      "priority": 95
+    },
+    {
+      "id": "phrase_liaojie",
+      "match_type": "literal",
+      "source": "瞭解",
+      "target": "了解",
+      "priority": 95
+    },
+    {
+      "id": "char_jie",
+      "match_type": "literal",
+      "source": "姊",
+      "target": "姐",
+      "priority": 94
+    },
+    {
+      "id": "phrase_fanfu",
+      "match_type": "literal",
+      "source": "反覆",
+      "target": "反复",
+      "priority": 90
+    },
+    {
+      "id": "char_black",
+      "match_type": "literal",
+      "source": "黒",
+      "target": "黑",
+      "priority": 80
+    },
+    {
+      "id": "char_drink",
+      "match_type": "literal",
+      "source": "飮",
+      "target": "饮",
+      "priority": 80
+    },
+    {
+      "id": "char_lai",
+      "match_type": "literal",
+      "source": "瀬",
+      "target": "濑",
+      "priority": 80
+    },
+    {
+      "id": "char_dan",
+      "match_type": "literal",
+      "source": "弾",
+      "target": "弹",
+      "priority": 80
+    },
+    {
+      "id": "char_jian",
+      "match_type": "literal",
+      "source": "剣",
+      "target": "剑",
+      "priority": 80
+    },
+    {
+      "id": "char_chuan",
+      "match_type": "literal",
+      "source": "伝",
+      "target": "传",
+      "priority": 80
+    },
+    {
+      "id": "char_bu",
+      "match_type": "literal",
+      "source": "歩",
+      "target": "步",
+      "priority": 70
+    },
+    {
+      "id": "char_jia",
+      "match_type": "literal",
+      "source": "仮",
+      "target": "假",
+      "priority": 70
+    },
+    {
+      "id": "char_quan",
+      "match_type": "literal",
+      "source": "圏",
+      "target": "圈",
+      "priority": 70
+    },
+    {
+      "id": "pronoun_ni",
+      "match_type": "literal",
+      "source": "妳",
+      "target": "你",
+      "priority": 60
+    },
+    {
+      "id": "pronoun_ta",
+      "match_type": "literal",
+      "source": "牠",
+      "target": "它",
+      "priority": 60
+    },
+    {
+      "id": "decorative_separator",
+      "match_type": "regex",
+      "source": "(?:✽\\s*){3,}",
+      "target": "***",
+      "priority": 50
+    }
+  ]
+}

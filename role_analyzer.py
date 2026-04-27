@@ -1,16 +1,23 @@
 import json
+import html
 import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from functools import lru_cache
 from itertools import groupby
 from pathlib import Path
 from typing import Any
 
 from character_registry import CharacterRegistry
 from llm_client import OpenAICompatibleClient
+from output_layout import get_temp_archive_dir
 from schemas import AnalysisContext, LLMConfig
+try:
+    from opencc import OpenCC
+except ImportError:
+    OpenCC = None
 
 VALID_INSTRUCT_ITEMS = {
     "american accent",
@@ -60,6 +67,36 @@ SUPPORTED_NON_VERBAL_TAGS = [
     "[surprise-yo]",
     "[dissatisfaction-hnn]",
 ]
+
+DEFAULT_TEXT_PREPROCESS_PROFILE: dict[str, Any] = {
+    "pipeline": [
+        {"id": "decode_html_entities", "action": "html_unescape", "enabled": True},
+        {"id": "base_t2s", "action": "opencc_t2s", "enabled": True},
+        {"id": "apply_rules", "action": "apply_ordered_rules", "enabled": True},
+    ],
+    "preserve": ["祂"],
+    "rules": [
+        {"id": "phrase_fangfo_01", "match_type": "literal", "source": "彷佛", "target": "仿佛", "priority": 100},
+        {"id": "phrase_fangfo_02", "match_type": "literal", "source": "彷彿", "target": "仿佛", "priority": 100},
+        {"id": "phrase_fangfo_03", "match_type": "literal", "source": "仿彿", "target": "仿佛", "priority": 100},
+        {"id": "char_tiao_after_entity_decode", "match_type": "literal", "source": "䠷", "target": "挑", "priority": 95},
+        {"id": "phrase_liaojie", "match_type": "literal", "source": "瞭解", "target": "了解", "priority": 95},
+        {"id": "char_jie", "match_type": "literal", "source": "姊", "target": "姐", "priority": 94},
+        {"id": "phrase_fanfu", "match_type": "literal", "source": "反覆", "target": "反复", "priority": 90},
+        {"id": "char_black", "match_type": "literal", "source": "黒", "target": "黑", "priority": 80},
+        {"id": "char_drink", "match_type": "literal", "source": "飮", "target": "饮", "priority": 80},
+        {"id": "char_lai", "match_type": "literal", "source": "瀬", "target": "濑", "priority": 80},
+        {"id": "char_dan", "match_type": "literal", "source": "弾", "target": "弹", "priority": 80},
+        {"id": "char_jian", "match_type": "literal", "source": "剣", "target": "剑", "priority": 80},
+        {"id": "char_chuan", "match_type": "literal", "source": "伝", "target": "传", "priority": 80},
+        {"id": "char_bu", "match_type": "literal", "source": "歩", "target": "步", "priority": 70},
+        {"id": "char_jia", "match_type": "literal", "source": "仮", "target": "假", "priority": 70},
+        {"id": "char_quan", "match_type": "literal", "source": "圏", "target": "圈", "priority": 70},
+        {"id": "pronoun_ni", "match_type": "literal", "source": "妳", "target": "你", "priority": 60},
+        {"id": "pronoun_ta", "match_type": "literal", "source": "牠", "target": "它", "priority": 60},
+        {"id": "decorative_separator", "match_type": "regex", "source": r"(?:✽\s*){3,}", "target": "***", "priority": 50},
+    ],
+}
 
 DEFAULT_SYSTEM_PROMPT = """
 你是一个”小说/对白文本分析器”。
@@ -423,6 +460,25 @@ def postprocess_segments(
     return stabilize_segment_styles(marked)
 
 
+def mark_speakers_missing_from_source(
+    segments: list[dict[str, Any]],
+    source_text: str | None = None,
+) -> list[dict[str, Any]]:
+    """把原文中完全未出现过的 speaker 标成待复核。"""
+    source = str(source_text or "")
+    if not source:
+        return segments
+    for seg in segments:
+        speaker = str(seg.get("speaker") or "").strip()
+        if not speaker or speaker in {"旁白", "我", "UNKNOWN"}:
+            continue
+        if speaker not in source:
+            seg["_needs_review"] = True
+            seg["_suspicious"] = True
+            seg["_review_reason"] = "speaker_missing_from_source"
+    return segments
+
+
 def sanitize_segments(
     segments: list[dict[str, Any]],
     known_characters: list[str] | None = None,
@@ -696,6 +752,129 @@ def resolve_chapter_sample_limit(llm_config: LLMConfig | None = None) -> int:
     return max(600, min(configured or SAMPLE_DETECT_MAX_CHARS, 20000))
 
 
+@lru_cache(maxsize=1)
+def _load_text_preprocess_profile() -> dict[str, Any]:
+    profile_path = Path(__file__).resolve().parent / "docs" / "zh_hans_rules_runtime.json"
+    if profile_path.exists():
+        try:
+            loaded = json.loads(profile_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                return loaded
+        except Exception as exc:
+            logging.warning("[preprocess] 读取规则文件失败，已回退内置规则：%s", exc)
+    return DEFAULT_TEXT_PREPROCESS_PROFILE
+
+
+@lru_cache(maxsize=1)
+def _get_opencc_converter() -> Any | None:
+    if OpenCC is None:
+        return None
+    try:
+        return OpenCC("t2s")
+    except Exception as exc:
+        logging.warning("[preprocess] OpenCC 初始化失败，已跳过简繁统一：%s", exc)
+        return None
+
+
+@lru_cache(maxsize=1)
+def _get_compiled_preprocess_rules() -> list[dict[str, Any]]:
+    profile = _load_text_preprocess_profile()
+    raw_rules = profile.get("rules") if isinstance(profile, dict) else []
+    compiled: list[dict[str, Any]] = []
+    for rule in sorted(raw_rules or [], key=lambda item: int(item.get("priority", 0)), reverse=True):
+        source = str(rule.get("source") or "")
+        if not source:
+            continue
+        entry = {
+            "id": str(rule.get("id") or source),
+            "match_type": str(rule.get("match_type") or "literal").strip().lower(),
+            "source": source,
+            "target": str(rule.get("target") or ""),
+            "priority": int(rule.get("priority", 0)),
+        }
+        if entry["match_type"] == "regex":
+            try:
+                entry["pattern"] = re.compile(source)
+            except re.error as exc:
+                logging.warning("[preprocess] 跳过无效正则规则 %s：%s", entry["id"], exc)
+                continue
+        compiled.append(entry)
+    return compiled
+
+
+def _protect_preserve_tokens(text: str, tokens: list[str]) -> tuple[str, dict[str, str]]:
+    protected = str(text or "")
+    restore_map: dict[str, str] = {}
+    for idx, token in enumerate(tokens):
+        if not token or token not in protected:
+            continue
+        placeholder = f"\uE000PRESERVE_{idx}\uE001"
+        protected = protected.replace(token, placeholder)
+        restore_map[placeholder] = token
+    return protected, restore_map
+
+
+def _restore_preserve_tokens(text: str, restore_map: dict[str, str]) -> str:
+    restored = str(text or "")
+    for placeholder, original in restore_map.items():
+        restored = restored.replace(placeholder, original)
+    return restored
+
+
+def preprocess_text_for_chapter_detection(text: str) -> tuple[str, dict[str, Any]]:
+    """章节识别预处理：实体解码、简繁统一、补充规则替换。"""
+    original = str(text or "")
+    profile = _load_text_preprocess_profile()
+    preserve_tokens = [str(item) for item in profile.get("preserve", []) if str(item or "")]
+    working, restore_map = _protect_preserve_tokens(original, preserve_tokens)
+
+    info: dict[str, Any] = {
+        "applied": False,
+        "original_chars": len(original),
+        "processed_chars": len(original),
+        "html_unescape_changed": False,
+        "opencc_changed": False,
+        "rule_hits": [],
+    }
+
+    pipeline = profile.get("pipeline") if isinstance(profile, dict) else []
+    enabled_actions = {
+        str(step.get("action") or "").strip().lower()
+        for step in (pipeline or [])
+        if isinstance(step, dict) and step.get("enabled", True)
+    }
+
+    if "html_unescape" in enabled_actions:
+        updated = html.unescape(working)
+        info["html_unescape_changed"] = updated != working
+        working = updated
+
+    if "opencc_t2s" in enabled_actions:
+        converter = _get_opencc_converter()
+        if converter is not None:
+            updated = converter.convert(working)
+            info["opencc_changed"] = updated != working
+            working = updated
+
+    if "apply_ordered_rules" in enabled_actions:
+        for rule in _get_compiled_preprocess_rules():
+            before = working
+            if rule["match_type"] == "regex":
+                working, count = rule["pattern"].subn(rule["target"], working)
+            else:
+                count = before.count(rule["source"])
+                if count:
+                    working = before.replace(rule["source"], rule["target"])
+            if count:
+                info["rule_hits"].append({"id": rule["id"], "count": count})
+
+    working = _restore_preserve_tokens(working, restore_map)
+    normalized = working.replace("\r\n", "\n").strip()
+    info["processed_chars"] = len(normalized)
+    info["applied"] = normalized != original.strip()
+    return normalized, info
+
+
 def infer_heading_pattern_with_llm(sample_text: str, llm_config: LLMConfig) -> dict[str, str]:
     if _is_compact_output_mode(llm_config):
         messages = [
@@ -750,7 +929,7 @@ def _build_segmentation_params(llm_config: LLMConfig) -> tuple[int, int]:
 
 
 def detect_chapter_structure_with_info(text: str, llm_config: LLMConfig | None = None, max_chars: int = SEED_CHUNK_MAX_CHARS) -> tuple[list[dict[str, str]], dict[str, Any]]:
-    normalized = str(text or "").strip()
+    normalized, preprocess_info = preprocess_text_for_chapter_detection(text)
     info: dict[str, Any] = {
         "method": "empty",
         "heading_pattern": "none",
@@ -761,6 +940,7 @@ def detect_chapter_structure_with_info(text: str, llm_config: LLMConfig | None =
         "llm_pattern": "none",
         "llm_reason": "",
         "chapter_sample_chars": resolve_chapter_sample_limit(llm_config),
+        "preprocess": preprocess_info,
     }
     if not normalized:
         return [], info
@@ -1773,8 +1953,7 @@ def _decode_compact_speaker_fixes(text: str) -> list[dict[str, Any]]:
 
 def _dump_compact_debug(stage: str, title: str, messages: list[dict[str, Any]], response_text: str = "", error: str = "") -> None:
     try:
-        out_dir = Path("outputs") / "llm_debug"
-        out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = get_temp_archive_dir("llm_debug")
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         safe_title = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff._-]+", "_", (title or stage))[:80]
         target = out_dir / f"{stamp}_{stage}_{safe_title}.json"
@@ -2291,4 +2470,5 @@ def analyze_text_with_llm(text: str, llm_config: LLMConfig) -> list[dict[str, An
     if getattr(llm_config, "enable_speaker_verification", False):
         segments = verify_speakers_pass(segments, llm_config)
 
-    return postprocess_segments(segments)
+    final_segments = postprocess_segments(segments)
+    return mark_speakers_missing_from_source(final_segments, source_text=text)

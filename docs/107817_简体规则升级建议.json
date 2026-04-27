@@ -1,0 +1,284 @@
+{
+  "schema_version": "2.0",
+  "profile_name": "zh_hans_fiction_normalization",
+  "description": "面向中文网文/轻小说文本的简体统一与脏数据清洗规则。将通用处理阶段、自动替换规则、人工复核建议分离，避免把统计日志与规则本体混在一起。",
+  "source_reference": {
+    "base_rules_file": "C:/Users/coolking/Downloads/2546_简体统一处理规则与日志.json",
+    "analyzed_text_file": "C:/Users/coolking/Downloads/107817 utf-8.txt",
+    "generated_at": "2026-04-27"
+  },
+  "pipeline": [
+    {
+      "id": "decode_html_entities",
+      "type": "transform",
+      "enabled": true,
+      "description": "先解码 HTML 实体，解决 &#18487; / &#10045; / &#973; 之类残留编码。",
+      "example_inputs": [
+        "高&#18487;",
+        "&#10045;&#10045;&#10045;",
+        "ε&#973;ρηκα"
+      ],
+      "example_outputs": [
+        "高䠷",
+        "✽✽✽",
+        "εύρηκα"
+      ]
+    },
+    {
+      "id": "opencc_t2s",
+      "type": "transform",
+      "enabled": true,
+      "description": "执行繁体到简体的基础统一。"
+    },
+    {
+      "id": "extra_literal_and_regex_rules",
+      "type": "transform",
+      "enabled": true,
+      "description": "执行 OpenCC/ICU 之后仍残留的词级、字级、格式级修复。"
+    }
+  ],
+  "rules": [
+    {
+      "id": "phrase_fangfo_01",
+      "category": "phrase_variant",
+      "match_type": "literal",
+      "source": "彷佛",
+      "target": "仿佛",
+      "scope": "global",
+      "priority": 100,
+      "risk": "low",
+      "reason": "港台常见异形词，统一到大陆简体常用写法。"
+    },
+    {
+      "id": "phrase_fangfo_02",
+      "category": "phrase_variant",
+      "match_type": "literal",
+      "source": "彷彿",
+      "target": "仿佛",
+      "scope": "global",
+      "priority": 100,
+      "risk": "low",
+      "reason": "繁简混排的异形词，统一到简体常用写法。"
+    },
+    {
+      "id": "phrase_fangfo_03",
+      "category": "phrase_variant",
+      "match_type": "literal",
+      "source": "仿彿",
+      "target": "仿佛",
+      "scope": "global",
+      "priority": 100,
+      "risk": "low",
+      "reason": "繁简混排的异形词，统一到简体常用写法。"
+    },
+    {
+      "id": "char_jp_hei",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "黒",
+      "target": "黑",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "reason": "日文字形残留。"
+    },
+    {
+      "id": "char_jp_yin",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "飮",
+      "target": "饮",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "reason": "异体/旧字残留。"
+    },
+    {
+      "id": "char_jp_lai",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "瀬",
+      "target": "濑",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "reason": "日文字形残留。"
+    },
+    {
+      "id": "char_jp_dan",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "弾",
+      "target": "弹",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "reason": "日文字形残留。"
+    },
+    {
+      "id": "char_jp_jian",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "剣",
+      "target": "剑",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "reason": "日文字形残留。"
+    },
+    {
+      "id": "char_jp_chuan",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "伝",
+      "target": "传",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "reason": "日文字形残留。"
+    },
+    {
+      "id": "char_jp_bu",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "歩",
+      "target": "步",
+      "scope": "global",
+      "priority": 70,
+      "risk": "medium",
+      "reason": "日文字形残留，通常应转为简体，但保留中风险标记。"
+    },
+    {
+      "id": "char_jp_jia",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "仮",
+      "target": "假",
+      "scope": "global",
+      "priority": 70,
+      "risk": "medium",
+      "reason": "日文字形残留，通常应转为简体，但保留中风险标记。"
+    },
+    {
+      "id": "char_jp_quan",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "圏",
+      "target": "圈",
+      "scope": "global",
+      "priority": 70,
+      "risk": "medium",
+      "reason": "日文字形残留，通常应转为简体，但保留中风险标记。"
+    },
+    {
+      "id": "pronoun_ni",
+      "category": "pronoun_normalization",
+      "match_type": "literal",
+      "source": "妳",
+      "target": "你",
+      "scope": "global",
+      "priority": 60,
+      "risk": "low",
+      "reason": "统一到大陆简体常用代词。"
+    },
+    {
+      "id": "pronoun_ta",
+      "category": "pronoun_normalization",
+      "match_type": "literal",
+      "source": "牠",
+      "target": "它",
+      "scope": "global",
+      "priority": 60,
+      "risk": "low",
+      "reason": "统一到大陆简体常用代词。"
+    },
+    {
+      "id": "html_glyph_tiao",
+      "category": "rare_variant_char",
+      "match_type": "literal",
+      "source": "䠷",
+      "target": "挑",
+      "scope": "global",
+      "priority": 95,
+      "risk": "low",
+      "reason": "HTML 实体解码后得到的罕见异体字，常见词为“高挑”。"
+    },
+    {
+      "id": "phrase_liaojie",
+      "category": "phrase_variant",
+      "match_type": "literal",
+      "source": "瞭解",
+      "target": "了解",
+      "scope": "global",
+      "priority": 95,
+      "risk": "low",
+      "reason": "港台常见写法，统一到大陆简体常用词形。"
+    },
+    {
+      "id": "phrase_fanfu",
+      "category": "phrase_variant",
+      "match_type": "literal",
+      "source": "反覆",
+      "target": "反复",
+      "scope": "global",
+      "priority": 90,
+      "risk": "low",
+      "reason": "词级替换比单字“覆->复”更安全，可避免误伤“重蹈覆辙”。"
+    },
+    {
+      "id": "decorative_separator",
+      "category": "format_cleanup",
+      "match_type": "regex",
+      "source": "(?:✽\\s*){3,}",
+      "target": "***",
+      "scope": "global",
+      "priority": 85,
+      "risk": "low",
+      "reason": "将装饰性分隔符统一为稳定的场景分隔记号，方便后续切块或 TTS 预处理。"
+    }
+  ],
+  "review_only_candidates": [
+    {
+      "text": "连系",
+      "suggestion": "联系",
+      "line_examples": [386],
+      "reason": "更像用词统一而非纯字形统一；可加词级规则，但建议先确认是否要保留台版措辞风格。"
+    },
+    {
+      "text": "追着着",
+      "suggestion": "追着",
+      "line_examples": [410],
+      "reason": "明显重复字，但不适合升成全局“着着->着”规则，建议只做逐条校对或短语级白名单修复。"
+    },
+    {
+      "text": "高&#18487;",
+      "suggestion": "高挑",
+      "line_examples": [210, 725, 2376],
+      "reason": "如果未启用 HTML 实体解码，可临时加字面规则；更推荐走“先解码，再做 䠷->挑”。"
+    },
+    {
+      "text": "ε&#973;ρηκα",
+      "suggestion": "εύρηκα",
+      "line_examples": [6998],
+      "reason": "属于外文实体残留，适合由 HTML 实体解码统一解决，不必单独写死。"
+    }
+  ],
+  "analysis_summary": {
+    "new_auto_rule_candidates": [
+      "HTML 实体解码",
+      "䠷 -> 挑",
+      "瞭解 -> 了解",
+      "反覆 -> 反复",
+      "装饰分隔符 ✽✽✽ -> ***"
+    ],
+    "manual_review_candidates": [
+      "连系 -> 联系",
+      "追着着 -> 追着"
+    ],
+    "notes": [
+      "不要把单字“覆 -> 复”设为全局规则，否则会误伤“重蹈覆辙”等固定词。",
+      "同理，不建议把“着着 -> 着”设成通用规则，容易误伤正常语句。",
+      "规则文件应只保存规则定义；次数统计和处理日志建议单独输出到 report/log 文件。"
+    ]
+  }
+}

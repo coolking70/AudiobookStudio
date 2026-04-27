@@ -1,0 +1,193 @@
+{
+  "schema_version": "2.0",
+  "profile_name": "zh_hans_general_normalization",
+  "description": "由旧版“2546_简体统一处理规则与日志.json”迁移而来。该文件仅保留可复用的规则定义，不再混入本次处理的统计日志。",
+  "migrated_from": {
+    "path": "C:/Users/coolking/Downloads/2546_简体统一处理规则与日志.json",
+    "source_file": "2546.txt",
+    "output_file": "2546_简体统一修复版.txt",
+    "migrated_at": "2026-04-27"
+  },
+  "pipeline": [
+    {
+      "id": "base_opencc_or_icu_t2s",
+      "type": "transform",
+      "enabled": true,
+      "description": "执行基础繁体转简体。"
+    },
+    {
+      "id": "extra_variant_fixups",
+      "type": "transform",
+      "enabled": true,
+      "description": "执行 OCR、日文字形、异体字、习惯词形修复。"
+    }
+  ],
+  "preserve_rules": [
+    {
+      "id": "preserve_semantic_pronoun_shen",
+      "text": "祂",
+      "reason": "保留神称代词，不参与通用简化。"
+    }
+  ],
+  "rules": [
+    {
+      "id": "phrase_fangfo_01",
+      "category": "phrase_variant",
+      "match_type": "literal",
+      "source": "彷佛",
+      "target": "仿佛",
+      "scope": "global",
+      "priority": 100,
+      "risk": "low",
+      "legacy_count": 186
+    },
+    {
+      "id": "phrase_fangfo_02",
+      "category": "phrase_variant",
+      "match_type": "literal",
+      "source": "彷彿",
+      "target": "仿佛",
+      "scope": "global",
+      "priority": 100,
+      "risk": "low",
+      "legacy_count": 0
+    },
+    {
+      "id": "phrase_fangfo_03",
+      "category": "phrase_variant",
+      "match_type": "literal",
+      "source": "仿彿",
+      "target": "仿佛",
+      "scope": "global",
+      "priority": 100,
+      "risk": "low",
+      "legacy_count": 0
+    },
+    {
+      "id": "char_black",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "黒",
+      "target": "黑",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "legacy_count": 17
+    },
+    {
+      "id": "char_drink",
+      "category": "old_variant_char",
+      "match_type": "literal",
+      "source": "飮",
+      "target": "饮",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "legacy_count": 1
+    },
+    {
+      "id": "char_lai",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "瀬",
+      "target": "濑",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "legacy_count": 5
+    },
+    {
+      "id": "char_dan",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "弾",
+      "target": "弹",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "legacy_count": 3
+    },
+    {
+      "id": "char_jian",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "剣",
+      "target": "剑",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "legacy_count": 2
+    },
+    {
+      "id": "char_chuan",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "伝",
+      "target": "传",
+      "scope": "global",
+      "priority": 80,
+      "risk": "low",
+      "legacy_count": 2
+    },
+    {
+      "id": "char_bu",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "歩",
+      "target": "步",
+      "scope": "global",
+      "priority": 70,
+      "risk": "medium",
+      "legacy_count": 2
+    },
+    {
+      "id": "char_jia",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "仮",
+      "target": "假",
+      "scope": "global",
+      "priority": 70,
+      "risk": "medium",
+      "legacy_count": 1
+    },
+    {
+      "id": "char_quan",
+      "category": "jp_variant_char",
+      "match_type": "literal",
+      "source": "圏",
+      "target": "圈",
+      "scope": "global",
+      "priority": 70,
+      "risk": "medium",
+      "legacy_count": 1
+    },
+    {
+      "id": "pronoun_ni",
+      "category": "pronoun_normalization",
+      "match_type": "literal",
+      "source": "妳",
+      "target": "你",
+      "scope": "global",
+      "priority": 60,
+      "risk": "low",
+      "legacy_count": 0
+    },
+    {
+      "id": "pronoun_ta",
+      "category": "pronoun_normalization",
+      "match_type": "literal",
+      "source": "牠",
+      "target": "它",
+      "scope": "global",
+      "priority": 60,
+      "risk": "low",
+      "legacy_count": 0
+    }
+  ],
+  "migration_notes": [
+    "旧文件中的 created_at、original_chars、output_chars、icu_diff_count 属于处理日志，不属于规则本体，已从规则定义中剥离。",
+    "为便于追溯，legacy_count 被保留下来作为历史命中参考，但不应被程序当成规则执行条件。",
+    "后续每次跑批建议把命中统计单独输出到 report.json 或 log.json。"
+  ]
+}

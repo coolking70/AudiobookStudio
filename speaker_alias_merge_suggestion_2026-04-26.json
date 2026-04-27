@@ -1,0 +1,137 @@
+{
+  "recommended_mode": "first_person_audiobook",
+  "canonical_speakers": [
+    {
+      "name": "甘织玲奈子",
+      "priority": "core",
+      "aliases": [
+        "我",
+        "玲奈子",
+        "甘织玲奈子",
+        "甘织",
+        "甘织玲奈",
+        "AMAGORI",
+        "Reina",
+        "MC",
+        "Me"
+      ],
+      "notes": "第一人称叙述、内心独白、本人对白建议统一到同一角色"
+    },
+    {
+      "name": "王冢真唯",
+      "priority": "core",
+      "aliases": [
+        "真唯",
+        "王冢真唯",
+        "Makoto"
+      ],
+      "notes": "同一角色的中日英混合别名"
+    },
+    {
+      "name": "濑名紫阳花",
+      "priority": "major",
+      "aliases": [
+        "紫阳花",
+        "紫阳花同学",
+        "天使紫阳花",
+        "Shibazakura"
+      ],
+      "notes": "Shibazakura 为误映射概率高，但从上下文看应并回紫阳花"
+    },
+    {
+      "name": "琴纱月",
+      "priority": "major",
+      "aliases": [
+        "纱月",
+        "琴纱月",
+        "SAIZUKI"
+      ],
+      "notes": "建议统一使用全名"
+    },
+    {
+      "name": "小柳香穗",
+      "priority": "major",
+      "aliases": [
+        "香穗",
+        "小柳香穗"
+      ],
+      "notes": "建议统一使用全名"
+    },
+    {
+      "name": "长谷川",
+      "priority": "supporting",
+      "aliases": [
+        "长谷川"
+      ],
+      "notes": "保留"
+    },
+    {
+      "name": "妹妹",
+      "priority": "supporting",
+      "aliases": [
+        "妹妹"
+      ],
+      "notes": "保留"
+    },
+    {
+      "name": "妈妈",
+      "priority": "supporting",
+      "aliases": [
+        "妈妈"
+      ],
+      "notes": "保留"
+    },
+    {
+      "name": "爸爸",
+      "priority": "supporting",
+      "aliases": [
+        "爸爸"
+      ],
+      "notes": "保留"
+    },
+    {
+      "name": "杂角池",
+      "priority": "fallback",
+      "aliases": [
+        "朋友",
+        "Friend",
+        "Girl",
+        "男",
+        "女",
+        "说话者",
+        "店员",
+        "清水",
+        "清水同学",
+        "平野"
+      ],
+      "notes": "低频或不稳定标签，建议不要单独立项"
+    }
+  ],
+  "needs_manual_review": [
+    {
+      "label": "Shinpei",
+      "reason": "需要回看原文确认具体人物实体"
+    },
+    {
+      "label": "ASHIAGUSA",
+      "reason": "疑似学校名或上下文噪声误识别，不建议直接保留"
+    },
+    {
+      "label": "Mayu",
+      "reason": "需要根据原文逐条核定，暂不自动并入真唯"
+    },
+    {
+      "label": "Shizune",
+      "reason": "含叙述句与对白，存在说话者漂移"
+    }
+  ],
+  "narration_policy": {
+    "bookkeeping_narrator_only_for": [
+      "版权页",
+      "章标题",
+      "极少量客观转场"
+    ],
+    "first_person_body_text_to": "甘织玲奈子",
+    "notes": "本书为强主观第一人称，正文叙述不宜大规模归给独立旁白"
+  }
+}

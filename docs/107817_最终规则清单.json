@@ -1,0 +1,147 @@
+{
+  "schema_version": "2.0",
+  "profile_name": "zh_hans_lightnovel_final_rules_for_107817",
+  "description": "在 2546 迁移版通用规则基础上，针对 107817 文本补充得到的最终可执行规则清单。",
+  "based_on": [
+    "I:/code/aitts/omnivoice-reader/docs/2546_简体统一规则_v2.json"
+  ],
+  "applies_to": {
+    "file": "C:/Users/coolking/Downloads/107817 utf-8.txt",
+    "encoding_detected": "UTF-16"
+  },
+  "pipeline": [
+    {
+      "id": "decode_html_entities",
+      "type": "transform",
+      "enabled": true,
+      "description": "优先解码 HTML 实体，否则部分字词无法进入正常修复流程。"
+    },
+    {
+      "id": "base_opencc_or_icu_t2s",
+      "type": "transform",
+      "enabled": true,
+      "description": "执行基础繁体转简体。"
+    },
+    {
+      "id": "extra_literal_rules",
+      "type": "transform",
+      "enabled": true,
+      "description": "执行字面/词级/正则补充规则。"
+    }
+  ],
+  "inherit_rule_ids": [
+    "phrase_fangfo_01",
+    "phrase_fangfo_02",
+    "phrase_fangfo_03",
+    "char_black",
+    "char_drink",
+    "char_lai",
+    "char_dan",
+    "char_jian",
+    "char_chuan",
+    "char_bu",
+    "char_jia",
+    "char_quan",
+    "pronoun_ni",
+    "pronoun_ta"
+  ],
+  "rules": [
+    {
+      "id": "phrase_liaojie",
+      "category": "phrase_variant",
+      "match_type": "literal",
+      "source": "瞭解",
+      "target": "了解",
+      "scope": "global",
+      "priority": 95,
+      "risk": "low",
+      "observed_count": 9,
+      "examples": [388, 430, 1251, 4405, 5532, 5540, 5550, 6580, 7226]
+    },
+    {
+      "id": "phrase_fanfu",
+      "category": "phrase_variant",
+      "match_type": "literal",
+      "source": "反覆",
+      "target": "反复",
+      "scope": "global",
+      "priority": 90,
+      "risk": "low",
+      "observed_count": 2,
+      "examples": [2132, 4631],
+      "reason": "只做词级替换，不做单字 覆->复，避免误伤“覆辙”等固定词。"
+    },
+    {
+      "id": "char_tiao_after_entity_decode",
+      "category": "rare_variant_char",
+      "match_type": "literal",
+      "source": "䠷",
+      "target": "挑",
+      "scope": "global",
+      "priority": 95,
+      "risk": "low",
+      "observed_count": 3,
+      "examples": [210, 725, 2376],
+      "reason": "HTML 实体 &#18487; 解码后得到 䠷，词形应为“高挑”。"
+    },
+    {
+      "id": "decorative_separator",
+      "category": "format_cleanup",
+      "match_type": "regex",
+      "source": "(?:✽\\s*){3,}",
+      "target": "***",
+      "scope": "global",
+      "priority": 85,
+      "risk": "low",
+      "observed_count": 7,
+      "examples": [921, 1567, 1671, 2356, 3583, 4161, 4393],
+      "reason": "统一场景分隔符，利于章节切块与后续文本处理。"
+    }
+  ],
+  "html_entity_handling": [
+    {
+      "entity": "&#18487;",
+      "decoded": "䠷",
+      "followup_rule": "char_tiao_after_entity_decode",
+      "observed_count": 3
+    },
+    {
+      "entity": "&#10045;",
+      "decoded": "✽",
+      "followup_rule": "decorative_separator",
+      "observed_count": 21
+    },
+    {
+      "entity": "&#973;",
+      "decoded": "ύ",
+      "followup_rule": null,
+      "observed_count": 1,
+      "reason": "出现在希腊词“εύρηκα”内部，只需解码，不应额外汉字化。"
+    }
+  ],
+  "review_only_candidates": [
+    {
+      "text": "连系",
+      "suggestion": "联系",
+      "examples": [386],
+      "reason": "更像两岸词汇统一，不一定是错误；是否替换取决于你是否要保留台版措辞。"
+    },
+    {
+      "text": "追着着",
+      "suggestion": "追着",
+      "examples": [410],
+      "reason": "明显像局部重复字，但不建议抽象成全局规则。最好做成个案修复或人工校对项。"
+    },
+    {
+      "text": "连系统都没理解",
+      "suggestion": "连系统都没了解 / 连系统都没弄懂",
+      "examples": [1857],
+      "reason": "更像翻译措辞不顺，不属于稳定字符归一化规则。"
+    }
+  ],
+  "execution_notes": [
+    "推荐顺序：先 HTML 实体解码，再 OpenCC/ICU，再执行本文件中的补充规则。",
+    "若你的程序支持规则继承，先加载 2546_简体统一规则_v2.json，再叠加本文件即可。",
+    "若你的程序暂不支持继承，可将 inherit_rule_ids 对应规则与本文件 rules 合并后再执行。"
+  ]
+}
