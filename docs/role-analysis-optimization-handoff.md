@@ -1,6 +1,6 @@
 # Role Analysis Optimization Handoff
 
-Last updated: 2026-04-27
+Last updated: 2026-04-28
 
 This document records the current state of the role/dialogue analysis optimization work so another AI or developer can continue without replaying the full chat history.
 
@@ -127,47 +127,86 @@ Observations:
 - It still produced one `菲纳克` shortened-name occurrence.
 - It had a few Sample A speaker mistakes, including assigning some lines to the wrong speaker in tavern dialogue.
 
-## Recent Findings
+## Recent Findings (2026-04-28 session)
 
-The biggest remaining quality issue is not output format stability anymore. It is first-pass speaker reasoning in complex multi-person dialogue.
+### Speaker Confidence Feature
 
-Current high-value error types:
+Added a per-segment speaker confidence token to the compact output format:
 
-- Multiple active speakers in a tavern/group scene.
-- Shortened or partial proper names, especially `菲纳克` vs `拉菲纳克`.
-- Non-quote speech-tag lines occasionally assigned to characters despite prompt saying default narration.
-- A few dialogue turns after narration insertions can still be offset by one speaker.
+```
+SEGS:
+L1 0 ne h
+L2 1 se m
+L3 ? ne l
+```
 
-Speaker verification was tested and currently should remain off by default. It fixed some lines but introduced over-corrections, including changing narration/action segments into character speech.
+The fourth column is `h` (high), `m` (medium), or `l` (low). `?` speaker must always be `l`.
+
+Implementation details:
+
+- `_CONFIDENCE_CODES = {"h": "high", "m": "medium", "l": "low"}` in `role_analyzer.py`
+- `_decode_compact_output` uses `split(None, 4)` and reads token[3] as confidence. Backward compatible: if token[3] is not a confidence code, it is treated as the anchor column (old format), and confidence defaults to `"high"`.
+- Each decoded segment dict gains `_confidence` key.
+- `sanitize_segments` was fixed to preserve `_`-prefixed metadata keys (they were previously stripped because the function rebuilt segments from explicit fields only).
+- Frontend renders confidence badges and applies CSS classes `segment-conf-low` / `segment-conf-medium` on the segment card; filter flags `seg-flag-conf-low` / `seg-flag-conf-medium` appear on the row badge.
+
+Current observation: with the tightened "陷阱" prompt rules the model almost always outputs `h`. Genuine uncertainty cases (ambiguous dialogue turn) may need prompt tuning to surface `m`/`l` more often.
+
+### Prompt Optimization — Explicit Attribution Traps
+
+Three common attribution failure patterns were isolated by diagnostic testing (model answered all three correctly in isolation → confirmed the original prompt was missing explicit rules for them). Three "陷阱" sections were added at the top of `COMPACT_ANALYSIS_PROMPT`:
+
+**陷阱A — 称谓反推 (Title inference)**
+When a line contains a title such as "少爷/大人/殿下/阁下", the speaker is almost certainly NOT the person being addressed. The addressee is being talked to, not speaking.
+
+**陷阱B — 后置叙述线索 (Post-hoc narration cue)**
+When a narration line AFTER a quote explicitly attributes it (e.g., "村长大大地挥手，否定了堤格尔的猜测"), that narration determines who said the preceding quote. Do not assign based on dialogue turn order alone.
+
+**陷阱C — 动作叙述行 (Action description lines)**
+Lines without `「」` that describe physical action, inner monologue, or transitional narration must be `0=旁白` even if they end with `：` and introduce the next quote.
+
+Three few-shot examples were also tested in `/tmp/test_prompt_v2.py` to verify the improvement. The few-shot version is available but was not merged into the production prompt; the trap-rule wording alone was sufficient.
+
+### Accuracy Numbers After Prompt Revision
+
+Benchmark script: `/tmp/test_prompt_v2.py`
+
+| Sample | Metric | Before | After |
+|--------|--------|--------|-------|
+| Sample B key trap segments (5 lines) | Accuracy | ~80% (4/5) | 100% (5/5) |
+| Sample A full (~26 lines) | Accuracy | ~86% | ~88.5% (23/26) |
+| Sample B full (~11 key lines) | Accuracy | 8/11 | 11/11 |
+
+One remaining hard failure in Sample A: `「不，不是那边的邻居。」` is still attributed to 堤格尔 instead of 村长. The narration cue "村长大大地挥手" appears 3+ lines later; the trap-B rule currently only catches adjacent cases. Fixing this would require the model to look further ahead, or a two-pass approach.
+
+### Bug Fixes (this session)
+
+- **`sanitize_segments` dropping `_confidence`**: The function rebuilt segment dicts from explicit fields only, silently dropping any `_`-prefixed key. Fixed by appending a loop to copy all `_k` metadata keys.
+- **Task snapshot resume starting from 0**: Imported `task_snapshot` type was routed to `runParseOnly` instead of `runAnalysisFlow`. `handleTaskSnapshotImport` now converts the snapshot to `analysis_flow` format, injecting `pipelineStage`/`pipelineIndex`/`pipelineCombo` from `_inMemoryLatestSnapshot` so the pipeline resumes from the correct chunk.
+- **Segment doubling on resume**: `runRoleAnalysis` always initialized `segmentsState = segmentsState.slice()` at `startIndex=0`, appending to whatever was already in state. Fixed with `startIndex > 0` guard: `segments = startIndex > 0 ? segmentsState.slice() : []`.
+- **Snapshot chooser dialog**: When both an imported snapshot and a live in-flight snapshot exist, `continueAnalysis()` now shows a chooser dialog instead of silently preferring one. Both entries display their timestamp and a short description.
+- **QuotaExceededError toast spam**: `saveParseSnapshot` showed a toast on every chunk once localStorage was full. Fixed with `_snapshotQuotaWarned` one-shot flag, reset at `beginTask`.
+- **beforeunload warning**: A `beforeunload` handler now warns when `taskBusy` is true or when `_snapshotQuotaWarned && inMemoryData` (data exists only in memory and would be lost on reload).
+- **Danger button "清空文本与缓存"**: `clearTextAndCache()` function + button added below the text input to clear text, both snapshot slots, and all related localStorage keys.
+- **`buildAnalysisFlowSnapshot` bloat**: Deduplicated `directAnalysisChunks` vs `chapterChunksState` when identical to avoid doubling snapshot size.
+
+### Biggest Remaining Quality Issue
+
+First-pass speaker reasoning in complex multi-person dialogue (tavern/group scenes). The prompt fixes reduce the most systematic errors but the model can still mis-assign a line in a fast-alternating 3-person exchange where no explicit speech tag is present.
+
+Speaker verification remains off by default. Testing showed it introduced more over-corrections than it fixed.
 
 ## Suggested Next Steps
 
-1. Build a small hand-labeled benchmark for 2-4 representative scenes.
+1. **Confidence calibration**: The tightened prompt makes the model output `h` for almost everything. Add a prompt instruction that `m` is appropriate when the speaker is inferred only from dialogue turn order (no explicit tag), and `l` when the speaker is genuinely ambiguous. This would make the confidence badges more actionable.
 
-   Include expected `speaker` only at first. Do not try to judge emotion/style yet.
+2. **Trap B — extended lookahead**: The trap-B rule (post-hoc narration cue) fails when the cue appears 3+ lines after the quote it attributes. A potential fix is a two-pass compact decode: first pass assigns speakers; second pass scans narration cues and back-propagates to the immediately preceding dialogue line.
 
-2. Add an automated scoring script.
+3. **Build a hand-labeled benchmark for 2-4 representative scenes**. Include expected `speaker` only at first. Automate scoring with a script similar to `/tmp/test_prompt_v2.py` against the backend API.
 
-   Feed the same sample through the model, compare segment-level speaker accuracy, and report mismatch lines.
+4. **Per-chunk known character glossary**. Pass a glossary of character names seen in context so the model prefers complete forms (`拉菲纳克` over `菲纳克`).
 
-3. Improve compact prompt with few-shot examples.
-
-   Focus examples on:
-   - Multi-person tavern dialogue.
-   - `某某说道/问道` prompt lines as narration.
-   - Proper-noun preservation.
-   - Non-dialogue quoted phrases.
-
-4. Consider passing a per-chunk known character glossary.
-
-   This should guide names without forcing alias merge. The wording should be "prefer complete names observed in source/context" rather than "merge similar names".
-
-5. Revisit optional speaker verification only after there is a benchmark.
-
-   If kept, make it extremely conservative:
-   - Only suggest changes for quote-only dialogue segments.
-   - Do not change non-quote narration into a character.
-   - Allow `UNKNOWN` as a safer output.
+5. **Revisit optional speaker verification only after there is a benchmark**. If kept, make it extremely conservative: only suggest changes for quote-only dialogue segments; do not change non-quote narration into a character; allow `UNKNOWN` as a safer output.
 
 ## Quick Verification Commands
 
