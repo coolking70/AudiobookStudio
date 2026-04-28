@@ -1306,6 +1306,76 @@
       margin-top: 6px;
       border-radius: var(--radius-xs);
     }
+    /* ===== Voice Design ===== */
+    .design-param-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 12px;
+    }
+    .design-param-grid .full-width { grid-column: 1 / -1; }
+    .design-field label {
+      display: block;
+      font-size: 12px;
+      color: var(--sub);
+      margin-bottom: 4px;
+    }
+    .design-field-inline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .design-field-inline label {
+      font-size: 12px;
+      color: var(--sub);
+      white-space: nowrap;
+    }
+    .design-samples-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .design-sample-card {
+      display: grid;
+      grid-template-columns: 24px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: rgba(8, 14, 26, 0.6);
+      border: 1px solid var(--line);
+      transition: border-color var(--transition);
+    }
+    .design-sample-card.selected {
+      border-color: rgba(98, 212, 147, 0.5);
+      background: rgba(8, 40, 22, 0.5);
+    }
+    .design-sample-card .sample-label {
+      font-size: 12px;
+      color: var(--sub);
+    }
+    .design-sample-card audio {
+      margin-top: 0;
+      width: 100%;
+      min-width: 180px;
+    }
+    .design-prompt-box {
+      background: rgba(8, 14, 26, 0.7);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      font-size: 12px;
+      line-height: 1.65;
+      color: var(--sub);
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 260px;
+      overflow: auto;
+      margin-top: 10px;
+      font-family: monospace;
+    }
     /* ===== Responsive ===== */
     @media (max-width: 1200px) {
       .progress-top { grid-template-columns: 1fr; }
@@ -1437,6 +1507,7 @@
       <button type="button" id="tabAnalysisBtn" onclick="setWorkspaceTab('analysis')">文本分析</button>
       <button type="button" id="tabAudioBtn" onclick="setWorkspaceTab('audio')">音频生成</button>
       <button type="button" id="tabLibraryBtn" onclick="setWorkspaceTab('library')">声音库</button>
+      <button type="button" id="tabDesignBtn" onclick="setWorkspaceTab('design')">音源设计</button>
     </div>
 
     <div id="modelsTab" class="workspace-tab-panel">
@@ -2143,6 +2214,78 @@
       </div>
     </div>
 
+    <div id="designTab" class="workspace-tab-panel" hidden>
+      <!-- Voice Design: sample generation -->
+      <div class="card">
+        <div class="section-head">
+          <h2 style="margin-bottom:0;">音源设计</h2>
+          <div class="section-meta">设计新声音，批量生成样本试听后保存到声音库</div>
+        </div>
+
+        <div class="design-param-grid">
+          <div class="design-field full-width">
+            <label>声音名称（保存到声音库时使用）</label>
+            <input type="text" id="designVoiceName" placeholder="例如：少年A、旁白女声、老爷爷" style="width:100%;box-sizing:border-box;" />
+          </div>
+          <div class="design-field full-width">
+            <label>试听文本</label>
+            <textarea id="designSampleText" rows="3" placeholder="输入用于生成样本的文本，建议 20~80 字" style="width:100%;box-sizing:border-box;"></textarea>
+          </div>
+          <div class="design-field full-width">
+            <label>风格标签 / 朗读指令（style）</label>
+            <textarea id="designStyleText" rows="2" placeholder="例如：female young_adult moderate_pitch" style="width:100%;box-sizing:border-box;"></textarea>
+            <div class="mini-note">OmniVoice 支持：male / female · young_adult / middle-aged / elderly · low_pitch / moderate_pitch / high_pitch · 标签之间用空格分隔</div>
+          </div>
+          <div class="design-field">
+            <div class="design-field-inline">
+              <label>样本数量</label>
+              <input type="number" id="designSampleCount" value="3" min="1" max="10" style="width:72px;" />
+              <span class="mini-note" style="margin:0;">次（每次独立推理，利用模型自然变化）</span>
+            </div>
+          </div>
+          <div class="design-field">
+            <div class="design-field-inline">
+              <label>参考音频（可选，用于声音克隆）</label>
+              <button type="button" class="secondary" style="font-size:12px;padding:4px 10px;" onclick="triggerDesignRefAudioUpload()">上传参考音频</button>
+              <span id="designRefAudioLabel" class="mini-note" style="margin:0;">未选择</span>
+              <input id="designRefAudioInput" type="file" accept=".wav,.mp3,.flac,.m4a,.ogg,audio/*" style="display:none;" onchange="handleDesignRefAudioChange(event)" />
+            </div>
+            <div class="mini-note" style="margin-top:4px;">上传后会自动识别 ref_text（需已加载音频识别模型）。留空则纯风格标签推理。</div>
+            <input type="hidden" id="designRefAudioPath" value="" />
+            <input type="hidden" id="designRefText" value="" />
+          </div>
+        </div>
+
+        <div class="actions" style="margin-top:14px;">
+          <button type="button" id="designGenerateBtn" data-busy-lock onclick="generateVoiceDesignSamples()">生成样本</button>
+          <button type="button" class="secondary" id="designSaveBtn" onclick="saveSelectedDesignSamples()" disabled>保存选中到声音库</button>
+          <button type="button" class="secondary danger" id="designClearBtn" onclick="clearDesignSamples()" hidden>清空样本</button>
+        </div>
+
+        <div id="designSamplesMeta" class="import-hint" style="margin-top:12px;">尚未生成任何样本。填写上方参数后点击"生成样本"开始。</div>
+        <div id="designSamplesList" class="design-samples-list"></div>
+      </div>
+
+      <!-- Voice Design: AI analysis prompt -->
+      <div class="card" style="margin-top:16px;">
+        <div class="section-head">
+          <h2 style="margin-bottom:0;">角色风格分析提示词</h2>
+          <div class="section-meta">将此提示词连同小说文本发给外部 AI，让它分析主要角色并建议配音风格</div>
+        </div>
+        <div class="actions" style="margin-top:10px;">
+          <button type="button" class="secondary" onclick="copyDesignAnalysisPrompt()">复制提示词</button>
+          <button type="button" class="secondary" onclick="importDesignAnalysisResult()">导入 AI 返回的 JSON</button>
+        </div>
+        <div class="mini-note" style="margin-top:8px;">
+          复制提示词 → 粘贴给 ChatGPT / Claude 等，后面附上小说原文 → AI 返回 JSON 后点击"导入 AI 返回的 JSON"粘贴结果 → 系统自动批量添加到声音库。
+        </div>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;font-size:12px;color:var(--sub);">查看完整提示词内容</summary>
+          <div id="designAnalysisPromptBox" class="design-prompt-box"></div>
+        </details>
+      </div>
+    </div>
+
     <div id="libraryTab" class="workspace-tab-panel" hidden>
       <div class="card">
         <div class="section-head">
@@ -2216,6 +2359,9 @@
   let _inMemoryResumeSnapshot = null;  // 导入的快照（来自文件）
   let _inMemoryLatestSnapshot = null;  // in-flight 实时进度的内存镜像（localStorage 写失败时的兜底）
   let _snapshotQuotaWarned = false;    // 只弹一次空间不足 toast
+
+  // ── 音源设计 ──────────────────────────────────────────────────────────────
+  let voiceDesignSamples = [];  // [{id, output_name, file, audio_url, selected}]
 
   const PARSE_SNAPSHOT_STORAGE_KEY = "ov_parse_snapshot";
   const LAST_SEGMENTS_STORAGE_KEY = "ov_last_segments";
@@ -2897,15 +3043,17 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function setWorkspaceTab(tab) {
-    activeWorkspaceTab = ["models", "analysis", "audio", "library"].includes(tab) ? tab : "models";
+    activeWorkspaceTab = ["models", "analysis", "audio", "library", "design"].includes(tab) ? tab : "models";
     document.getElementById("tabModelsBtn").classList.toggle("active", activeWorkspaceTab === "models");
     document.getElementById("tabAnalysisBtn").classList.toggle("active", activeWorkspaceTab === "analysis");
     document.getElementById("tabAudioBtn").classList.toggle("active", activeWorkspaceTab === "audio");
     document.getElementById("tabLibraryBtn").classList.toggle("active", activeWorkspaceTab === "library");
+    document.getElementById("tabDesignBtn").classList.toggle("active", activeWorkspaceTab === "design");
     document.getElementById("modelsTab").hidden = activeWorkspaceTab !== "models";
     document.getElementById("analysisTab").hidden = activeWorkspaceTab !== "analysis";
     document.getElementById("audioTab").hidden = activeWorkspaceTab !== "audio";
     document.getElementById("libraryTab").hidden = activeWorkspaceTab !== "library";
+    document.getElementById("designTab").hidden = activeWorkspaceTab !== "design";
   }
 
   function setModelsConfigView(view) {
@@ -5546,6 +5694,251 @@ very high pitch, very low pitch, whisper, young adult
   function getFileStem(filename) {
     const name = String(filename || "").split(/[\\/]/).pop() || "";
     return name.replace(/\.[^.]+$/, "") || "";
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 音源设计
+  // ══════════════════════════════════════════════════════════════════════════
+
+  const VOICE_DESIGN_ANALYSIS_PROMPT =
+`你是一个配音风格分析助手。请仔细阅读以下小说或剧本文本，识别其中有台词的主要角色，并为每个角色推荐合适的 OmniVoice TTS 风格标签组合。
+
+【风格标签规则】
+只能从以下选项中按需选取 1~3 个，用空格分隔：
+- 性别：male（男性）、female（女性）
+- 年龄段：young_adult（青年/约20-35岁）、middle-aged（中年/约35-55岁）、elderly（老年/55岁以上）
+- 音调：low_pitch（低沉/厚重）、moderate_pitch（中等/自然）、high_pitch（明亮/尖细）
+
+【返回格式】（严格 JSON 数组，不要包裹 markdown 代码块，直接输出 JSON）
+[
+  {
+    "name": "角色完整名称（与原文保持一致）",
+    "style": "male young_adult moderate_pitch",
+    "note": "一句话说明推荐理由"
+  }
+]
+
+【注意事项】
+- 旁白 / 叙述者也列入，名称固定写"旁白"
+- 只列有台词的主要角色，最多 15 个
+- style 里的标签必须是上面列表中的词，不能自造新词
+- 若角色性别在原文中不明确，则省略性别标签
+- 输出纯 JSON，不要加任何解释或 markdown
+
+【待分析文本】
+（将小说或剧本片段粘贴在此处，替换本行）`;
+
+  function initDesignPrompt() {
+    const box = document.getElementById("designAnalysisPromptBox");
+    if (box) box.textContent = VOICE_DESIGN_ANALYSIS_PROMPT;
+  }
+
+  function triggerDesignRefAudioUpload() {
+    document.getElementById("designRefAudioInput").click();
+  }
+
+  async function handleDesignRefAudioChange(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const label = document.getElementById("designRefAudioLabel");
+    label.textContent = "上传中…";
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const resp = await fetchJson("/api/upload-ref-audio", { filename: file.name, content_base64: base64 });
+      document.getElementById("designRefAudioPath").value = resp.saved_path || "";
+      document.getElementById("designRefText").value = "";
+      label.textContent = file.name;
+      // 若 ASR 已加载则自动转写
+      try {
+        const backend = getAudioBackendConfig();
+        const tr = await fetchJson("/api/transcribe-ref-audio", {
+          ref_audio: resp.saved_path,
+          backend,
+        });
+        document.getElementById("designRefText").value = tr.ref_text || "";
+        if (tr.ref_text) showToast("参考音频转写完成：" + tr.ref_text.slice(0, 40) + (tr.ref_text.length > 40 ? "…" : ""));
+      } catch (_) { /* ASR 未加载时忽略，用户可以不填 ref_text */ }
+    } catch (err) {
+      label.textContent = "上传失败";
+      showToast("参考音频上传失败：" + (err.message || err));
+    }
+    event.target.value = "";
+  }
+
+  async function generateVoiceDesignSamples() {
+    if (taskBusy) return;
+    const text = (document.getElementById("designSampleText").value || "").trim();
+    if (!text) { showToast("请先填写试听文本"); return; }
+    const style = (document.getElementById("designStyleText").value || "").trim();
+    const count = Math.max(1, Math.min(10, parseInt(document.getElementById("designSampleCount").value, 10) || 3));
+    const refAudio = document.getElementById("designRefAudioPath").value || null;
+    const refText = document.getElementById("designRefText").value || null;
+
+    const backend = validateAudioBackendConfig();
+    if (!backend) return;
+    const inferenceDevice = backend.inference_device || getInferenceDevice();
+
+    beginTask("narrate", "音源设计：批量生成样本", `将生成 ${count} 个样本，每次独立推理。`);
+    setProgress({ stage: "synthesize", summary: `正在生成样本 0 / ${count}`, percent: 10, total: count, done: 0, indeterminate: false });
+
+    const newSamples = [];
+    try {
+      for (let i = 0; i < count; i++) {
+        setProgress({ stage: "synthesize", summary: `正在生成样本 ${i + 1} / ${count}`, percent: Math.round(10 + (i / count) * 85), total: count, done: i, indeterminate: true }, { log: `生成第 ${i + 1} 个样本` });
+        const outputName = `design_${Date.now()}_${i + 1}`;
+        const resp = await fetchJson("/api/tts", {
+          text,
+          instruct: style || null,
+          ref_audio: refAudio,
+          ref_text: refText,
+          voice_engine: null,
+          output_name: outputName,
+          inference_device: inferenceDevice,
+          backend,
+        });
+        newSamples.push({ id: outputName, output_name: outputName, file: resp.file || null, audio_url: resp.audio_url || null, selected: false });
+        setProgress({ stage: "synthesize", summary: `已完成 ${i + 1} / ${count}`, percent: Math.round(10 + ((i + 1) / count) * 85), total: count, done: i + 1, indeterminate: false });
+      }
+      voiceDesignSamples = [...voiceDesignSamples, ...newSamples];
+      renderDesignSamples();
+      finishTask(`音源设计：${count} 个样本已生成`, "试听各样本，勾选满意的后点击「保存选中到声音库」。", { total: count, done: count });
+      setStatus(`已生成 ${count} 个音源样本，请试听选择。`);
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      failTask("音源设计生成失败", err.message);
+      setStatus("音源样本生成失败：" + err.message);
+    }
+  }
+
+  function renderDesignSamples() {
+    const list = document.getElementById("designSamplesList");
+    const meta = document.getElementById("designSamplesMeta");
+    const saveBtn = document.getElementById("designSaveBtn");
+    const clearBtn = document.getElementById("designClearBtn");
+    if (!voiceDesignSamples.length) {
+      list.innerHTML = "";
+      meta.textContent = "尚未生成任何样本。填写上方参数后点击「生成样本」开始。";
+      saveBtn.disabled = true;
+      clearBtn.hidden = true;
+      return;
+    }
+    meta.textContent = `共 ${voiceDesignSamples.length} 个样本，已选中 ${voiceDesignSamples.filter(s => s.selected).length} 个。`;
+    saveBtn.disabled = !voiceDesignSamples.some(s => s.selected);
+    clearBtn.hidden = false;
+    list.innerHTML = voiceDesignSamples.map((s, idx) => `
+      <div class="design-sample-card${s.selected ? " selected" : ""}" id="dsc-${escapeHtml(s.id)}">
+        <input type="checkbox" ${s.selected ? "checked" : ""} onchange="toggleDesignSample('${escapeJs(s.id)}')" title="选择此样本" />
+        <div>
+          <div class="sample-label">样本 ${idx + 1}${s.selected ? " ✓" : ""}</div>
+          ${s.audio_url ? `<audio controls preload="none" src="${escapeHtml(s.audio_url)}" class="inline-audio"></audio>` : "<div class='mini-note' style='margin-top:4px;'>无可用音频</div>"}
+        </div>
+        <button type="button" class="secondary danger" style="font-size:12px;padding:4px 8px;align-self:flex-start;" onclick="removeDesignSample('${escapeJs(s.id)}')">移除</button>
+      </div>`).join("");
+  }
+
+  function toggleDesignSample(id) {
+    const s = voiceDesignSamples.find(x => x.id === id);
+    if (s) s.selected = !s.selected;
+    renderDesignSamples();
+  }
+
+  function removeDesignSample(id) {
+    voiceDesignSamples = voiceDesignSamples.filter(x => x.id !== id);
+    renderDesignSamples();
+  }
+
+  function clearDesignSamples() {
+    if (voiceDesignSamples.length && !confirm("清空所有已生成的样本？")) return;
+    voiceDesignSamples = [];
+    renderDesignSamples();
+  }
+
+  function saveSelectedDesignSamples() {
+    const selected = voiceDesignSamples.filter(s => s.selected);
+    if (!selected.length) { showToast("请先勾选至少一个样本"); return; }
+    const baseName = (document.getElementById("designVoiceName").value || "").trim();
+    const style = (document.getElementById("designStyleText").value || "").trim();
+    const refText = document.getElementById("designRefText").value || "";
+    let addedCount = 0;
+    selected.forEach((s, i) => {
+      const name = baseName ? (selected.length === 1 ? baseName : `${baseName}_${i + 1}`) : `设计音源_${Date.now()}_${i + 1}`;
+      const entry = {
+        name,
+        style,
+        ref_audio: s.file || "",
+        ref_text: refText,
+        voice_engine: "",
+        voice_name: "",
+        voice_locale: "",
+        cfg_value: "",
+        inference_timesteps: "",
+      };
+      voiceLibraryState.push(entry);
+      addedCount++;
+    });
+    saveVoiceLibrary();
+    renderVoiceLibrary();
+    showToast(`已将 ${addedCount} 个样本添加到声音库`);
+    // 移除已保存的样本
+    const savedIds = new Set(selected.map(s => s.id));
+    voiceDesignSamples = voiceDesignSamples.filter(s => !savedIds.has(s.id));
+    renderDesignSamples();
+    setWorkspaceTab("library");
+  }
+
+  function copyDesignAnalysisPrompt() {
+    navigator.clipboard.writeText(VOICE_DESIGN_ANALYSIS_PROMPT)
+      .then(() => showToast("提示词已复制到剪贴板，粘贴给 AI 后在末尾附上小说文本"))
+      .catch(() => showToast("复制失败，请手动展开提示词内容并复制"));
+  }
+
+  function importDesignAnalysisResult() {
+    const raw = prompt("请粘贴 AI 返回的 JSON 数组：");
+    if (!raw) return;
+    let items;
+    try {
+      items = JSON.parse(raw.trim());
+      if (!Array.isArray(items)) throw new Error("结果应为 JSON 数组");
+    } catch (e) {
+      showToast("JSON 解析失败：" + e.message);
+      return;
+    }
+    let added = 0;
+    items.forEach(item => {
+      const name = String(item.name || "").trim();
+      const style = String(item.style || "").trim();
+      if (!name) return;
+      // 检查是否已存在同名条目
+      if (voiceLibraryState.some(v => v.name === name)) {
+        showToast(`跳过已存在的角色：${name}`);
+        return;
+      }
+      voiceLibraryState.push({
+        name,
+        style,
+        ref_audio: "",
+        ref_text: "",
+        voice_engine: "",
+        voice_name: "",
+        voice_locale: "",
+        cfg_value: "",
+        inference_timesteps: "",
+      });
+      added++;
+    });
+    if (added > 0) {
+      saveVoiceLibrary();
+      renderVoiceLibrary();
+      showToast(`已导入 ${added} 个角色到声音库`);
+      setWorkspaceTab("library");
+    } else {
+      showToast("没有新角色被导入（可能全部已存在）");
+    }
   }
 
   function loadVoiceLibrary() {
@@ -9279,6 +9672,7 @@ very high pitch, very low pitch, whisper, young adult
   setAnalysisSourceMode("openai_compat");
   renderAnalysisPipelineMeta();
   refreshExternalPromptView();
+  initDesignPrompt();
   loadVoiceLibrary();
   renderSpeakerMergeList();
   renderRoleAssignments();
