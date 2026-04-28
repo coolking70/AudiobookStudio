@@ -1613,8 +1613,13 @@ def parse_text_v2(req: ParseV2Request):
         import sys as _sys
         from pathlib import Path as _Path
 
-        # 把 BookVoiceParser 包加入路径（同级目录）
-        _bvp_root = _Path(__file__).resolve().parent.parent / "BookVoiceParser"
+        # 兼容两种放置方式：项目根目录/BookVoiceParser 或 上一级目录/BookVoiceParser
+        _app_dir = _Path(__file__).resolve().parent
+        _bvp_candidates = [
+            _app_dir / "BookVoiceParser",
+            _app_dir.parent / "BookVoiceParser",
+        ]
+        _bvp_root = next((candidate for candidate in _bvp_candidates if candidate.exists()), _bvp_candidates[0])
         if str(_bvp_root) not in _sys.path:
             _sys.path.insert(0, str(_bvp_root))
 
