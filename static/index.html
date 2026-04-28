@@ -2232,9 +2232,9 @@
             <textarea id="designSampleText" rows="3" placeholder="输入用于生成样本的文本，建议 20~80 字" style="width:100%;box-sizing:border-box;"></textarea>
           </div>
           <div class="design-field full-width">
-            <label>风格标签 / 朗读指令（style）</label>
-            <textarea id="designStyleText" rows="2" placeholder="例如：female young_adult moderate_pitch" style="width:100%;box-sizing:border-box;"></textarea>
-            <div class="mini-note">OmniVoice 支持：male / female · young_adult / middle-aged / elderly · low_pitch / moderate_pitch / high_pitch · 标签之间用空格分隔</div>
+            <label>style（风格标签）</label>
+            <input type="text" id="designStyleText" placeholder="例如：female, young adult, moderate pitch" style="width:100%;box-sizing:border-box;" oninput="renderDesignStylePicker()" />
+            <div id="designStylePickerContainer" style="margin-top:6px;"></div>
           </div>
           <div class="design-field">
             <div class="design-field-inline">
@@ -2262,8 +2262,20 @@
           <button type="button" class="secondary danger" id="designClearBtn" onclick="clearDesignSamples()" hidden>清空样本</button>
         </div>
 
-        <div id="designSamplesMeta" class="import-hint" style="margin-top:12px;">尚未生成任何样本。填写上方参数后点击"生成样本"开始。</div>
+        <div id="designSamplesMeta" class="import-hint" style="margin-top:12px;">尚未生成任何样本。填写上方参数后点击「生成样本」开始。</div>
         <div id="designSamplesList" class="design-samples-list"></div>
+      </div>
+
+      <!-- Voice Design: character queue (from AI import) -->
+      <div class="card" id="designQueueCard" style="margin-top:16px;" hidden>
+        <div class="section-head">
+          <h2 style="margin-bottom:0;">角色设计队列</h2>
+          <div class="section-meta">从 AI 导入的角色，点击「加载到设计表单」后生成样本，确认满意再保存到声音库</div>
+        </div>
+        <div id="designQueueList" class="design-samples-list" style="margin-top:10px;"></div>
+        <div class="actions" style="margin-top:10px;">
+          <button type="button" class="secondary danger" onclick="clearDesignQueue()">清空队列</button>
+        </div>
       </div>
 
       <!-- Voice Design: AI analysis prompt -->
@@ -2277,7 +2289,7 @@
           <button type="button" class="secondary" onclick="importDesignAnalysisResult()">导入 AI 返回的 JSON</button>
         </div>
         <div class="mini-note" style="margin-top:8px;">
-          复制提示词 → 粘贴给 ChatGPT / Claude 等，后面附上小说原文 → AI 返回 JSON 后点击"导入 AI 返回的 JSON"粘贴结果 → 系统自动批量添加到声音库。
+          复制提示词 → 粘贴给 ChatGPT / Claude 等，后面附上小说原文 → AI 返回 JSON 后点击「导入 AI 返回的 JSON」粘贴结果 → 角色出现在上方队列，依次加载到设计表单生成样本。
         </div>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;font-size:12px;color:var(--sub);">查看完整提示词内容</summary>
@@ -2362,6 +2374,7 @@
 
   // ── 音源设计 ──────────────────────────────────────────────────────────────
   let voiceDesignSamples = [];  // [{id, output_name, file, audio_url, selected}]
+  let voiceDesignQueue = [];    // [{name, style, sample_text, note}] — imported from AI, waiting to be designed
 
   const PARSE_SNAPSHOT_STORAGE_KEY = "ov_parse_snapshot";
   const LAST_SEGMENTS_STORAGE_KEY = "ov_last_segments";
@@ -5701,19 +5714,22 @@ very high pitch, very low pitch, whisper, young adult
   // ══════════════════════════════════════════════════════════════════════════
 
   const VOICE_DESIGN_ANALYSIS_PROMPT =
-`你是一个配音风格分析助手。请仔细阅读以下小说或剧本文本，识别其中有台词的主要角色，并为每个角色推荐合适的 OmniVoice TTS 风格标签组合。
+`你是一个配音风格分析助手。请仔细阅读以下小说或剧本文本，识别其中有台词的主要角色，并为每个角色推荐合适的 OmniVoice TTS 风格标签组合，以及一段适合试听的文本样本。
 
 【风格标签规则】
-只能从以下选项中按需选取 1~3 个，用空格分隔：
+只能从以下选项中按需选取 1~3 个，用英文逗号+空格分隔（例如 "female, young adult, high pitch"）：
 - 性别：male（男性）、female（女性）
-- 年龄段：young_adult（青年/约20-35岁）、middle-aged（中年/约35-55岁）、elderly（老年/55岁以上）
-- 音调：low_pitch（低沉/厚重）、moderate_pitch（中等/自然）、high_pitch（明亮/尖细）
+- 年龄段：young adult（青年/约20-35岁）、middle-aged（中年/约35-55岁）、elderly（老年/55岁以上）
+- 音调：low pitch（低沉/厚重）、moderate pitch（中等/自然）、high pitch（明亮/尖细）
+- 风格：energetic（活泼/有活力）、calm（沉稳/平和）、breathy（气声/柔和）、raspy（沙哑）
+- 口音：standard accent（普通话/标准腔）、regional accent（方言腔/地方口音）
 
 【返回格式】（严格 JSON 数组，不要包裹 markdown 代码块，直接输出 JSON）
 [
   {
     "name": "角色完整名称（与原文保持一致）",
-    "style": "male young_adult moderate_pitch",
+    "style": "female, young adult, moderate pitch",
+    "sample_text": "从原文中截取或改写，长度 20~60 字，包含该角色典型台词或独白，便于试听判断音色",
     "note": "一句话说明推荐理由"
   }
 ]
@@ -5721,8 +5737,9 @@ very high pitch, very low pitch, whisper, young adult
 【注意事项】
 - 旁白 / 叙述者也列入，名称固定写"旁白"
 - 只列有台词的主要角色，最多 15 个
-- style 里的标签必须是上面列表中的词，不能自造新词
+- style 里的标签必须严格使用上面列表中的词（含空格形式），用英文逗号+空格分隔，不能自造新词
 - 若角色性别在原文中不明确，则省略性别标签
+- sample_text 必须填写，长度在 20~60 字之间
 - 输出纯 JSON，不要加任何解释或 markdown
 
 【待分析文本】
@@ -5731,6 +5748,12 @@ very high pitch, very low pitch, whisper, young adult
   function initDesignPrompt() {
     const box = document.getElementById("designAnalysisPromptBox");
     if (box) box.textContent = VOICE_DESIGN_ANALYSIS_PROMPT;
+  }
+
+  function renderDesignStylePicker() {
+    const container = document.getElementById("designStylePickerContainer");
+    if (!container) return;
+    container.innerHTML = renderStylePicker("design", "");
   }
 
   function triggerDesignRefAudioUpload() {
@@ -5911,34 +5934,74 @@ very high pitch, very low pitch, whisper, young adult
     let added = 0;
     items.forEach(item => {
       const name = String(item.name || "").trim();
-      const style = String(item.style || "").trim();
+      const style = normalizeStyleValue(String(item.style || "").trim());
+      const sample_text = String(item.sample_text || "").trim();
+      const note = String(item.note || "").trim();
       if (!name) return;
-      // 检查是否已存在同名条目
-      if (voiceLibraryState.some(v => v.name === name)) {
-        showToast(`跳过已存在的角色：${name}`);
+      // 如果队列里已存在同名角色，跳过
+      if (voiceDesignQueue.some(q => q.name === name)) {
+        showToast(`跳过队列中已有的角色：${name}`);
         return;
       }
-      voiceLibraryState.push({
-        name,
-        style,
-        ref_audio: "",
-        ref_text: "",
-        voice_engine: "",
-        voice_name: "",
-        voice_locale: "",
-        cfg_value: "",
-        inference_timesteps: "",
-      });
+      voiceDesignQueue.push({ name, style, sample_text, note });
       added++;
     });
     if (added > 0) {
-      saveVoiceLibrary();
-      renderVoiceLibrary();
-      showToast(`已导入 ${added} 个角色到声音库`);
-      setWorkspaceTab("library");
+      renderDesignQueue();
+      showToast(`已将 ${added} 个角色加入设计队列`);
     } else {
-      showToast("没有新角色被导入（可能全部已存在）");
+      showToast("没有新角色被导入（可能全部已在队列中）");
     }
+  }
+
+  function renderDesignQueue() {
+    const card = document.getElementById("designQueueCard");
+    const list = document.getElementById("designQueueList");
+    if (!card || !list) return;
+    if (!voiceDesignQueue.length) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    list.innerHTML = voiceDesignQueue.map((item, idx) => `
+      <div class="design-sample-card" style="align-items:flex-start;gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:14px;">${escapeHtml(item.name)}</div>
+          <div class="mini-note" style="margin-top:2px;">style：${escapeHtml(item.style || "（未指定）")}</div>
+          ${item.sample_text ? `<div class="mini-note" style="margin-top:2px;">试听文本：${escapeHtml(item.sample_text.slice(0, 50))}${item.sample_text.length > 50 ? "…" : ""}</div>` : ""}
+          ${item.note ? `<div class="mini-note" style="margin-top:2px;color:var(--sub);">${escapeHtml(item.note)}</div>` : ""}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
+          <button type="button" style="font-size:12px;padding:4px 10px;" onclick="loadDesignQueueItem(${idx})">加载到设计表单</button>
+          <button type="button" class="secondary danger" style="font-size:12px;padding:4px 10px;" onclick="removeDesignQueueItem(${idx})">移除</button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function loadDesignQueueItem(idx) {
+    const item = voiceDesignQueue[idx];
+    if (!item) return;
+    document.getElementById("designVoiceName").value = item.name;
+    document.getElementById("designStyleText").value = item.style || "";
+    if (item.sample_text) {
+      document.getElementById("designSampleText").value = item.sample_text;
+    }
+    renderDesignStylePicker();
+    // 滚动到设计表单顶部
+    document.getElementById("designGenerateBtn")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    showToast(`已加载「${item.name}」，填写其余参数后点击「生成样本」`);
+  }
+
+  function removeDesignQueueItem(idx) {
+    voiceDesignQueue.splice(idx, 1);
+    renderDesignQueue();
+  }
+
+  function clearDesignQueue() {
+    if (voiceDesignQueue.length && !confirm("清空全部角色设计队列？")) return;
+    voiceDesignQueue = [];
+    renderDesignQueue();
   }
 
   function loadVoiceLibrary() {
@@ -6273,6 +6336,9 @@ very high pitch, very low pitch, whisper, young adult
     if (targetType === "segment") {
       return segmentsState[Number(key)]?.style || "";
     }
+    if (targetType === "design") {
+      return document.getElementById("designStyleText")?.value || "";
+    }
     return "";
   }
 
@@ -6297,6 +6363,13 @@ very high pitch, very low pitch, whisper, young adult
       segmentsState[index].style = mergeStyleTags(segmentsState[index].style, tag);
       renderSegments(true);
       saveLastSegments(segmentsState);
+      return;
+    }
+    if (targetType === "design") {
+      const input = document.getElementById("designStyleText");
+      if (!input) return;
+      input.value = mergeStyleTags(input.value, tag);
+      renderDesignStylePicker();
     }
   }
 
@@ -6324,6 +6397,13 @@ very high pitch, very low pitch, whisper, young adult
       segmentsState[index].style = nextStyle;
       renderSegments(true);
       saveLastSegments(segmentsState);
+      return;
+    }
+    if (targetType === "design") {
+      const input = document.getElementById("designStyleText");
+      if (!input) return;
+      input.value = nextStyle;
+      renderDesignStylePicker();
     }
   }
 
@@ -9673,6 +9753,7 @@ very high pitch, very low pitch, whisper, young adult
   renderAnalysisPipelineMeta();
   refreshExternalPromptView();
   initDesignPrompt();
+  renderDesignStylePicker();
   loadVoiceLibrary();
   renderSpeakerMergeList();
   renderRoleAssignments();
