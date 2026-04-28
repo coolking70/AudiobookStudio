@@ -569,6 +569,10 @@ class OmniVoicePipeline:
                     "或先在模型配置页加载音频识别模型，"
                     "或显式设置环境变量 OMNIVOICE_ALLOW_ASR_AUTOLOAD=1 后再允许自动转写。"
                 )
+            # 若 ref_text 为空且本 pipeline 已预加载 ASR，优先用内置 ASR 转写，
+            # 避免将 ref_text=None 传给 OmniVoice 触发其内部重复加载 Whisper。
+            if not normalized_ref_text and self.is_asr_loaded():
+                normalized_ref_text = self.transcribe_audio_file(normalized_ref_audio)
             cache_key = (normalized_ref_audio, normalized_ref_text)
             voice_clone_prompt = self.voice_clone_prompt_cache.get(cache_key)
             if voice_clone_prompt is None:
