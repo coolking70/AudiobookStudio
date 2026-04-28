@@ -1361,6 +1361,83 @@
       width: 100%;
       min-width: 180px;
     }
+    /* 角色设计队列卡片 */
+    .design-queue-card {
+      display: flex;
+      flex-direction: row;
+      align-items: stretch;
+      gap: 0;
+      border-radius: var(--radius-sm);
+      background: rgba(8, 14, 26, 0.6);
+      border: 1px solid var(--line);
+      transition: border-color var(--transition);
+      overflow: hidden;
+    }
+    .design-queue-card:hover {
+      border-color: rgba(98, 212, 147, 0.3);
+    }
+    .design-queue-card-body {
+      flex: 1;
+      min-width: 0;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .design-queue-card-name {
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--fg);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .design-queue-card-style {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .design-queue-tag {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 99px;
+      background: rgba(98, 212, 147, 0.12);
+      color: rgba(98, 212, 147, 0.9);
+      border: 1px solid rgba(98, 212, 147, 0.2);
+      white-space: nowrap;
+    }
+    .design-queue-card-text {
+      font-size: 12px;
+      color: var(--sub);
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .design-queue-card-note {
+      font-size: 11px;
+      color: rgba(120,140,170,0.7);
+    }
+    .design-queue-card-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      flex-shrink: 0;
+      border-left: 1px solid var(--line);
+    }
+    .design-queue-card-actions button {
+      flex: 1;
+      border-radius: 0;
+      border: none;
+      padding: 0 18px;
+      font-size: 13px;
+      min-width: 110px;
+      white-space: nowrap;
+    }
+    .design-queue-card-actions button:first-child {
+      border-bottom: 1px solid var(--line);
+    }
     .design-prompt-box {
       background: rgba(8, 14, 26, 0.7);
       border: 1px solid var(--line);
@@ -2272,7 +2349,7 @@
           <h2 style="margin-bottom:0;">角色设计队列</h2>
           <div class="section-meta">从 AI 导入的角色，点击「加载到设计表单」后生成样本，确认满意再保存到声音库</div>
         </div>
-        <div id="designQueueList" class="design-samples-list" style="margin-top:10px;"></div>
+        <div id="designQueueList" class="design-samples-list"></div>
         <div class="actions" style="margin-top:10px;">
           <button type="button" class="secondary danger" onclick="clearDesignQueue()">清空队列</button>
         </div>
@@ -5895,7 +5972,9 @@ very high pitch, very low pitch, whisper, young adult
     if (!selected.length) { showToast("请先勾选至少一个样本"); return; }
     const baseName = (document.getElementById("designVoiceName").value || "").trim();
     const style = (document.getElementById("designStyleText").value || "").trim();
-    const refText = document.getElementById("designRefText").value || "";
+    // 优先用 ASR 转写结果；若没有则用生成时所用的试听文本（即合成音频对应的文本）
+    const refText = document.getElementById("designRefText").value
+      || document.getElementById("designSampleText").value || "";
     let addedCount = 0;
     selected.forEach((s, i) => {
       const name = baseName ? (selected.length === 1 ? baseName : `${baseName}_${i + 1}`) : `设计音源_${Date.now()}_${i + 1}`;
@@ -5972,20 +6051,22 @@ very high pitch, very low pitch, whisper, young adult
       return;
     }
     card.hidden = false;
-    list.innerHTML = voiceDesignQueue.map((item, idx) => `
-      <div class="design-sample-card" style="align-items:flex-start;gap:10px;">
-        <div style="flex:1;min-width:0;">
-          <div style="font-weight:600;font-size:14px;">${escapeHtml(item.name)}</div>
-          <div class="mini-note" style="margin-top:2px;">style：${escapeHtml(item.style || "（未指定）")}</div>
-          ${item.sample_text ? `<div class="mini-note" style="margin-top:2px;">试听文本：${escapeHtml(item.sample_text.slice(0, 50))}${item.sample_text.length > 50 ? "…" : ""}</div>` : ""}
-          ${item.note ? `<div class="mini-note" style="margin-top:2px;color:var(--sub);">${escapeHtml(item.note)}</div>` : ""}
+    list.innerHTML = voiceDesignQueue.map((item, idx) => {
+      const tags = item.style ? item.style.split(",").map(t => t.trim()).filter(Boolean) : [];
+      return `
+      <div class="design-queue-card">
+        <div class="design-queue-card-body">
+          <div class="design-queue-card-name">${escapeHtml(item.name)}</div>
+          ${tags.length ? `<div class="design-queue-card-style">${tags.map(t => `<span class="design-queue-tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+          ${item.sample_text ? `<div class="design-queue-card-text">「${escapeHtml(item.sample_text)}」</div>` : ""}
+          ${item.note ? `<div class="design-queue-card-note">${escapeHtml(item.note)}</div>` : ""}
         </div>
-        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
-          <button type="button" style="font-size:12px;padding:4px 10px;" onclick="loadDesignQueueItem(${idx})">加载到设计表单</button>
-          <button type="button" class="secondary danger" style="font-size:12px;padding:4px 10px;" onclick="removeDesignQueueItem(${idx})">移除</button>
+        <div class="design-queue-card-actions">
+          <button type="button" onclick="loadDesignQueueItem(${idx})">加载到设计表单</button>
+          <button type="button" class="secondary danger" onclick="removeDesignQueueItem(${idx})">移除</button>
         </div>
-      </div>
-    `).join("");
+      </div>`;
+    }).join("");
   }
 
   function loadDesignQueueItem(idx) {
