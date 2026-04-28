@@ -645,6 +645,16 @@
     .seg-flag-unknown { background: rgba(125, 154, 192, 0.15); color: var(--text-dim); }
     .seg-flag-conf-low { background: rgba(229,57,53,0.15); color: #e53935; }
     .seg-flag-conf-medium { background: rgba(249,168,37,0.18); color: #c47d00; }
+    .seg-flag-bvp { background: rgba(66,133,244,0.12); color: #1a73e8; }
+    .seg-evidence {
+      font-size: 12px; color: var(--text-dim, #666); margin: 4px 0 6px;
+      padding: 4px 8px; background: rgba(0,0,0,0.03); border-radius: 4px;
+      border: 1px solid rgba(0,0,0,0.07);
+    }
+    .seg-evidence summary { cursor: pointer; user-select: none; font-weight: 500; }
+    .seg-evidence span { display: inline-block; margin-right: 8px; }
+    .seg-attr-type { background: rgba(66,133,244,0.1); color: #1a73e8; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+    .seg-addressee { background: rgba(52,168,83,0.1); color: #1e7e34; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
     .segment-head {
       display: flex;
       flex-wrap: wrap;
@@ -2162,18 +2172,46 @@
             <input id="sourceFileInput" type="file" accept=".txt,.md,text/plain,text/markdown" style="display:none;" onchange="handleSourceFileChange(event)" />
             <textarea id="sourceText" style="min-height: 300px;" placeholder="在这里粘贴原文"></textarea>
 
-            <input id="taskSnapshotFileInput" type="file" accept=".json,application/json" style="display:none;" onchange="handleTaskSnapshotImport(event)" />
-            <div class="actions">
-              <button type="button" data-busy-lock class="secondary" onclick="triggerSourceFileImport()">导入 txt/md</button>
-              <button type="button" data-busy-lock onclick="runChapterDetectionAction()">章节识别</button>
-              <button type="button" id="runSelectedAnalysisButton" data-busy-lock onclick="runSelectedAnalysisFlow()">执行所选流程</button>
-              <button type="button" class="secondary" onclick="continueAnalysis()">继续上次分析</button>
-              <button type="button" class="secondary" onclick="triggerTaskSnapshotImport()">导入任务快照</button>
-              <button type="button" id="exportProgressBtn" class="secondary" onclick="exportTaskSnapshot()">导出当前进度</button>
-              <button type="button" data-busy-lock class="danger" onclick="clearTextAndCache()">清空文本与缓存</button>
+            <input id=”taskSnapshotFileInput” type=”file” accept=”.json,application/json” style=”display:none;” onchange=”handleTaskSnapshotImport(event)” />
+
+            <!-- ── 解析模式选择 ── -->
+            <div id=”parseModePanel” style=”margin: 10px 0; padding: 10px 12px; background: var(--bg-card, #f8f8fa); border: 1px solid var(--border, #ddd); border-radius: 6px;”>
+              <label style=”font-weight:600; margin-bottom:6px; display:block;”>解析模式</label>
+              <div style=”display:flex; gap:20px; align-items:center; flex-wrap:wrap;”>
+                <label style=”display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:normal;”>
+                  <input type=”radio” name=”parseMode” value=”llm” checked onchange=”setParseMode('llm')” />
+                  LLM 直解（标准）
+                </label>
+                <label style=”display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:normal;”>
+                  <input type=”radio” name=”parseMode” value=”structured” onchange=”setParseMode('structured')” />
+                  结构化解析（BookVoiceParser）
+                </label>
+              </div>
+              <!-- 结构化解析扩展选项 -->
+              <div id=”structuredParseOptions” hidden style=”margin-top:10px; display:flex; flex-direction:column; gap:8px;”>
+                <label style=”font-weight:normal;”>
+                  角色提示（可选，逗号分隔）
+                  <input id=”roleHintsInput” type=”text” placeholder=”例：张三,李四,王五” style=”margin-top:4px; width:100%;” />
+                </label>
+                <label style=”display:flex; align-items:center; gap:8px; font-weight:normal; cursor:pointer;”>
+                  <input type=”checkbox” id=”useLlmReview” />
+                  对低置信度片段使用 LLM 复核（使用当前文本模型配置）
+                </label>
+                <div class=”mini-note” style=”margin:0;”>结构化解析：规则层直接抽取台词并归属说话人，速度更快，置信度低的片段会标注证据供人工核查。</div>
+              </div>
             </div>
-            <div id="sourceImportHint" class="import-hint">支持 .txt / .md 文件导入。请先在“模型配置 -> 文本模型 -> 高级配置”里设定后续分析组合，再回到这里执行。</div>
-            <div id="analysisPipelineMeta" class="import-hint" style="margin-top:10px;">当前尚未执行章节识别。</div>
+
+            <div class=”actions”>
+              <button type=”button” data-busy-lock class=”secondary” onclick=”triggerSourceFileImport()”>导入 txt/md</button>
+              <button type=”button” data-busy-lock onclick=”runChapterDetectionAction()”>章节识别</button>
+              <button type=”button” id=”runSelectedAnalysisButton” data-busy-lock onclick=”runSelectedAnalysisFlow()”>执行所选流程</button>
+              <button type=”button” class=”secondary” onclick=”continueAnalysis()”>继续上次分析</button>
+              <button type=”button” class=”secondary” onclick=”triggerTaskSnapshotImport()”>导入任务快照</button>
+              <button type=”button” id=”exportProgressBtn” class=”secondary” onclick=”exportTaskSnapshot()”>导出当前进度</button>
+              <button type=”button” data-busy-lock class=”danger” onclick=”clearTextAndCache()”>清空文本与缓存</button>
+            </div>
+            <div id=”sourceImportHint” class=”import-hint”>支持 .txt / .md 文件导入。请先在”模型配置 -> 文本模型 -> 高级配置”里设定后续分析组合，再回到这里执行。</div>
+            <div id=”analysisPipelineMeta” class=”import-hint” style=”margin-top:10px;”>当前尚未执行章节识别。</div>
           </div>
 
           <div id="status" class="status" hidden>等待操作…</div>
@@ -2419,6 +2457,7 @@
   let taskElapsedTimer = null;
   let pendingProgressAutoExpandTimer = null;
   let analysisSourceMode = "openai_compat";
+  let parseMode = "llm"; // "llm" | "structured"
   let activeWorkspaceTab = "models";
   let activeModelsConfigView = "text";
   let externalPromptChunks = [];
@@ -7974,7 +8013,9 @@ very high pitch, very low pitch, whisper, young adult
           ${needsReview ? `<span class="seg-flag seg-flag-unknown" title="LLM 无法确定说话人，请人工复核">UNKNOWN</span>` : ""}
           ${isLowConf && !needsReview ? `<span class="seg-flag seg-flag-conf-low" title="LLM 对此处 speaker 置信度低，建议人工复核">低置信</span>` : ""}
           ${isMedConf ? `<span class="seg-flag seg-flag-conf-medium" title="LLM 对此处 speaker 置信度中等，从对话轮次推断">中置信</span>` : ""}
+          ${seg.confidence != null ? `<span class="seg-flag seg-flag-bvp" title="BookVoiceParser 置信度">${(seg.confidence * 100).toFixed(0)}%</span>` : ""}
         </div>
+        ${seg._evidence ? `<details class="seg-evidence"><summary>📎 归属依据</summary><span>${escapeHtml(seg._evidence)}</span>${seg.attribution_type ? `<span class="seg-attr-type">${escapeHtml(seg.attribution_type)}</span>` : ""}${seg.addressee ? `<span class="seg-addressee">→ ${escapeHtml(seg.addressee)}</span>` : ""}</details>` : ""}
         <div class="segment-grid">
           <input value="${escapeHtml(seg.speaker || "旁白")}" placeholder="角色名" onchange="updateSegmentField(${idx}, 'speaker', this.value)" />
           <select onchange="updateSegmentField(${idx}, 'gender', this.value)">
@@ -8834,8 +8875,70 @@ very high pitch, very low pitch, whisper, young adult
     }
   }
 
+  function setParseMode(mode) {
+    parseMode = mode;
+    const opts = document.getElementById("structuredParseOptions");
+    if (opts) opts.hidden = mode !== "structured";
+    const btn = document.getElementById("runSelectedAnalysisButton");
+    if (btn) btn.textContent = mode === "structured" ? "结构化解析" : "执行所选流程";
+  }
+
+  async function runStructuredParseFlow() {
+    const text = validateSourceText();
+    if (!text) return;
+
+    const roleHintsRaw = (document.getElementById("roleHintsInput")?.value || "").trim();
+    const roleHints = roleHintsRaw
+      ? roleHintsRaw.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean)
+      : null;
+    const useLlmReview = document.getElementById("useLlmReview")?.checked || false;
+
+    let llm = null;
+    if (useLlmReview) {
+      llm = validateLLMConfig();
+      if (!llm) return;
+    }
+
+    beginTask("parse", "结构化解析中…", "使用 BookVoiceParser 规则层抽取台词并归属说话人，低置信度片段将标注证据。");
+    try {
+      const payload = { text, role_hints: roleHints, use_llm_review: useLlmReview };
+      if (useLlmReview && llm) payload.llm = llm;
+
+      const resp = await fetchJson("/api/parse_v2", payload);
+      if (!resp.ok) throw new Error(resp.error || "parse_v2 失败");
+
+      const segments = resp.segments || [];
+      applySegmentsState(segments, { persist: true });
+      renderRoles();
+      renderRoleAssignments();
+      renderSegments(segmentsPanelExpanded);
+
+      const stats = resp.stats || {};
+      const reviewCount = stats.review_items_count ?? 0;
+      const hint = reviewCount > 0
+        ? `其中 ${reviewCount} 段置信度低于阈值，已标注归属依据，建议人工核查。`
+        : "所有段落置信度均在阈值以上。";
+
+      finishTask(
+        `结构化解析完成，共 ${segments.length} 段`,
+        hint,
+        { total: segments.length, done: segments.length }
+      );
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      setStatus("结构化解析失败，请查看任务面板。");
+      failTask("结构化解析失败", err.message);
+    }
+  }
+
   async function runSelectedAnalysisFlow() {
     if (taskBusy) return;
+
+    // 结构化解析模式：直接走 BookVoiceParser，不走 LLM 分析流程
+    if (parseMode === "structured") {
+      return runStructuredParseFlow();
+    }
+
     const text = validateSourceText();
     if (!text) return;
     const llm = validateLLMConfig();

@@ -14,6 +14,11 @@ class Segment(BaseModel):
     voice_locale: Optional[str] = None
     cfg_value: Optional[float] = None
     inference_timesteps: Optional[int] = None
+    # ── BookVoiceParser 扩展字段（可选，旧调用无影响）──────────────────────
+    confidence: Optional[float] = None        # 说话人归属置信度 0–1
+    evidence: Optional[str] = None            # 归属依据，供人工复核
+    addressee: Optional[str] = None           # 受话人
+    attribution_type: Optional[str] = None    # explicit_before/after/implicit/latent/group
 
 
 class RoleProfile(BaseModel):
@@ -211,6 +216,21 @@ class MergeAliasesRequest(BaseModel):
 
 class CheckFilesRequest(BaseModel):
     files: List[str]  # file paths to check (as returned by /api/tts resp.file)
+
+
+class ParseV2Request(BaseModel):
+    """结构化解析请求：使用 BookVoiceParser 规则层 + 可选 LLM 复核。"""
+    text: str
+    # 角色提示：列表 ["张三","李四"] 或别名字典 {"张三":["三哥","张公子"]}
+    role_hints: Optional[Any] = None
+    # 是否对低置信度片段调用 LLM 复核（需提供 llm 配置）
+    use_llm_review: bool = False
+    # LLM 配置（复用现有 LLMConfig，use_llm_review=True 时必填）
+    llm: Optional[LLMConfig] = None
+    # 低置信度阈值，低于此值才送 LLM 复核
+    review_threshold: float = 0.7
+    # 隐式归属策略：heuristic（纯规则）| llm_spc（每条隐式台词调用 LLM）
+    implicit_strategy: str = "heuristic"
 
 
 TTSRequest.model_rebuild()

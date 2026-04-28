@@ -86,6 +86,7 @@ from schemas import (
     ModelLoadRequest,
     NarrateRequest,
     ParseRequest,
+    ParseV2Request,
     ScanLocalModelsRequest,
     SegmentPlanRequest,
     TTSRequest,
@@ -1597,6 +1598,105 @@ def parse_text(req: ParseRequest):
         return {
             "ok": True,
             "segments": segments,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/parse_v2")
+def parse_text_v2(req: ParseV2Request):
+    """
+    结构化解析：BookVoiceParser 规则层 + 可选 LLM 复核。
+    返回与 /api/parse 兼容的 segments 列表，并附带 confidence / evidence 等扩展字段。
+    """
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+
+        # 把 BookVoiceParser 包加入路径（同级目录）
+        _bvp_root = _Path(__file__).resolve().parent.parent / "BookVoiceParser"
+        if str(_bvp_root) not in _sys.path:
+            _sys.path.insert(0, str(_bvp_root))
+
+        from book_voice_parser import parse_novel, route_to_llm, LLMRouterConfig
+        from book_voice_parser.spc_ranker import OpenAICompatibleSPCRanker
+
+        # 构建 SPC ranker（如果需要 LLM 内联推断）
+        implicit_ranker = None
+        if req.implicit_strategy == "llm_spc" and req.llm:
+            implicit_ranker = OpenAICompatibleSPCRanker(req.llm)
+
+        result = parse_novel(
+            req.text,
+            role_hints=req.role_hints,
+            return_result=True,
+            review_threshold=req.review_threshold,
+            implicit_strategy=req.implicit_strategy,
+            implicit_ranker=implicit_ranker,
+        )
+
+        segments = result.segments
+
+        # 可选：对低置信度片段调用 LLM 后处理复核
+        llm_stats = {}
+        if req.use_llm_review and req.llm:
+            llm_cfg = LLMRouterConfig(
+                base_url=str(req.llm.base_url),
+                model=str(req.llm.model),
+                api_key=str(req.llm.api_key) if req.llm.api_key else "local",
+                max_tokens=max(int(req.llm.max_tokens or 1024), 1024),
+                temperature=float(req.llm.temperature or 0.0),
+            )
+            segments, llm_stats = route_to_llm(
+                segments,
+                llm_cfg,
+                threshold=req.review_threshold,
+            )
+
+        # 转换为前端兼容格式：保留全部扩展字段
+        def _confidence_label(c: float | None) -> str:
+            if c is None:
+                return ""
+            if c >= 0.85:
+                return "high"
+            if c >= 0.70:
+                return "medium"
+            return "low"
+
+        out_segments = []
+        for seg in segments:
+            d = {
+                "speaker": seg.speaker,
+                "text": seg.text,
+                "emotion": seg.emotion or "neutral",
+                "style": seg.style or "",
+                "ref_audio": seg.ref_audio,
+                "ref_text": seg.ref_text,
+                "voice_engine": seg.voice_engine or "",
+                "voice_name": seg.voice_name or "",
+                "voice_locale": seg.voice_locale or "",
+                "cfg_value": seg.cfg_value or "",
+                "inference_timesteps": seg.inference_timesteps or "",
+                # 扩展字段
+                "confidence": seg.confidence,
+                "evidence": seg.evidence,
+                "addressee": seg.addressee,
+                "attribution_type": str(seg.attribution_type.value if hasattr(seg.attribution_type, "value") else seg.attribution_type or ""),
+                # 前端 _confidence / _evidence 内部字段
+                "_confidence": _confidence_label(seg.confidence),
+                "_evidence": seg.evidence or "",
+                "_needs_review": seg.speaker in {"未知", "UNKNOWN"} or (seg.confidence is not None and seg.confidence < 0.5),
+            }
+            out_segments.append(d)
+
+        return {
+            "ok": True,
+            "segments": out_segments,
+            "stats": {
+                **result.stats,
+                "llm_review": llm_stats,
+                "review_items_count": len(result.review_items),
+            },
         }
     except Exception as exc:
         raise_api_error(exc)
