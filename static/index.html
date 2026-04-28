@@ -2223,7 +2223,7 @@
         <div class="muted">分配角色声音、试听和生成完整音频。后端设置请到「模型配置」标签页</div>
 
         <label>输出文件名</label>
-        <input id="outputName" value="novel_demo" />
+        <input id="outputName" value="novel_demo" oninput="refreshNarrationResumeUI()" />
 
         <label>段间停顿（毫秒）</label>
         <input id="silenceMs" type="number" value="350" />
@@ -2234,7 +2234,9 @@
           <button type="button" class="secondary" onclick="triggerSegmentsJsonImport()">导入分段 JSON</button>
           <button type="button" class="secondary" onclick="resetAudioAssignments()">清空配置</button>
           <button type="button" data-busy-lock onclick="narrateSegments()">开始生成</button>
+          <button type="button" id="narrateResumeBtn" class="secondary" data-busy-lock onclick="narrateSegmentsResume()" hidden>继续生成</button>
         </div>
+        <div id="narrateProgressHint" class="mini-note" style="margin-top:6px;display:none;"></div>
 
         <div class="row" style="margin-top:14px; align-items:flex-end;">
           <div style="flex:1 1 320px;">
@@ -2455,6 +2457,8 @@
   let voiceDesignQueue = [];    // [{name, style, sample_text, note}] — imported from AI, waiting to be designed
 
   const PARSE_SNAPSHOT_STORAGE_KEY = "ov_parse_snapshot";
+  const NARRATION_PROGRESS_STORAGE_KEY = "ov_narration_progress";
+  let narrationProgress = {};  // {baseName: {total, segments: [null|{file,wavFile}], timestamp}}
   const LAST_SEGMENTS_STORAGE_KEY = "ov_last_segments";
   const VOICE_LIBRARY_STORAGE_KEY = "ov_voice_library";
   const INFERENCE_DEVICE_STORAGE_KEY = "ov_inference_device";
@@ -7128,6 +7132,7 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function updateSegmentsMeta() {
+    refreshNarrationResumeUI();
     const count = segmentsState.length;
     const meta = document.getElementById("segmentsMeta");
     const label = document.getElementById("segmentsToggleLabel");
@@ -9384,21 +9389,128 @@ very high pitch, very low pitch, whisper, young adult
     }
   }
 
-  async function synthesizeSegmentsSequentially(segments, baseName, silenceMs, inferenceDevice, backend) {
+  // ── 音频生成进度持久化 ──────────────────────────────────────────────────────
+
+  function loadNarrationProgress() {
+    try {
+      const raw = localStorage.getItem(NARRATION_PROGRESS_STORAGE_KEY);
+      narrationProgress = raw ? JSON.parse(raw) : {};
+    } catch { narrationProgress = {}; }
+  }
+
+  function saveNarrationProgress() {
+    try {
+      // 只保留最近 20 个 baseName，防止 localStorage 膨胀
+      const keys = Object.keys(narrationProgress);
+      if (keys.length > 20) {
+        keys.sort((a, b) => (narrationProgress[a].timestamp || "").localeCompare(narrationProgress[b].timestamp || ""));
+        keys.slice(0, keys.length - 20).forEach(k => delete narrationProgress[k]);
+      }
+      localStorage.setItem(NARRATION_PROGRESS_STORAGE_KEY, JSON.stringify(narrationProgress));
+    } catch { /* quota */ }
+  }
+
+  function setNarrationSegmentDone(baseName, total, idx0, file, wavFile) {
+    if (!narrationProgress[baseName]) {
+      narrationProgress[baseName] = { total, segments: new Array(total).fill(null), timestamp: "" };
+    }
+    narrationProgress[baseName].segments[idx0] = { file, wavFile };
+    narrationProgress[baseName].timestamp = new Date().toISOString();
+    saveNarrationProgress();
+  }
+
+  function clearNarrationProgressForBaseName(baseName) {
+    delete narrationProgress[baseName];
+    saveNarrationProgress();
+  }
+
+  // 检查 baseName 是否有可用的断点续传状态（total 必须匹配）
+  // 返回 {completedCount, segments, filesToCheck} 或 null
+  function getNarrationResumeCandidate(baseName, total) {
+    const entry = narrationProgress[baseName];
+    if (!entry || entry.total !== total) return null;
+    const segs = entry.segments || [];
+    const completedCount = segs.filter(Boolean).length;
+    if (completedCount === 0) return null;
+    const filesToCheck = segs.filter(Boolean).map(s => s.file);
+    return { completedCount, segments: segs, filesToCheck };
+  }
+
+  // 调用后端验证文件是否仍存在，返回过滤后的 segments（不存在的置 null）
+  async function verifyNarrationResumeFiles(candidate) {
+    if (!candidate || !candidate.filesToCheck.length) return candidate;
+    try {
+      const resp = await fetchJson("/api/check-files", { files: candidate.filesToCheck });
+      const exists = resp.exists || {};
+      const verifiedSegments = candidate.segments.map(s => {
+        if (!s) return null;
+        return exists[s.file] ? s : null;
+      });
+      const verifiedCount = verifiedSegments.filter(Boolean).length;
+      return { completedCount: verifiedCount, segments: verifiedSegments, filesToCheck: candidate.filesToCheck };
+    } catch {
+      // 如果检测接口失败，退回到不做校验（乐观继续）
+      return candidate;
+    }
+  }
+
+  // 更新「继续生成」按钮和提示文字
+  function refreshNarrationResumeUI() {
+    const baseName = getOutputName("narration");
+    const total = segmentsState.length;
+    const btn = document.getElementById("narrateResumeBtn");
+    const hint = document.getElementById("narrateProgressHint");
+    if (!btn || !hint) return;
+    if (!total) {
+      btn.hidden = true;
+      hint.style.display = "none";
+      return;
+    }
+    const candidate = getNarrationResumeCandidate(baseName, total);
+    if (candidate && candidate.completedCount > 0 && candidate.completedCount < total) {
+      btn.hidden = false;
+      hint.style.display = "";
+      hint.textContent = `检测到「${baseName}」已完成 ${candidate.completedCount} / ${total} 段，可点击「继续生成」从断点恢复。`;
+    } else {
+      btn.hidden = true;
+      hint.style.display = "none";
+    }
+  }
+
+  // ── 核心生成函数（支持断点续传）──────────────────────────────────────────────
+
+  async function synthesizeSegmentsSequentially(segments, baseName, silenceMs, inferenceDevice, backend, resumeSegments) {
     const total = segments.length;
-    const wavFiles = [];
+    // resumeSegments: array of length total, each null (未完成) or {file, wavFile}
+    const segProgress = resumeSegments || new Array(total).fill(null);
+    const alreadyDone = segProgress.filter(Boolean).length;
 
     setProgress({
       stage: "synthesize",
-      summary: "开始逐段生成语音",
-      detail: `总共需要生成 ${total} 段音频，页面会在每一段完成后立刻刷新进度。`,
-      percent: total ? 46 : 70,
+      summary: alreadyDone > 0 ? `从第 ${alreadyDone + 1} 段继续生成` : "开始逐段生成语音",
+      detail: `总共需要生成 ${total} 段，已完成 ${alreadyDone} 段。`,
+      percent: total ? Math.round(45 + (alreadyDone / total) * 45) : 46,
       total,
-      done: 0,
+      done: alreadyDone,
       indeterminate: false,
-    }, { log: `开始逐段生成语音，共 ${total} 段` });
+    }, { log: alreadyDone > 0 ? `断点续传：跳过前 ${alreadyDone} 段，从第 ${alreadyDone + 1} 段开始` : `开始逐段生成语音，共 ${total} 段` });
+
+    let doneCount = alreadyDone;
 
     for (let i = 0; i < segments.length; i += 1) {
+      // 已有有效文件 → 直接跳过
+      if (segProgress[i]) {
+        setProgress({
+          stage: "synthesize",
+          summary: `跳过第 ${i + 1} / ${total} 段（已生成）`,
+          percent: total ? Math.min(92, Math.round(45 + ((i + 1) / total) * 45)) : 70,
+          total,
+          done: i + 1,
+          indeterminate: false,
+        });
+        continue;
+      }
+
       const seg = segments[i];
       const speaker = seg.speaker || "旁白";
       const profile = roleProfilesState[speaker] || {};
@@ -9408,13 +9520,13 @@ very high pitch, very low pitch, whisper, young adult
         stage: "synthesize",
         summary: `正在生成第 ${i + 1} / ${total} 段`,
         detail: `角色：${speaker}。当前文本长度 ${String(seg.text || "").length} 字符。`,
-        percent: total ? Math.min(92, Math.round(45 + ((i / total) * 45))) : 70,
+        percent: total ? Math.min(92, Math.round(45 + (i / total) * 45)) : 70,
         total,
-        done: i,
+        done: doneCount,
         indeterminate: true,
       }, { log: `开始生成第 ${i + 1} 段，角色为 ${speaker}` });
 
-      await fetchJson("/api/tts", {
+      const resp = await fetchJson("/api/tts", {
         text: seg.text,
         instruct: seg.style || profile.style || null,
         ref_audio: seg.ref_audio || profile.ref_audio || null,
@@ -9429,15 +9541,19 @@ very high pitch, very low pitch, whisper, young adult
         backend,
       });
 
-      wavFiles.push(`${segmentOutputName}.wav`);
+      const wavFile = `${segmentOutputName}.wav`;
+      segProgress[i] = { file: resp.file || "", wavFile };
+      doneCount++;
+      // 持久化当前进度
+      setNarrationSegmentDone(baseName, total, i, resp.file || "", wavFile);
 
       setProgress({
         stage: "synthesize",
-        summary: `已完成 ${i + 1} / ${total} 段语音`,
-        detail: `最新完成角色：${speaker}。可以继续等待剩余段落生成。`,
-        percent: total ? Math.min(92, Math.round(45 + (((i + 1) / total) * 45))) : 92,
+        summary: `已完成 ${doneCount} / ${total} 段语音`,
+        detail: `最新完成角色：${speaker}。可继续等待剩余段落生成。`,
+        percent: total ? Math.min(92, Math.round(45 + (doneCount / total) * 45)) : 92,
         total,
-        done: i + 1,
+        done: doneCount,
         indeterminate: false,
       }, { log: `第 ${i + 1} 段生成完成` });
     }
@@ -9452,7 +9568,8 @@ very high pitch, very low pitch, whisper, young adult
       indeterminate: true,
     }, { log: "所有分段生成完成，进入音频拼接阶段" });
 
-    return await fetchJson("/api/merge", {
+    const wavFiles = segProgress.map(s => s ? s.wavFile : null).filter(Boolean);
+    const result = await fetchJson("/api/merge", {
       wav_files: wavFiles,
       output_name: baseName,
       silence_ms: silenceMs,
@@ -9461,6 +9578,11 @@ very high pitch, very low pitch, whisper, young adult
         text: seg.text || "",
       })),
     });
+
+    // 合并完成后清除进度记录
+    clearNarrationProgressForBaseName(baseName);
+    refreshNarrationResumeUI();
+    return result;
   }
 
   async function parseText() {
@@ -9765,9 +9887,8 @@ very high pitch, very low pitch, whisper, young adult
     }
   }
 
-  async function narrateSegments() {
-    if (taskBusy) return;
-
+  // 共用的生成执行逻辑（narrateSegments / narrateSegmentsResume 都调用它）
+  async function _runNarrateFlow(resumeSegments) {
     if (!segmentsState.length) {
       setStatus("请先分角色或手动添加分段。");
       return;
@@ -9778,8 +9899,11 @@ very high pitch, very low pitch, whisper, young adult
     const backend = validateAudioBackendConfig();
     if (!backend) return;
     const inferenceDevice = backend.inference_device || getInferenceDevice();
+    const isResume = !!(resumeSegments && resumeSegments.filter(Boolean).length > 0);
 
-    beginTask("narrate", "准备按当前分段生成音频", `页面将把当前分段提交给后端统一生成。当前音频后端：${getAudioBackendLabel(backend)}。`);
+    beginTask("narrate",
+      isResume ? "从断点继续生成音频" : "准备按当前分段生成音频",
+      `当前音频后端：${getAudioBackendLabel(backend)}。`);
 
     try {
       const mixedPreviewMode = segmentsContainBrowserPreviewVoices(segmentsState);
@@ -9800,7 +9924,7 @@ very high pitch, very low pitch, whisper, young adult
         return;
       }
       const merged = useSequentialSynthesis
-        ? await synthesizeSegmentsSequentially(segmentsState, baseName, silenceMs, inferenceDevice, backend)
+        ? await synthesizeSegmentsSequentially(segmentsState, baseName, silenceMs, inferenceDevice, backend, resumeSegments || null)
         : await fetchJson("/api/narrate", {
             segments: segmentsState,
             silence_ms: silenceMs,
@@ -9821,11 +9945,45 @@ very high pitch, very low pitch, whisper, young adult
         total: segmentsState.length,
         done: segmentsState.length,
       });
+      refreshNarrationResumeUI();
     } catch (err) {
       if (isTaskCancelledError(err)) return;
       setStatus("分段合成失败，请查看上方任务面板中的详细错误。");
       failTask("分段合成失败", err.message);
+      refreshNarrationResumeUI(); // 失败后重新显示「继续生成」按钮
     }
+  }
+
+  async function narrateSegments() {
+    if (taskBusy) return;
+    // 清空本次旧进度，从头开始
+    const baseName = getOutputName("narration");
+    clearNarrationProgressForBaseName(baseName);
+    refreshNarrationResumeUI();
+    return _runNarrateFlow(null);
+  }
+
+  async function narrateSegmentsResume() {
+    if (taskBusy) return;
+    if (!segmentsState.length) { setStatus("请先导入分段。"); return; }
+    const baseName = getOutputName("narration");
+    const candidate = getNarrationResumeCandidate(baseName, segmentsState.length);
+    if (!candidate || !candidate.completedCount) {
+      showToast("没有找到可用的断点记录，将从头开始生成。");
+      return _runNarrateFlow(null);
+    }
+    // 验证文件是否还在磁盘上
+    showToast("正在检查已完成的分段文件…");
+    const verified = await verifyNarrationResumeFiles(candidate);
+    const validCount = verified.completedCount;
+    if (validCount === 0) {
+      showToast("所有已记录的分段文件都不存在了，将从头开始生成。");
+      clearNarrationProgressForBaseName(baseName);
+      refreshNarrationResumeUI();
+      return _runNarrateFlow(null);
+    }
+    showToast(`已验证 ${validCount} / ${segmentsState.length} 个分段文件有效，从第 ${validCount + 1} 段继续。`);
+    return _runNarrateFlow(verified.segments);
   }
 
   const audioPlayer = document.getElementById("audioPlayer");
@@ -9856,6 +10014,7 @@ very high pitch, very low pitch, whisper, young adult
   refreshExternalPromptView();
   initDesignPrompt();
   renderDesignStylePicker();
+  loadNarrationProgress();
   loadVoiceLibrary();
   renderSpeakerMergeList();
   renderRoleAssignments();

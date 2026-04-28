@@ -209,6 +209,10 @@ class MergeAliasesRequest(BaseModel):
     llm: LLMConfig
 
 
+class CheckFilesRequest(BaseModel):
+    files: List[str]  # file paths to check (as returned by /api/tts resp.file)
+
+
 TTSRequest.model_rebuild()
 NarrateRequest.model_rebuild()
 AutoNarrateRequest.model_rebuild()

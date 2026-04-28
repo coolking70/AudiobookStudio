@@ -76,6 +76,7 @@ from schemas import (
     AnalyzeChunksRequest,
     AutoNarrateRequest,
     BatchImportVoiceLibraryRequest,
+    CheckFilesRequest,
     ChunkOptimizeRequest,
     ConnectivityTestRequest,
     ImportSegmentsRequest,
@@ -2281,6 +2282,26 @@ def merge_audio(req: MergeRequest):
         )
     except Exception as exc:
         raise_api_error(exc)
+
+
+@app.post("/api/check-files")
+def check_files(req: CheckFilesRequest):
+    """Check which of the given file paths exist and are non-empty on disk.
+
+    Accepts paths exactly as returned in resp.file from /api/tts (relative to
+    the server working directory, e.g. "outputs/narration_001.wav").
+    Returns {"exists": {path: bool}} — true only when the file exists and
+    has size > 0 so that truncated files from a failed synthesis are treated
+    as missing.
+    """
+    result: dict[str, bool] = {}
+    for raw_path in req.files[:2000]:  # safety cap
+        try:
+            p = Path(raw_path)
+            result[raw_path] = p.is_file() and p.stat().st_size > 100
+        except Exception:
+            result[raw_path] = False
+    return {"exists": result}
 
 
 @app.get("/api/health")
