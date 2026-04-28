@@ -38,7 +38,7 @@ except ImportError:
     DataReader = None
     InputStreamOptions = None
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from audio_utils import build_lrc, join_wavs_auto
@@ -1391,7 +1391,11 @@ def index():
     html_path = Path("static/index.html")
     if not html_path.exists():
         return "<h1>index.html 不存在</h1>"
-    return html_path.read_text(encoding="utf-8")
+    return Response(
+        content=html_path.read_text(encoding="utf-8"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/local-path-presets")

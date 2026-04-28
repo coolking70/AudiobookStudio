@@ -2352,6 +2352,7 @@
         <div id="designQueueList" class="design-samples-list"></div>
         <div class="actions" style="margin-top:10px;">
           <button type="button" class="secondary danger" onclick="clearDesignQueue()">清空队列</button>
+          <button type="button" class="secondary danger" onclick="purgeEmptyLibraryEntries()" title="删除声音库中没有参考音频的条目（清理旧版本错误导入的记录）">清理声音库空条目</button>
         </div>
       </div>
 
@@ -6092,6 +6093,17 @@ very high pitch, very low pitch, whisper, young adult
     if (voiceDesignQueue.length && !confirm("清空全部角色设计队列？")) return;
     voiceDesignQueue = [];
     renderDesignQueue();
+  }
+
+  function purgeEmptyLibraryEntries() {
+    const before = voiceLibraryState.length;
+    const empty = voiceLibraryState.filter(v => !v.ref_audio && !v.voice_name && !v.voice_engine);
+    if (!empty.length) { showToast("声音库中没有空条目"); return; }
+    if (!confirm(`将删除声音库中 ${empty.length} 个没有参考音频且未配置引擎的条目，确认？`)) return;
+    voiceLibraryState = voiceLibraryState.filter(v => v.ref_audio || v.voice_name || v.voice_engine);
+    saveVoiceLibrary();
+    renderVoiceLibrary();
+    showToast(`已删除 ${before - voiceLibraryState.length} 个空条目`);
   }
 
   function loadVoiceLibrary() {
