@@ -2477,11 +2477,18 @@ very high pitch, very low pitch, whisper, young adult
       ],
     },
     {
-      title: "语言口音",
+      title: "英语口音（仅英文合成有效）",
       tags: [
-        ["chinese accent", "中文口音"],
-        ["japanese accent", "日文口音"],
-        ["english accent", "英文口音"],
+        ["american accent", "美式"],
+        ["british accent", "英式"],
+        ["australian accent", "澳式"],
+        ["canadian accent", "加拿大"],
+        ["indian accent", "印度"],
+        ["chinese accent", "华人"],
+        ["korean accent", "韩国"],
+        ["japanese accent", "日本"],
+        ["portuguese accent", "葡萄牙"],
+        ["russian accent", "俄罗斯"],
       ],
     },
   ];
@@ -5717,12 +5724,14 @@ very high pitch, very low pitch, whisper, young adult
 `你是一个配音风格分析助手。请仔细阅读以下小说或剧本文本，识别其中有台词的主要角色，并为每个角色推荐合适的 OmniVoice TTS 风格标签组合，以及一段适合试听的文本样本。
 
 【风格标签规则】
-只能从以下选项中按需选取 1~3 个，用英文逗号+空格分隔（例如 "female, young adult, high pitch"）：
-- 性别：male（男性）、female（女性）
-- 年龄段：young adult（青年/约20-35岁）、middle-aged（中年/约35-55岁）、elderly（老年/55岁以上）
-- 音调：low pitch（低沉/厚重）、moderate pitch（中等/自然）、high pitch（明亮/尖细）
-- 风格：energetic（活泼/有活力）、calm（沉稳/平和）、breathy（气声/柔和）、raspy（沙哑）
-- 口音：standard accent（普通话/标准腔）、regional accent（方言腔/地方口音）
+以下是 OmniVoice 全部支持的标签，同类别只能选一个，不同类别可自由叠加，用英文逗号+空格分隔：
+
+- 性别（Gender）：male、female
+- 年龄（Age）：child、teenager、young adult、middle-aged、elderly
+- 音调（Pitch）：very low pitch、low pitch、moderate pitch、high pitch、very high pitch
+- 风格（Style）：whisper
+
+注意：除以上标签外不得自造任何词汇。
 
 【返回格式】（严格 JSON 数组，不要包裹 markdown 代码块，直接输出 JSON）
 [
@@ -5737,7 +5746,7 @@ very high pitch, very low pitch, whisper, young adult
 【注意事项】
 - 旁白 / 叙述者也列入，名称固定写"旁白"
 - 只列有台词的主要角色，最多 15 个
-- style 里的标签必须严格使用上面列表中的词（含空格形式），用英文逗号+空格分隔，不能自造新词
+- style 里每个标签必须与上方列表完全一致（含空格），用英文逗号+空格分隔，不得自造新词
 - 若角色性别在原文中不明确，则省略性别标签
 - sample_text 必须填写，长度在 20~60 字之间
 - 输出纯 JSON，不要加任何解释或 markdown
