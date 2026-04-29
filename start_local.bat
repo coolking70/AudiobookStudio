@@ -39,15 +39,6 @@ set "HOST=%HOST%"
 if not defined HOST set "HOST=127.0.0.1"
 set "PORT=%PORT%"
 if not defined PORT set "PORT=8000"
-set "ORIGINAL_PORT=%PORT%"
-
-call :find_available_port "%PORT%"
-if errorlevel 1 (
-  echo [Error] Could not find an available port starting from %ORIGINAL_PORT%.
-  echo.
-  pause
-  exit /b 1
-)
 
 echo [OmniVoice Reader]
 echo Workspace: %CD%
@@ -67,11 +58,6 @@ if errorlevel 1 (
   )
 )
 
-if not "%PORT%"=="%ORIGINAL_PORT%" (
-  echo [Info] Port %ORIGINAL_PORT% was busy. Switched to %PORT% automatically.
-  echo.
-)
-
 "%PYTHON_BIN%" -X utf8 start_local.py
 set "EXIT_CODE=%ERRORLEVEL%"
 
@@ -87,15 +73,3 @@ echo If you see "address already in use", change PORT or stop the existing proce
 echo.
 pause
 exit /b %EXIT_CODE%
-
-:find_available_port
-set "PORT=%~1"
-set /a ATTEMPTS=0
-:find_available_port_loop
-set "PORT_PID="
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr /R /C:":%PORT% .*LISTENING"') do set "PORT_PID=%%a"
-if not defined PORT_PID exit /b 0
-set /a PORT+=1
-set /a ATTEMPTS+=1
-if %ATTEMPTS% GEQ 20 exit /b 1
-goto :find_available_port_loop

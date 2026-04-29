@@ -16,6 +16,17 @@ from local_llm import get_local_llm_runner
 from output_layout import get_temp_archive_dir
 
 
+class LLMContentFilterError(RuntimeError):
+    """Raised when the provider finishes a request via content filtering."""
+
+    def __init__(self, purpose: str, content: str = ""):
+        self.purpose = purpose
+        self.content = content
+        preview = (content or "").strip()[:300]
+        suffix = f" 返回片段：{preview}" if preview else ""
+        super().__init__(f"LLM {purpose}触发服务端内容过滤（finish_reason=content_filter）。{suffix}")
+
+
 class OpenAICompatibleClient:
     def __init__(self, config: LLMConfig):
         self.config = config
@@ -200,8 +211,9 @@ class OpenAICompatibleClient:
                 raise RuntimeError(f"LLM 服务在{purpose}时主动断开连接。") from exc
             raise
 
-        if not content:
-            raise RuntimeError(f"LLM {purpose}返回为空")
+        if finish_reason == "content_filter":
+            self._dump_llm_debug("finish_reason_content_filter", payload, content, finish_reason)
+            raise LLMContentFilterError(purpose, content)
         if finish_reason == "length":
             self._dump_llm_debug("finish_reason_length", payload, content, finish_reason)
             preview = content[:300]
@@ -209,6 +221,8 @@ class OpenAICompatibleClient:
                 f"LLM {purpose}输出被截断（finish_reason=length）。可稍微提高 max_tokens，"
                 f"或减小单次分析文本块。返回片段：{preview}"
             )
+        if not content:
+            raise RuntimeError(f"LLM {purpose}返回为空（finish_reason={finish_reason or 'unknown'}）")
         return content
 
     def chat_json(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
@@ -277,9 +291,9 @@ class OpenAICompatibleClient:
                 raise RuntimeError("LLM 服务主动断开了连接，请检查当前模型是否支持该请求格式。") from exc
             raise
 
-        if not content:
-            raise RuntimeError("LLM 返回为空")
-
+        if finish_reason == "content_filter":
+            self._dump_llm_debug("finish_reason_content_filter", fallback_payload if use_chat_compat else strict_payload, content, finish_reason)
+            raise LLMContentFilterError("JSON 分析", content)
         if finish_reason == "length":
             self._dump_llm_debug("finish_reason_length", fallback_payload if use_chat_compat else strict_payload, content, finish_reason)
             preview = content[:300]
@@ -287,6 +301,8 @@ class OpenAICompatibleClient:
                 f"LLM 输出被截断（finish_reason=length）。可稍微提高 max_tokens，"
                 f"或减小单次分析文本块。返回片段：{preview}"
             )
+        if not content:
+            raise RuntimeError(f"LLM 返回为空（finish_reason={finish_reason or 'unknown'}）")
 
         try:
             return self._parse_json_content(content)

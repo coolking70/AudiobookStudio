@@ -66,6 +66,7 @@ from role_analyzer import (
     intelligent_segment_text_with_info,
     optimize_and_analyze_chunks_with_llm,
     optimize_chunks_for_tts,
+    preprocess_text_for_chapter_detection,
     resolve_character_aliases,
     sanitize_segments,
     segment_and_optimize_seed_chunk,
@@ -86,7 +87,9 @@ from schemas import (
     ModelLoadRequest,
     NarrateRequest,
     ParseRequest,
+    ParseV2ReviewOneRequest,
     ParseV2Request,
+    ParseV2ReviewRequest,
     ScanLocalModelsRequest,
     SegmentPlanRequest,
     TTSRequest,
@@ -99,6 +102,11 @@ from schemas import (
 app = FastAPI(title="OmniVoice Reader Studio")
 pipeline_cache: dict[tuple[str, str, str], OmniVoicePipeline] = {}
 voxcpm_pipeline_cache: dict[tuple[str, str], VoxCPMPipeline] = {}
+
+
+@app.get("/.well-known/appspecific/com.chrome.devtools.json")
+def chrome_devtools_probe():
+    return Response(status_code=204)
 
 
 def dump_request_debug(name: str, payload: dict[str, object]) -> None:
@@ -126,6 +134,11 @@ AI_HELPER_CONFIG_CANDIDATES = [
 ]
 
 MICROSOFT_TTS_SUPPORTED_CULTURES = {"zh-CN", "en-US", "ja-JP"}
+MIMO_TTS_DEFAULT_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
+MIMO_TTS_MODEL = "mimo-v2.5-tts"
+MIMO_TTS_VOICE_DESIGN_MODEL = "mimo-v2.5-tts-voicedesign"
+MIMO_TTS_VOICE_CLONE_MODEL = "mimo-v2.5-tts-voiceclone"
+MIMO_TTS_BUILTIN_VOICES = {"mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"}
 VOXCPM_BRIDGE_SCRIPT = Path(__file__).resolve().parent / "voxcpm_bridge.py"
 
 
@@ -667,6 +680,15 @@ def normalize_openai_compat_base_url(base_url: str | None) -> str:
     return f"{normalized}/v1"
 
 
+def normalize_mimo_base_url(base_url: str | None) -> str:
+    normalized = str(base_url or MIMO_TTS_DEFAULT_BASE_URL).strip().rstrip("/")
+    if not normalized:
+        return MIMO_TTS_DEFAULT_BASE_URL
+    if normalized.endswith("/v1"):
+        return normalized
+    return f"{normalized}/v1"
+
+
 def absolutize_remote_file_url(base_url: str, file_url: str | None) -> str | None:
     if not file_url:
         return file_url
@@ -701,6 +723,145 @@ def remote_get_json(base_url: str, path: str, api_key: str | None = None) -> dic
         if not resp.is_success:
             raise RuntimeError(data.get("detail") or data)
         return data
+
+
+def _read_audio_as_data_url(ref_audio: str) -> str:
+    source = str(ref_audio or "").strip()
+    if not source:
+        raise RuntimeError("MiMo VoiceClone 缺少参考音频。")
+    if source.startswith("data:"):
+        if ";base64," not in source:
+            raise RuntimeError("MiMo VoiceClone 参考音频 data URL 必须包含 base64 数据。")
+        return source
+    if source.startswith("/file/"):
+        source = str((OUTPUT_DIR / source.removeprefix("/file/")).resolve())
+    if re.match(r"^https?://", source):
+        timeout = httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
+        with httpx.Client(timeout=timeout, trust_env=False) as client:
+            resp = client.get(source)
+            resp.raise_for_status()
+            content = resp.content
+            content_type = resp.headers.get("content-type") or "audio/wav"
+    else:
+        path = Path(source).expanduser()
+        if not path.exists():
+            raise RuntimeError(f"MiMo VoiceClone 参考音频不存在：{source}")
+        content = path.read_bytes()
+        content_type = mimetypes.guess_type(path.name)[0] or "audio/wav"
+    normalized_type = content_type.split(";", 1)[0].strip().lower()
+    if normalized_type in {"audio/mp3", "audio/mpeg"}:
+        normalized_type = "audio/mpeg"
+    elif normalized_type in {"audio/wav", "audio/x-wav", "audio/wave"}:
+        normalized_type = "audio/wav"
+    else:
+        raise RuntimeError("MiMo VoiceClone 当前仅支持 mp3 或 wav 参考音频。")
+    encoded = base64.b64encode(content).decode("ascii")
+    if len(encoded) > 10 * 1024 * 1024:
+        raise RuntimeError("MiMo VoiceClone 参考音频 base64 超过 10MB，请换用更短的 mp3/wav。")
+    return f"data:{normalized_type};base64,{encoded}"
+
+
+def resolve_mimo_tts_model(backend: dict | None, voice_engine: str, voice_name: str | None, ref_audio: str | None) -> str:
+    configured = str((backend or {}).get("mimo_model") or "auto").strip()
+    if configured and configured.lower() != "auto":
+        return configured
+    if str(voice_engine or "").strip().lower() == "mimo" and ref_audio:
+        return MIMO_TTS_VOICE_CLONE_MODEL
+    if str(voice_engine or "").strip().lower() == "mimo" and not voice_name:
+        return MIMO_TTS_VOICE_DESIGN_MODEL
+    return MIMO_TTS_MODEL
+
+
+def validate_mimo_tts_backend(backend: dict | None) -> dict:
+    backend = backend or {}
+    api_key = str(backend.get("mimo_api_key") or backend.get("remote_api_key") or "").strip()
+    if not api_key:
+        raise RuntimeError("MiMo TTS 缺少 API Key。请在模型配置 -> 语音生成模型中填写。")
+    model = str(backend.get("mimo_model") or "auto").strip() or "auto"
+    if model != "auto" and model not in {MIMO_TTS_MODEL, MIMO_TTS_VOICE_DESIGN_MODEL, MIMO_TTS_VOICE_CLONE_MODEL}:
+        raise RuntimeError(f"不支持的 MiMo TTS 模型：{model}")
+    voice = str(backend.get("mimo_voice") or "mimo_default").strip() or "mimo_default"
+    if voice not in MIMO_TTS_BUILTIN_VOICES:
+        raise RuntimeError(f"不支持的 MiMo 内置音色：{voice}")
+    return {
+        "base_url": normalize_mimo_base_url(backend.get("mimo_base_url") or backend.get("remote_base_url")),
+        "model": model,
+        "voice": voice,
+    }
+
+
+def synthesize_mimo_tts(
+    *,
+    backend: dict | None,
+    text: str,
+    output_path: Path,
+    instruct: str | None = None,
+    ref_audio: str | None = None,
+    voice_name: str | None = None,
+    voice_engine: str | None = None,
+) -> dict:
+    backend = backend or {}
+    api_key = str(backend.get("mimo_api_key") or backend.get("remote_api_key") or "").strip()
+    if not api_key:
+        raise RuntimeError("MiMo TTS 缺少 API Key。请在模型配置 -> 语音生成模型中填写。")
+    base_url = normalize_mimo_base_url(backend.get("mimo_base_url") or backend.get("remote_base_url"))
+    model = resolve_mimo_tts_model(backend, voice_engine or "", voice_name, ref_audio)
+    assistant_text = str(text or "").strip()
+    if not assistant_text:
+        raise RuntimeError("MiMo TTS 缺少待合成文本。")
+
+    style_text = str(instruct or "").strip()
+    messages = []
+    if model == MIMO_TTS_VOICE_DESIGN_MODEL:
+        messages.append({
+            "role": "user",
+            "content": style_text or "A natural, clear Mandarin audiobook voice with stable pacing and expressive but restrained emotion.",
+        })
+    else:
+        messages.append({"role": "user", "content": style_text})
+    messages.append({"role": "assistant", "content": assistant_text})
+
+    audio: dict[str, str] = {"format": "wav"}
+    if model == MIMO_TTS_VOICE_CLONE_MODEL:
+        audio["voice"] = _read_audio_as_data_url(str(ref_audio or ""))
+    elif model == MIMO_TTS_MODEL:
+        audio["voice"] = str(voice_name or backend.get("mimo_voice") or "mimo_default").strip() or "mimo_default"
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "audio": audio,
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "api-key": api_key,
+    }
+    timeout = httpx.Timeout(connect=30.0, read=300.0, write=60.0, pool=30.0)
+    with httpx.Client(timeout=timeout, trust_env=False) as client:
+        resp = client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise RuntimeError(f"MiMo TTS 返回非 JSON 响应：HTTP {resp.status_code} {resp.text[:300]}") from exc
+        if not resp.is_success:
+            raise RuntimeError(data.get("error") or data.get("detail") or data)
+
+    try:
+        message = data["choices"][0]["message"]
+        audio_data = message["audio"]["data"]
+    except Exception as exc:
+        raise RuntimeError(f"MiMo TTS 响应中缺少 audio.data：{json.dumps(data, ensure_ascii=False)[:500]}") from exc
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(base64.b64decode(audio_data))
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        raise RuntimeError("MiMo TTS 未生成有效音频文件。")
+    return {
+        "engine": "mimo",
+        "model": model,
+        "voice": audio.get("voice") if model == MIMO_TTS_MODEL else "",
+        "base_url": base_url,
+    }
 
 
 def normalize_inference_device(device: str | None) -> str:
@@ -1522,6 +1683,24 @@ def tts(req: TTSRequest):
             remote_resp["audio_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("audio_url"))
             return remote_resp
 
+        if mode == "mimo":
+            output_path = resolve_named_output_path(output_name, ".wav", temp_category="preview")
+            result = synthesize_mimo_tts(
+                backend=backend_data,
+                text=req.text,
+                output_path=output_path,
+                instruct=req.instruct,
+                ref_audio=req.ref_audio,
+                voice_name=req.voice_name,
+                voice_engine=req.voice_engine,
+            )
+            return {
+                "ok": True,
+                "file": str(output_path),
+                "audio_url": build_output_file_url(output_path),
+                **result,
+            }
+
         output_path = resolve_named_output_path(output_name, ".wav", temp_category="preview")
         if voice_engine == "voxcpm":
             if get_voxcpm_runtime_dependency_status().get("ready"):
@@ -1603,6 +1782,116 @@ def parse_text(req: ParseRequest):
         raise_api_error(exc)
 
 
+def _load_book_voice_parser():
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    # 兼容两种放置方式：项目根目录/BookVoiceParser 或 上一级目录/BookVoiceParser
+    _app_dir = _Path(__file__).resolve().parent
+    _bvp_candidates = [
+        _app_dir / "BookVoiceParser",
+        _app_dir.parent / "BookVoiceParser",
+    ]
+    _bvp_root = next((candidate for candidate in _bvp_candidates if candidate.exists()), _bvp_candidates[0])
+    if str(_bvp_root) not in _sys.path:
+        _sys.path.insert(0, str(_bvp_root))
+
+    from book_voice_parser import LLMRouterConfig, parse_novel, route_to_llm
+    from book_voice_parser.schema import AttributionType, SegmentEx
+    from book_voice_parser.spc_ranker import OpenAICompatibleSPCRanker
+
+    return parse_novel, route_to_llm, LLMRouterConfig, OpenAICompatibleSPCRanker, SegmentEx, AttributionType
+
+
+def _build_bvp_llm_config(llm):
+    _, _, LLMRouterConfig, _, _, _ = _load_book_voice_parser()
+    return LLMRouterConfig(
+        base_url=str(llm.base_url),
+        model=str(llm.model),
+        api_key=str(llm.api_key) if llm.api_key else "local",
+        max_tokens=max(int(llm.max_tokens or 1024), 1024),
+        temperature=float(llm.temperature or 0.0),
+    )
+
+
+def _confidence_label(c: float | None) -> str:
+    if c is None:
+        return ""
+    if c >= 0.85:
+        return "high"
+    if c >= 0.70:
+        return "medium"
+    return "low"
+
+
+def _bvp_segment_to_dict(seg) -> dict[str, object]:
+    return {
+        "speaker": seg.speaker,
+        "text": seg.text,
+        "emotion": seg.emotion or "neutral",
+        "style": seg.style or "",
+        "ref_audio": seg.ref_audio,
+        "ref_text": seg.ref_text,
+        "voice_engine": seg.voice_engine or "",
+        "voice_name": seg.voice_name or "",
+        "voice_locale": seg.voice_locale or "",
+        "cfg_value": seg.cfg_value or "",
+        "inference_timesteps": seg.inference_timesteps or "",
+        # BookVoiceParser 扩展字段。部分字段前端不直接展示，但 LLM 复核需要。
+        "quote_id": seg.quote_id,
+        "confidence": seg.confidence,
+        "evidence": seg.evidence,
+        "addressee": seg.addressee,
+        "attribution_type": str(seg.attribution_type.value if hasattr(seg.attribution_type, "value") else seg.attribution_type or ""),
+        "candidates": seg.candidates,
+        "candidate_sources": seg.candidate_sources,
+        "scene_characters": seg.scene_characters,
+        "context_before": seg.context_before,
+        "context_after": seg.context_after,
+        # 前端 _confidence / _evidence 内部字段
+        "_confidence": _confidence_label(seg.confidence),
+        "_evidence": seg.evidence or "",
+        "_needs_review": seg.speaker in {"未知", "UNKNOWN"} or (seg.confidence is not None and seg.confidence < 0.5),
+    }
+
+
+def _dict_to_bvp_segment(data: dict[str, object]):
+    _, _, _, _, SegmentEx, AttributionType = _load_book_voice_parser()
+    attribution_type = data.get("attribution_type") or None
+    if attribution_type:
+        try:
+            attribution_type = AttributionType(str(attribution_type))
+        except Exception:
+            attribution_type = str(attribution_type)
+
+    def _number_or_none(value):
+        return None if value in {"", None} else value
+
+    return SegmentEx(
+        speaker=str(data.get("speaker") or "旁白"),
+        text=str(data.get("text") or ""),
+        emotion=str(data.get("emotion") or "neutral"),
+        style=data.get("style") or None,
+        ref_audio=data.get("ref_audio") or None,
+        ref_text=data.get("ref_text") or None,
+        voice_engine=data.get("voice_engine") or None,
+        voice_name=data.get("voice_name") or None,
+        voice_locale=data.get("voice_locale") or None,
+        cfg_value=_number_or_none(data.get("cfg_value")),
+        inference_timesteps=_number_or_none(data.get("inference_timesteps")),
+        addressee=data.get("addressee") or None,
+        confidence=float(data.get("confidence") if data.get("confidence") is not None else 1.0),
+        evidence=data.get("evidence") or None,
+        attribution_type=attribution_type,
+        quote_id=data.get("quote_id") or None,
+        candidates=list(data.get("candidates") or []),
+        candidate_sources=dict(data.get("candidate_sources") or {}),
+        scene_characters=list(data.get("scene_characters") or []),
+        context_before=str(data.get("context_before") or ""),
+        context_after=str(data.get("context_after") or ""),
+    )
+
+
 @app.post("/api/parse_v2")
 def parse_text_v2(req: ParseV2Request):
     """
@@ -1610,21 +1899,7 @@ def parse_text_v2(req: ParseV2Request):
     返回与 /api/parse 兼容的 segments 列表，并附带 confidence / evidence 等扩展字段。
     """
     try:
-        import sys as _sys
-        from pathlib import Path as _Path
-
-        # 兼容两种放置方式：项目根目录/BookVoiceParser 或 上一级目录/BookVoiceParser
-        _app_dir = _Path(__file__).resolve().parent
-        _bvp_candidates = [
-            _app_dir / "BookVoiceParser",
-            _app_dir.parent / "BookVoiceParser",
-        ]
-        _bvp_root = next((candidate for candidate in _bvp_candidates if candidate.exists()), _bvp_candidates[0])
-        if str(_bvp_root) not in _sys.path:
-            _sys.path.insert(0, str(_bvp_root))
-
-        from book_voice_parser import parse_novel, route_to_llm, LLMRouterConfig
-        from book_voice_parser.spc_ranker import OpenAICompatibleSPCRanker
+        parse_novel, route_to_llm, _, OpenAICompatibleSPCRanker, _, _ = _load_book_voice_parser()
 
         # 构建 SPC ranker（如果需要 LLM 内联推断）
         implicit_ranker = None
@@ -1638,6 +1913,7 @@ def parse_text_v2(req: ParseV2Request):
             review_threshold=req.review_threshold,
             implicit_strategy=req.implicit_strategy,
             implicit_ranker=implicit_ranker,
+            include_narration=True,
         )
 
         segments = result.segments
@@ -1645,64 +1921,100 @@ def parse_text_v2(req: ParseV2Request):
         # 可选：对低置信度片段调用 LLM 后处理复核
         llm_stats = {}
         if req.use_llm_review and req.llm:
-            llm_cfg = LLMRouterConfig(
-                base_url=str(req.llm.base_url),
-                model=str(req.llm.model),
-                api_key=str(req.llm.api_key) if req.llm.api_key else "local",
-                max_tokens=max(int(req.llm.max_tokens or 1024), 1024),
-                temperature=float(req.llm.temperature or 0.0),
-            )
             segments, llm_stats = route_to_llm(
                 segments,
-                llm_cfg,
+                _build_bvp_llm_config(req.llm),
                 threshold=req.review_threshold,
             )
 
-        # 转换为前端兼容格式：保留全部扩展字段
-        def _confidence_label(c: float | None) -> str:
-            if c is None:
-                return ""
-            if c >= 0.85:
-                return "high"
-            if c >= 0.70:
-                return "medium"
-            return "low"
-
-        out_segments = []
-        for seg in segments:
-            d = {
-                "speaker": seg.speaker,
-                "text": seg.text,
-                "emotion": seg.emotion or "neutral",
-                "style": seg.style or "",
-                "ref_audio": seg.ref_audio,
-                "ref_text": seg.ref_text,
-                "voice_engine": seg.voice_engine or "",
-                "voice_name": seg.voice_name or "",
-                "voice_locale": seg.voice_locale or "",
-                "cfg_value": seg.cfg_value or "",
-                "inference_timesteps": seg.inference_timesteps or "",
-                # 扩展字段
-                "confidence": seg.confidence,
-                "evidence": seg.evidence,
-                "addressee": seg.addressee,
-                "attribution_type": str(seg.attribution_type.value if hasattr(seg.attribution_type, "value") else seg.attribution_type or ""),
-                # 前端 _confidence / _evidence 内部字段
-                "_confidence": _confidence_label(seg.confidence),
-                "_evidence": seg.evidence or "",
-                "_needs_review": seg.speaker in {"未知", "UNKNOWN"} or (seg.confidence is not None and seg.confidence < 0.5),
-            }
-            out_segments.append(d)
-
         return {
             "ok": True,
-            "segments": out_segments,
+            "segments": [_bvp_segment_to_dict(seg) for seg in segments],
             "stats": {
                 **result.stats,
                 "llm_review": llm_stats,
                 "review_items_count": len(result.review_items),
             },
         }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/parse_v2/review")
+def review_parse_v2_segments(req: ParseV2ReviewRequest):
+    """对 BookVoiceParser 低置信度片段执行独立 LLM 复核。"""
+    try:
+        _, route_to_llm, _, _, _, _ = _load_book_voice_parser()
+        segments = [_dict_to_bvp_segment(item) for item in req.segments]
+        reviewed, llm_stats = route_to_llm(
+            segments,
+            _build_bvp_llm_config(req.llm),
+            threshold=req.review_threshold,
+        )
+        return {
+            "ok": True,
+            "segments": [_bvp_segment_to_dict(seg) for seg in reviewed],
+            "stats": {
+                "llm_review": llm_stats,
+                "review_items_count": sum(1 for seg in reviewed if seg.confidence < req.review_threshold),
+            },
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/parse_v2/review-one")
+def review_parse_v2_segment(req: ParseV2ReviewOneRequest):
+    """逐条复核 BookVoiceParser 低置信度片段，便于前端展示真实进度和断点状态。"""
+    try:
+        if req.index < 0 or req.index >= len(req.segments):
+            raise HTTPException(status_code=400, detail=f"review index out of range: {req.index}")
+
+        _, route_to_llm, _, _, _, _ = _load_book_voice_parser()
+        segments = [_dict_to_bvp_segment(item) for item in req.segments]
+        original = segments[req.index].model_copy()
+
+        # route_to_llm 会遍历列表并复核所有低于阈值的片段。这里把非目标片段
+        # 临时抬到阈值以上，使每次 HTTP 请求只复核一个目标片段，同时保留目标
+        # 之前的已确定说话人作为 recent_speakers 上下文。
+        routed_segments = [seg.model_copy() for seg in segments]
+        for idx, seg in enumerate(routed_segments):
+            if idx != req.index and seg.confidence < req.review_threshold:
+                seg.confidence = req.review_threshold
+
+        reviewed, llm_stats = route_to_llm(
+            routed_segments,
+            _build_bvp_llm_config(req.llm),
+            threshold=req.review_threshold,
+        )
+        updated = reviewed[req.index]
+        failed = bool((llm_stats or {}).get("failed"))
+        changed = updated.speaker != original.speaker
+        confirmed = not failed and not changed and updated.confidence > original.confidence
+        return {
+            "ok": True,
+            "index": req.index,
+            "quote_id": updated.quote_id,
+            "segment": _bvp_segment_to_dict(updated),
+            "stats": {
+                "llm_review": llm_stats,
+                "changed": changed,
+                "confirmed": confirmed,
+                "failed": failed,
+                "before": {
+                    "speaker": original.speaker,
+                    "confidence": original.confidence,
+                    "evidence": original.evidence,
+                },
+                "after": {
+                    "speaker": updated.speaker,
+                    "confidence": updated.confidence,
+                    "evidence": updated.evidence,
+                },
+            },
+        }
+    except HTTPException:
+        raise
     except Exception as exc:
         raise_api_error(exc)
 
@@ -1714,6 +2026,20 @@ def chapter_detect(req: SegmentPlanRequest):
         return {
             "ok": True,
             "chunks": chunks,
+            "info": info,
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/text-preprocess")
+def text_preprocess(req: ParseV2Request):
+    """执行章节识别共用的文本预处理，但不做章节识别。"""
+    try:
+        processed, info = preprocess_text_for_chapter_detection(req.text)
+        return {
+            "ok": True,
+            "text": processed,
             "info": info,
         }
     except Exception as exc:
@@ -2204,6 +2530,18 @@ def load_audio_model(req: ModelLoadRequest):
         if mode == "remote":
             data = remote_get_json(backend.get("remote_base_url"), "/api/health", backend.get("remote_api_key"))
             return {"ok": True, "mode": "remote", "health": data}
+        if mode == "mimo":
+            data = validate_mimo_tts_backend(backend)
+            unload_all_audio_pipelines()
+            return {
+                "ok": True,
+                "mode": "mimo",
+                "engine": "mimo",
+                "model_name": data["model"],
+                "voice": data["voice"],
+                "base_url": data["base_url"],
+                "message": "MiMo TTS v2.5 为远程合成服务，本地无需加载语音生成模型。",
+            }
 
         unload_all_audio_pipelines()
         inference_device = backend.get("inference_device")
@@ -2289,6 +2627,8 @@ def unload_audio_model(req: ModelLoadRequest):
         mode = str(backend.get("mode") or "local").strip().lower()
         if mode == "remote":
             return {"ok": True, "mode": "remote", "message": "远程 API 模式由远端自行管理，当前不会在本地卸载。"}
+        if mode == "mimo":
+            return {"ok": True, "mode": "mimo", "engine": "mimo", "message": "MiMo TTS v2.5 为远程合成服务，当前无需在本地卸载。"}
 
         inference_device = normalize_inference_device(backend.get("inference_device"))
         unload_all_audio_pipelines()

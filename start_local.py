@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import uvicorn
@@ -11,11 +13,174 @@ import uvicorn
 
 REQUIRED_IMPORTS = ("fastapi", "uvicorn", "httpx", "soundfile", "pydantic", "numpy")
 OPTIONAL_AUDIO_IMPORTS = ("torch", "torchaudio", "omnivoice", "imageio_ffmpeg")
+TRUTHY_ENV_VALUES = {"1", "true", "yes", "y", "on"}
+FALSY_ENV_VALUES = {"0", "false", "no", "n", "off"}
 
 
 def clear_proxy_env() -> None:
     for key in ("http_proxy", "https_proxy", "all_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
         os.environ.pop(key, None)
+
+
+def _run_pid_command(command: list[str]) -> set[int]:
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except Exception:
+        return set()
+    if completed.returncode not in {0, 1}:
+        return set()
+
+    pids: set[int] = set()
+    for token in (completed.stdout or "").replace(",", " ").split():
+        if token.isdigit():
+            pid = int(token)
+            if pid != os.getpid():
+                pids.add(pid)
+    return pids
+
+
+def find_listening_pids(port: int) -> set[int]:
+    if sys.platform.startswith("win"):
+        try:
+            completed = subprocess.run(
+                ["netstat", "-ano", "-p", "tcp"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=8,
+            )
+        except Exception:
+            return set()
+        pids: set[int] = set()
+        needle = f":{port}"
+        for line in (completed.stdout or "").splitlines():
+            parts = line.split()
+            if len(parts) < 5 or parts[0].upper() != "TCP":
+                continue
+            local_addr, state, pid_text = parts[1], parts[3].upper(), parts[4]
+            if state == "LISTENING" and local_addr.endswith(needle) and pid_text.isdigit():
+                pid = int(pid_text)
+                if pid != os.getpid():
+                    pids.add(pid)
+        return pids
+
+    pids = _run_pid_command(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"])
+    if pids:
+        return pids
+    return _run_pid_command(["fuser", f"{port}/tcp"])
+
+
+def describe_pid(pid: int) -> str:
+    if sys.platform.startswith("win"):
+        try:
+            completed = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+        except Exception:
+            return str(pid)
+        line = (completed.stdout or "").strip().splitlines()
+        if not line or "No tasks" in line[0]:
+            return str(pid)
+        return f"{pid} {line[0]}"
+
+    try:
+        completed = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "pid=,command="],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except Exception:
+        return str(pid)
+    return (completed.stdout or "").strip() or str(pid)
+
+
+def terminate_processes(pids: set[int]) -> None:
+    if sys.platform.startswith("win"):
+        for pid in sorted(pids):
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False)
+        return
+
+    for pid in sorted(pids):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    deadline = time.time() + 5
+    remaining = set(pids)
+    while remaining and time.time() < deadline:
+        remaining = {pid for pid in remaining if _pid_exists(pid)}
+        if remaining:
+            time.sleep(0.2)
+
+    for pid in sorted(remaining):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def _pid_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def resolve_kill_existing_preference() -> bool | None:
+    raw = os.getenv("AUDIOBOOKSTUDIO_KILL_EXISTING", "").strip().lower()
+    if raw in TRUTHY_ENV_VALUES:
+        return True
+    if raw in FALSY_ENV_VALUES:
+        return False
+    return None
+
+
+def ensure_port_available(host: str, port: int) -> None:
+    pids = find_listening_pids(port)
+    if not pids:
+        return
+
+    print(f"[AudiobookStudio] Detected existing listener on {host}:{port}:")
+    for pid in sorted(pids):
+        print(f"  - {describe_pid(pid)}")
+
+    preference = resolve_kill_existing_preference()
+    if preference is None:
+        if not sys.stdin.isatty():
+            print(
+                "No interactive terminal is available. Set AUDIOBOOKSTUDIO_KILL_EXISTING=1 "
+                "to stop the existing process automatically, or change PORT."
+            )
+            raise SystemExit(1)
+        answer = input("Kill the existing process(es) and continue? [y/N] ").strip().lower()
+        preference = answer in TRUTHY_ENV_VALUES
+
+    if not preference:
+        print("Startup cancelled. Change PORT or stop the existing process manually.")
+        raise SystemExit(1)
+
+    terminate_processes(pids)
+    remaining = find_listening_pids(port)
+    if remaining:
+        print(f"Could not stop all process(es) on port {port}: {sorted(remaining)}")
+        raise SystemExit(1)
+    print(f"Stopped existing process(es) on port {port}.")
 
 
 def candidate_python_binaries() -> list[Path]:
@@ -205,6 +370,7 @@ def main() -> None:
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", "8000"))
     reload_enabled = os.getenv("RELOAD", "").strip().lower() in {"1", "true", "yes", "on"}
+    ensure_port_available(host, port)
     uvicorn.run("app:app", host=host, port=port, reload=reload_enabled)
 
 

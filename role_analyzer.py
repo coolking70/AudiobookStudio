@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from character_registry import CharacterRegistry
-from llm_client import OpenAICompatibleClient
+from llm_client import LLMContentFilterError, OpenAICompatibleClient
 from output_layout import get_temp_archive_dir
 from schemas import AnalysisContext, LLMConfig
 try:
@@ -662,6 +662,10 @@ def _split_indexed_chunk_for_compact(
     content = str(indexed.get("content", ""))
     if not lines or not content:
         return [chunk]
+    source_line_ids = chunk.get("source_line_ids") if isinstance(chunk.get("source_line_ids"), list) else []
+    if source_line_ids and len(source_line_ids) == len(lines):
+        for line, source_line_id in zip(lines, source_line_ids):
+            line["source_line_id"] = str(source_line_id)
 
     sub_chunks: list[dict[str, str]] = []
     current: list[dict[str, Any]] = []
@@ -679,6 +683,7 @@ def _split_indexed_chunk_for_compact(
                 {
                     "title": f"{chunk['title']}（第{len(sub_chunks) + 1}部分）",
                     "content": piece,
+                    "source_line_ids": [str(item.get("source_line_id") or item.get("id") or "") for item in current],
                 }
             )
         current = []
@@ -705,6 +710,66 @@ def _split_indexed_chunk_for_compact(
 def _is_timeout_like_error(exc: Exception) -> bool:
     message = str(exc or "").lower()
     return any(token in message for token in ("超时", "timeout", "timed out"))
+
+
+def _is_content_filter_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    return isinstance(exc, LLMContentFilterError) or "content_filter" in message or "内容过滤" in message
+
+
+def _is_length_cutoff_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    return "finish_reason=length" in message or "输出被截断" in message
+
+
+def _make_llm_skipped_segments(
+    chunk: dict[str, Any],
+    reason: str,
+    detail: str,
+) -> list[dict[str, Any]]:
+    """Preserve filtered text as reviewable UNKNOWN segments instead of aborting the job."""
+    indexed = _ensure_chunk_line_index(chunk)
+    lines = indexed.get("lines") or []
+    title = str(indexed.get("title") or "未命名片段")
+    source_line_ids = chunk.get("source_line_ids") if isinstance(chunk.get("source_line_ids"), list) else []
+    segments: list[dict[str, Any]] = []
+    if not lines:
+        text = str(indexed.get("content") or "").strip()
+        if not text:
+            return []
+        return [{
+            "speaker": "UNKNOWN",
+            "text": text,
+            "emotion": "neutral",
+            "style": "female, moderate pitch",
+            "_confidence": "low",
+            "_needs_review": True,
+            "_llm_skipped": True,
+            "_skip_reason": reason,
+            "_source_title": title,
+            "_source_lines": "",
+            "_evidence": f"{title} 触发 {reason}，已保留原文并跳过 LLM 角色归属。{detail}",
+        }]
+
+    for idx, line in enumerate(lines):
+        text = str(line.get("text") or "").strip()
+        if not text:
+            continue
+        line_id = str(source_line_ids[idx]) if idx < len(source_line_ids) else str(line.get("id") or "")
+        segments.append({
+            "speaker": "UNKNOWN",
+            "text": text,
+            "emotion": "neutral",
+            "style": "female, moderate pitch",
+            "_confidence": "low",
+            "_needs_review": True,
+            "_llm_skipped": True,
+            "_skip_reason": reason,
+            "_source_title": title,
+            "_source_lines": line_id,
+            "_evidence": f"{title} {line_id} 触发 {reason}，已保留原文并跳过 LLM 角色归属。{detail}",
+        })
+    return segments
 
 
 def _is_transient_llm_error(exc: Exception) -> bool:
@@ -2083,6 +2148,48 @@ def _analyze_chunk_with_context(
                     )
                     time.sleep(RETRY_DELAY_SECONDS * decode_attempt)
         except Exception as exc:
+            if _is_content_filter_error(exc):
+                _dump_compact_debug(
+                    "compact_analyze_content_filter",
+                    chunk["title"],
+                    messages,
+                    response_text=compact_text,
+                    error=str(exc),
+                )
+                sub_chunks = _split_indexed_chunk_for_compact(
+                    chunk,
+                    max_chars=320,
+                    max_lines=1,
+                )
+                if len(sub_chunks) > 1:
+                    logging.warning(
+                        "[compact] %s 触发服务端内容过滤，已切成 %s 个行级子块继续分析，过滤行将标记为待补充",
+                        chunk["title"],
+                        len(sub_chunks),
+                    )
+                    merged_segments: list[dict[str, Any]] = []
+                    current_context = context
+                    for sub_chunk in sub_chunks:
+                        sub_segments, current_context = _analyze_chunk_with_context(
+                            sub_chunk, llm_config, current_context
+                        )
+                        merged_segments.extend(sub_segments)
+                    return merged_segments, current_context or AnalysisContext()
+
+                logging.warning(
+                    "[compact] %s 触发服务端内容过滤且无法继续细分，已标记为 UNKNOWN 待补充",
+                    chunk["title"],
+                )
+                skipped = sanitize_segments(
+                    _make_llm_skipped_segments(
+                        chunk,
+                        "content_filter",
+                        str(exc),
+                    ),
+                    known_characters=context.known_characters if context else [],
+                )
+                return skipped, context or AnalysisContext()
+
             if _is_timeout_like_error(exc):
                 sub_chunks = _split_indexed_chunk_for_compact(
                     chunk,
@@ -2112,15 +2219,26 @@ def _analyze_chunk_with_context(
                         merged_segments.extend(sub_segments)
                     return merged_segments, current_context or AnalysisContext()
             _dump_compact_debug("compact_analyze_error", chunk["title"], messages, response_text=compact_text, error=str(exc))
+            if _is_length_cutoff_error(exc):
+                split_max_chars = 320
+                split_max_lines = 6
+                skip_reason = "finish_reason_length"
+                split_message = "输出 token 不足"
+            else:
+                split_max_chars = max(500, compact_char_budget // 2)
+                split_max_lines = max(8, compact_line_budget // 2)
+                skip_reason = "compact_decode_failed"
+                split_message = "解码失败"
             sub_chunks = _split_indexed_chunk_for_compact(
                 chunk,
-                max_chars=max(500, compact_char_budget // 2),
-                max_lines=max(8, compact_line_budget // 2),
+                max_chars=split_max_chars,
+                max_lines=split_max_lines,
             )
             if len(sub_chunks) > 1:
                 logging.warning(
-                    "[compact] %s 解码失败（%s），已切成 %s 个更小子块继续 compact 角色分析",
+                    "[compact] %s %s（%s），已切成 %s 个更小子块继续 compact 角色分析",
                     chunk["title"],
+                    split_message,
                     exc,
                     len(sub_chunks),
                 )
@@ -2132,6 +2250,20 @@ def _analyze_chunk_with_context(
                     )
                     merged_segments.extend(sub_segments)
                 return merged_segments, current_context or AnalysisContext()
+            if _is_length_cutoff_error(exc):
+                logging.warning(
+                    "[compact] %s 输出 token 不足且无法继续细分，已标记为 UNKNOWN 待补充",
+                    chunk["title"],
+                )
+                skipped = sanitize_segments(
+                    _make_llm_skipped_segments(
+                        chunk,
+                        skip_reason,
+                        str(exc),
+                    ),
+                    known_characters=context.known_characters if context else [],
+                )
+                return skipped, context or AnalysisContext()
             raise RuntimeError(
                 f"{chunk['title']} 紧凑角色分析失败：模型输出不符合 compact 格式，"
                 f"且当前块已无法继续细分。原始错误：{exc}"

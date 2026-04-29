@@ -174,6 +174,10 @@ class AudioBackendConfig(BaseModel):
     mode: str = "local"
     remote_base_url: Optional[str] = None
     remote_api_key: Optional[str] = None
+    mimo_base_url: Optional[str] = None
+    mimo_api_key: Optional[str] = None
+    mimo_model: Optional[str] = None
+    mimo_voice: Optional[str] = None
     inference_device: Optional[str] = None
     local_audio_engine: Optional[str] = None
     local_audio_model_path: Optional[str] = None
@@ -231,6 +235,21 @@ class ParseV2Request(BaseModel):
     review_threshold: float = 0.7
     # 隐式归属策略：heuristic（纯规则）| llm_spc（每条隐式台词调用 LLM）
     implicit_strategy: str = "heuristic"
+
+
+class ParseV2ReviewRequest(BaseModel):
+    """BookVoiceParser 低置信度片段复核请求。"""
+    segments: List[Dict[str, Any]]
+    llm: LLMConfig
+    review_threshold: float = 0.7
+
+
+class ParseV2ReviewOneRequest(BaseModel):
+    """BookVoiceParser 单段低置信度复核请求。"""
+    segments: List[Dict[str, Any]]
+    index: int
+    llm: LLMConfig
+    review_threshold: float = 0.7
 
 
 TTSRequest.model_rebuild()
