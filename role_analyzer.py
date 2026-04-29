@@ -3,11 +3,13 @@ import html
 import logging
 import re
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from functools import lru_cache
 from itertools import groupby
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from character_registry import CharacterRegistry
@@ -770,6 +772,52 @@ def _make_llm_skipped_segments(
             "_evidence": f"{title} {line_id} 触发 {reason}，已保留原文并跳过 LLM 角色归属。{detail}",
         })
     return segments
+
+
+class AnalyzeDiagnostics:
+    """Collects compact-analysis fallback events for frontend feedback."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self.events: list[dict[str, Any]] = []
+        self.stats: Counter[str] = Counter()
+
+    def record(
+        self,
+        event_type: str,
+        title: str,
+        message: str,
+        *,
+        split_into: int | None = None,
+        source_line_ids: list[str] | None = None,
+        detail: str | None = None,
+    ) -> None:
+        event = {
+            "type": event_type,
+            "title": title,
+            "message": message,
+        }
+        if split_into is not None:
+            event["split_into"] = int(split_into)
+        if source_line_ids:
+            event["source_line_ids"] = [str(item) for item in source_line_ids if str(item or "").strip()]
+        if detail:
+            event["detail"] = detail
+        with self._lock:
+            self.stats[event_type] += 1
+            if len(self.events) < 80:
+                self.events.append(event)
+
+    def to_dict(self, segments: list[dict[str, Any]]) -> dict[str, Any]:
+        needs_review = sum(1 for seg in (segments or []) if seg.get("_needs_review"))
+        unknown = sum(1 for seg in (segments or []) if str(seg.get("speaker") or "").strip().upper() == "UNKNOWN")
+        with self._lock:
+            return {
+                "stats": dict(self.stats),
+                "events": list(self.events),
+                "needs_review_count": needs_review,
+                "unknown_count": unknown,
+            }
 
 
 def _is_transient_llm_error(exc: Exception) -> bool:
@@ -2071,6 +2119,7 @@ def _analyze_chunk_with_context(
     chunk: dict[str, str],
     llm_config: LLMConfig,
     context: AnalysisContext | None = None,
+    diagnostics: AnalyzeDiagnostics | None = None,
 ) -> tuple[list[dict[str, Any]], AnalysisContext]:
     """分析单个 chunk，可选择携带跨块上下文。
 
@@ -2113,7 +2162,7 @@ def _analyze_chunk_with_context(
                 current_context = context
                 for sub_chunk in sub_chunks:
                     sub_segments, current_context = _analyze_chunk_with_context(
-                        sub_chunk, llm_config, current_context
+                        sub_chunk, llm_config, current_context, diagnostics
                     )
                     merged_segments.extend(sub_segments)
                 return merged_segments, current_context or AnalysisContext()
@@ -2162,6 +2211,15 @@ def _analyze_chunk_with_context(
                     max_lines=1,
                 )
                 if len(sub_chunks) > 1:
+                    if diagnostics is not None:
+                        diagnostics.record(
+                            "content_filter_split",
+                            chunk["title"],
+                            "触发服务端内容过滤，已切成行级子块继续分析",
+                            split_into=len(sub_chunks),
+                            source_line_ids=[str(item) for item in (chunk.get("source_line_ids") or []) if str(item or "").strip()],
+                            detail=str(exc),
+                        )
                     logging.warning(
                         "[compact] %s 触发服务端内容过滤，已切成 %s 个行级子块继续分析，过滤行将标记为待补充",
                         chunk["title"],
@@ -2171,11 +2229,19 @@ def _analyze_chunk_with_context(
                     current_context = context
                     for sub_chunk in sub_chunks:
                         sub_segments, current_context = _analyze_chunk_with_context(
-                            sub_chunk, llm_config, current_context
+                            sub_chunk, llm_config, current_context, diagnostics
                         )
                         merged_segments.extend(sub_segments)
                     return merged_segments, current_context or AnalysisContext()
 
+                if diagnostics is not None:
+                    diagnostics.record(
+                        "content_filter_skip",
+                        chunk["title"],
+                        "触发服务端内容过滤且无法继续细分，已标记为待补充",
+                        source_line_ids=[str(item) for item in (chunk.get("source_line_ids") or []) if str(item or "").strip()],
+                        detail=str(exc),
+                    )
                 logging.warning(
                     "[compact] %s 触发服务端内容过滤且无法继续细分，已标记为 UNKNOWN 待补充",
                     chunk["title"],
@@ -2197,6 +2263,15 @@ def _analyze_chunk_with_context(
                     max_lines=max(24, compact_line_budget - 12),
                 )
                 if len(sub_chunks) > 1:
+                    if diagnostics is not None:
+                        diagnostics.record(
+                            "timeout_split",
+                            chunk["title"],
+                            "请求超时，已切成更小子块继续 compact 角色分析",
+                            split_into=len(sub_chunks),
+                            source_line_ids=[str(item) for item in (chunk.get("source_line_ids") or []) if str(item or "").strip()],
+                            detail=str(exc),
+                        )
                     logging.warning(
                         "[compact] %s 超时（%s），已切成 %s 个更小子块继续 compact 角色分析",
                         chunk["title"],
@@ -2214,7 +2289,7 @@ def _analyze_chunk_with_context(
                     current_context = context
                     for sub_chunk in sub_chunks:
                         sub_segments, current_context = _analyze_chunk_with_context(
-                            sub_chunk, llm_config, current_context
+                            sub_chunk, llm_config, current_context, diagnostics
                         )
                         merged_segments.extend(sub_segments)
                     return merged_segments, current_context or AnalysisContext()
@@ -2235,6 +2310,15 @@ def _analyze_chunk_with_context(
                 max_lines=split_max_lines,
             )
             if len(sub_chunks) > 1:
+                if diagnostics is not None:
+                    diagnostics.record(
+                        "length_split" if _is_length_cutoff_error(exc) else "decode_split",
+                        chunk["title"],
+                        f"{split_message}，已切成更小子块继续 compact 角色分析",
+                        split_into=len(sub_chunks),
+                        source_line_ids=[str(item) for item in (chunk.get("source_line_ids") or []) if str(item or "").strip()],
+                        detail=str(exc),
+                    )
                 logging.warning(
                     "[compact] %s %s（%s），已切成 %s 个更小子块继续 compact 角色分析",
                     chunk["title"],
@@ -2246,11 +2330,19 @@ def _analyze_chunk_with_context(
                 current_context = context
                 for sub_chunk in sub_chunks:
                     sub_segments, current_context = _analyze_chunk_with_context(
-                        sub_chunk, llm_config, current_context
+                        sub_chunk, llm_config, current_context, diagnostics
                     )
                     merged_segments.extend(sub_segments)
                 return merged_segments, current_context or AnalysisContext()
             if _is_length_cutoff_error(exc):
+                if diagnostics is not None:
+                    diagnostics.record(
+                        "length_skip",
+                        chunk["title"],
+                        "输出 token 不足且无法继续细分，已标记为待补充",
+                        source_line_ids=[str(item) for item in (chunk.get("source_line_ids") or []) if str(item or "").strip()],
+                        detail=str(exc),
+                    )
                 logging.warning(
                     "[compact] %s 输出 token 不足且无法继续细分，已标记为 UNKNOWN 待补充",
                     chunk["title"],
@@ -2364,7 +2456,7 @@ def optimize_and_analyze_chunk(chunk: dict[str, str], llm_config: LLMConfig) -> 
 
 
 def _analyze_chunks_off_mode(
-    chunks: list[dict[str, str]], llm_config: LLMConfig
+    chunks: list[dict[str, str]], llm_config: LLMConfig, diagnostics: AnalyzeDiagnostics | None = None
 ) -> list[dict[str, Any]]:
     """原始并发模式：无跨块上下文，保持向后兼容。"""
     direct_runtime = str(getattr(llm_config, "local_runtime", "") or "").strip().lower() == "direct"
@@ -2372,7 +2464,8 @@ def _analyze_chunks_off_mode(
     results: list[list[dict[str, Any]] | None] = [None] * len(chunks)
 
     def _work(idx: int, chunk: dict[str, str]) -> tuple[int, list[dict[str, Any]]]:
-        return idx, analyze_chunk_with_retry(chunk, llm_config)
+        segs, _ = _analyze_chunk_with_context(chunk, llm_config, context=None, diagnostics=diagnostics)
+        return idx, segs
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [executor.submit(_work, i, c) for i, c in enumerate(chunks)]
@@ -2388,19 +2481,19 @@ def _analyze_chunks_off_mode(
 
 
 def _analyze_chunks_full_mode(
-    chunks: list[dict[str, str]], llm_config: LLMConfig
+    chunks: list[dict[str, str]], llm_config: LLMConfig, diagnostics: AnalyzeDiagnostics | None = None
 ) -> list[dict[str, Any]]:
     """全文串行模式：上下文跨所有 chunk 传递，质量最高但最慢。"""
     context = AnalysisContext()
     all_segments: list[dict[str, Any]] = []
     for chunk in chunks:
-        segs, context = _analyze_chunk_with_context(chunk, llm_config, context)
+        segs, context = _analyze_chunk_with_context(chunk, llm_config, context, diagnostics)
         all_segments.extend(segs)
     return all_segments
 
 
 def _analyze_chunks_chapter_mode(
-    chunks: list[dict[str, str]], llm_config: LLMConfig
+    chunks: list[dict[str, str]], llm_config: LLMConfig, diagnostics: AnalyzeDiagnostics | None = None
 ) -> list[dict[str, Any]]:
     """章节内串行 + 章节间并行：推荐默认，兼顾质量与速度。"""
     if not chunks:
@@ -2416,7 +2509,7 @@ def _analyze_chunks_chapter_mode(
     def _process_group(indexed_chunks: list[tuple[int, dict[str, str]]]) -> None:
         context = AnalysisContext()
         for orig_idx, chunk in indexed_chunks:
-            segs, context = _analyze_chunk_with_context(chunk, llm_config, context)
+            segs, context = _analyze_chunk_with_context(chunk, llm_config, context, diagnostics)
             results[orig_idx] = segs
 
     direct_runtime = str(getattr(llm_config, "local_runtime", "") or "").strip().lower() == "direct"
@@ -2435,17 +2528,21 @@ def _analyze_chunks_chapter_mode(
     return merged
 
 
-def analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_config: LLMConfig) -> list[dict[str, Any]]:
+def analyze_chunks_with_llm(
+    chunks: list[dict[str, str]],
+    llm_config: LLMConfig,
+    diagnostics: AnalyzeDiagnostics | None = None,
+) -> list[dict[str, Any]]:
     if not chunks:
         return []
 
     mode = str(getattr(llm_config, "context_mode", "") or "chapter").strip().lower()
     if mode == "full":
-        return postprocess_segments(_analyze_chunks_full_mode(chunks, llm_config))
+        return postprocess_segments(_analyze_chunks_full_mode(chunks, llm_config, diagnostics))
     if mode == "off":
-        return postprocess_segments(_analyze_chunks_off_mode(chunks, llm_config))
+        return postprocess_segments(_analyze_chunks_off_mode(chunks, llm_config, diagnostics))
     # 默认 "chapter"
-    return postprocess_segments(_analyze_chunks_chapter_mode(chunks, llm_config))
+    return postprocess_segments(_analyze_chunks_chapter_mode(chunks, llm_config, diagnostics))
 
 
 def optimize_and_analyze_chunks_with_llm(chunks: list[dict[str, str]], llm_config: LLMConfig) -> list[dict[str, Any]]:

@@ -648,6 +648,7 @@
     .seg-flag-conf-medium { background: rgba(249,168,37,0.18); color: #c47d00; }
     .seg-flag-bvp { background: rgba(66,133,244,0.12); color: #1a73e8; }
     .seg-flag-skipped { background: rgba(217, 48, 37, 0.16); color: #ffb4a8; }
+    .seg-flag-filtered { background: rgba(183, 28, 28, 0.18); color: #d93025; }
     .seg-evidence {
       font-size: 12px; color: var(--text-dim, #666); margin: 4px 0 6px;
       padding: 4px 8px; background: rgba(0,0,0,0.03); border-radius: 4px;
@@ -667,6 +668,62 @@
     .segment-head input:first-child { flex: 1.2; min-width: 80px; }
     .segment-head select { flex: 1; min-width: 80px; }
     .segment-head input:nth-of-type(2) { flex: 1.5; min-width: 100px; }
+    .content-filter-review {
+      margin: 12px 0 14px;
+      padding: 12px 14px;
+      border: 1px solid rgba(217, 48, 37, 0.16);
+      border-radius: var(--radius);
+      background: rgba(217, 48, 37, 0.04);
+    }
+    .content-filter-review[hidden] { display: none; }
+    .content-filter-review-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .content-filter-item {
+      border: 1px solid rgba(217, 48, 37, 0.14);
+      border-radius: var(--radius-sm);
+      background: rgba(17, 24, 39, 0.28);
+      padding: 10px 12px;
+    }
+    .content-filter-item-head {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .content-filter-item-title {
+      font-weight: 600;
+    }
+    .content-filter-item-text {
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 8px;
+      white-space: pre-wrap;
+    }
+    .content-filter-context {
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--text-dim);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px dashed rgba(255,255,255,0.08);
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      white-space: pre-wrap;
+    }
+    .content-filter-item-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .content-filter-item-actions input {
+      flex: 1 1 200px;
+      min-width: 160px;
+    }
     .role-head {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -1205,6 +1262,36 @@
       gap: 8px;
       margin-top: 12px;
     }
+    .analysis-pager {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid rgba(125, 154, 192, 0.12);
+      border-radius: var(--radius-sm);
+      background: rgba(8, 14, 26, 0.44);
+    }
+    .analysis-pager[hidden] { display: none; }
+    .analysis-pager-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .analysis-pager input {
+      width: 78px;
+      min-width: 78px;
+      padding: 7px 8px;
+    }
+    .analysis-pager strong {
+      font-size: 13px;
+      color: var(--text);
+    }
+    .analysis-pager .mini-note {
+      margin-top: 0;
+    }
     .analysis-filter-chip {
       display: inline-flex;
       align-items: center;
@@ -1238,6 +1325,11 @@
       margin-bottom: 10px;
       color: var(--sub);
       font-size: 12px;
+    }
+    .segment-selected {
+      border-color: rgba(77, 176, 247, 0.36) !important;
+      box-shadow: 0 0 0 1px rgba(77, 176, 247, 0.24), 0 10px 24px rgba(6, 14, 28, 0.22);
+      background: linear-gradient(180deg, rgba(77, 176, 247, 0.08), rgba(8, 14, 26, 0.72));
     }
     .analysis-empty {
       padding: 24px 18px;
@@ -2372,12 +2464,35 @@
                 <div id="segmentsMeta" class="section-meta">默认折叠，减少页面渲染压力</div>
               </div>
               <div id="analysisFilterState" class="mini-note">当前显示全部角色的分析结果。</div>
+              <div id="contentFilterReviewPanel" class="content-filter-review" hidden>
+                <div class="section-head">
+                  <h3 style="margin:0;">内容过滤待复核</h3>
+                  <div id="contentFilterReviewMeta" class="section-meta">命中内容过滤的片段会单独列在这里，方便逐条补角色。</div>
+                </div>
+                <div class="mini-note">这里会展示触发内容过滤的原文、源行号和附近上下文。你可以先人工填写角色，再跳回下方完整分析结果继续微调。</div>
+                <div id="contentFilterReviewList" class="content-filter-review-list"></div>
+              </div>
               <div class="analysis-editor-toolbar">
                 <button type="button" data-busy-lock onclick="addSegment()">新增一段</button>
                 <button type="button" data-busy-lock class="secondary" onclick="renderSegments(true)">刷新渲染</button>
                 <button type="button" class="toggle-button" onclick="toggleSegmentsPanel()"><span id="segmentsToggleLabel">展开分析结果</span></button>
+                <button type="button" class="secondary" id="showSegmentContextButton" onclick="showSelectedSegmentContext()" disabled>显示前后文</button>
                 <button type="button" id="goToAudioButton" data-busy-lock onclick="goToAudioGeneration()" disabled>前往音频生成</button>
                 <button type="button" data-busy-lock class="danger" onclick="clearSegments()">清空分析结果</button>
+              </div>
+              <div id="analysisPager" class="analysis-pager" hidden>
+                <div class="analysis-pager-group">
+                  <strong>页码</strong>
+                  <input id="segmentsCurrentPageInput" type="number" min="1" value="1" onchange="updateSegmentsPage(this.value)" />
+                  <span>/</span>
+                  <strong id="segmentsTotalPagesLabel">1</strong>
+                </div>
+                <div class="analysis-pager-group">
+                  <strong>每页</strong>
+                  <input id="segmentsPerPageInput" type="number" min="1" value="30" onchange="updateSegmentsPerPage(this.value)" />
+                  <span>条</span>
+                </div>
+                <div id="analysisPagerMeta" class="mini-note">默认每页最多显示 30 条。</div>
               </div>
               <div id="segments" class="segments" hidden></div>
             </div>
@@ -2599,6 +2714,10 @@
   let externalImportedChunkMap = {};
   let mergeSelectionState = {};
   let activeAnalysisSpeaker = "";
+  let activeAnalysisSpecialFilter = "";
+  let selectedSegmentIndex = -1;
+  let segmentsCurrentPage = 1;
+  let segmentsPerPage = 30;
   let voiceLibraryState = [];
   let roleVoiceAssignments = {};
   let chapterChunksState = [];
@@ -2882,6 +3001,48 @@ very high pitch, very low pitch, whisper, young adult
   function pushLog(message) {
     progressState.logs.unshift({ time: nowTime(), text: message });
     progressState.logs = progressState.logs.slice(0, 12);
+  }
+
+  function clipTextForLog(text, limit = 32) {
+    const normalized = String(text || "").replace(/\s+/g, " ").trim();
+    if (!normalized) return "";
+    if (normalized.length <= limit) return normalized;
+    return `${normalized.slice(0, limit)}...`;
+  }
+
+  function compressLineIdList(lineIds) {
+    const ids = Array.isArray(lineIds) ? lineIds.filter(Boolean).map(String) : [];
+    if (!ids.length) return "";
+    if (ids.length <= 4) return ids.join(", ");
+    return `${ids[0]} ~ ${ids[ids.length - 1]}`;
+  }
+
+  function summarizeAnalysisMeta(meta) {
+    if (!meta || typeof meta !== "object") return "";
+    const stats = meta.stats || {};
+    const parts = [];
+    if (stats.length_split) parts.push(`${stats.length_split} 次输出截断后自动切小`);
+    if (stats.length_skip) parts.push(`${stats.length_skip} 个子块因 token 不足标记待补充`);
+    if (stats.content_filter_split) parts.push(`${stats.content_filter_split} 次内容过滤后改按行重试`);
+    if (stats.content_filter_skip) parts.push(`${stats.content_filter_skip} 个行级子块仍被过滤`);
+    if (stats.timeout_split) parts.push(`${stats.timeout_split} 次超时后自动切小`);
+    if (stats.decode_split) parts.push(`${stats.decode_split} 次解码失败后自动切小`);
+    if (Number(meta.needs_review_count) > 0) parts.push(`当前累计 ${meta.needs_review_count} 个待补充片段`);
+    return parts.join("；");
+  }
+
+  function appendAnalysisMetaLogs(meta, unitLabel) {
+    const summary = summarizeAnalysisMeta(meta);
+    if (!summary) return "";
+    const label = unitLabel || "当前请求";
+    pushLog(`${label} 内部回退：${summary}`);
+    const events = Array.isArray(meta?.events) ? meta.events : [];
+    events.slice(0, 6).forEach((event) => {
+      const splitNote = Number.isFinite(event?.split_into) ? `，拆为 ${event.split_into} 个子块` : "";
+      const lineNote = compressLineIdList(event?.source_line_ids);
+      pushLog(`${label} / ${event?.title || "未命名子块"}：${event?.message || "发生内部回退"}${splitNote}${lineNote ? `（${lineNote}）` : ""}`);
+    });
+    return summary;
   }
 
   function computeStepClass(stepKey) {
@@ -4299,6 +4460,21 @@ very high pitch, very low pitch, whisper, young adult
     };
   }
 
+  function formatActiveLlmRunSummary(llm) {
+    if (!llm) return "";
+    const maxTokens = Number(llm.max_tokens);
+    const maxTokensText = Number.isFinite(maxTokens) && maxTokens > 0 ? String(maxTokens) : "未设置";
+    if (analysisSourceMode === "direct" || llm.local_runtime === "direct") {
+      const modelLabel = String(llm.model || llm.local_model_path || "本地直载模型").trim();
+      const ctxTokens = Number(llm.local_ctx_tokens);
+      const ctxText = Number.isFinite(ctxTokens) && ctxTokens > 0 ? `，上下文 ${ctxTokens}` : "";
+      return `本次分析使用本地直载模型 ${modelLabel}，最大输出 Tokens = ${maxTokensText}${ctxText}。`;
+    }
+    const modelLabel = String(llm.model || "未选择模型").trim();
+    const baseUrl = String(llm.base_url || "").trim();
+    return `本次分析使用 OpenAI 兼容模型 ${modelLabel}，最大输出 Tokens = ${maxTokensText}${baseUrl ? `，接口 ${baseUrl}` : ""}。`;
+  }
+
   function getAnalysisPreset(mode) {
     return ANALYSIS_MODE_PRESETS[mode] || ANALYSIS_MODE_PRESETS.balanced;
   }
@@ -4809,6 +4985,10 @@ very high pitch, very low pitch, whisper, young adult
     if (goBtn) {
       goBtn.disabled = !segmentsState.length;
     }
+    const contextBtn = document.getElementById("showSegmentContextButton");
+    if (contextBtn) {
+      contextBtn.disabled = !(selectedSegmentIndex >= 0 && segmentsState[selectedSegmentIndex]);
+    }
     const markedBtn = document.getElementById("analyzeMarkedSegmentsButton");
     if (markedBtn) {
       const count = getMarkedSegmentIndices(segmentsState).length;
@@ -4816,6 +4996,316 @@ very high pitch, very low pitch, whisper, young adult
       markedBtn.disabled = taskBusy || count <= 0;
       markedBtn.textContent = count > 0 ? `分析标记部分（${count}）` : "分析标记部分";
     }
+  }
+
+  function normalizeSegmentsPerPage(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 30;
+    return Math.max(1, Math.min(200, Math.floor(parsed)));
+  }
+
+  function getFilteredSegmentsForView() {
+    return segmentsState
+      .map((seg, index) => ({ seg, index }))
+      .filter(({ seg }) => {
+        if (activeAnalysisSpecialFilter === "content_filter") {
+          return isContentFilteredSegment(seg);
+        }
+        if (activeAnalysisSpeaker) {
+          return (seg.speaker || "旁白") === activeAnalysisSpeaker;
+        }
+        return true;
+      });
+  }
+
+  function getTotalSegmentsPages(entries = getFilteredSegmentsForView()) {
+    const total = entries.length;
+    if (!total) return 1;
+    return Math.max(1, Math.ceil(total / Math.max(1, segmentsPerPage)));
+  }
+
+  function ensureSegmentsPagination(entries = getFilteredSegmentsForView()) {
+    segmentsPerPage = normalizeSegmentsPerPage(segmentsPerPage);
+    const totalPages = getTotalSegmentsPages(entries);
+    if (!Number.isFinite(segmentsCurrentPage)) {
+      segmentsCurrentPage = 1;
+    }
+    segmentsCurrentPage = Math.max(1, Math.min(totalPages, Math.floor(segmentsCurrentPage)));
+    return totalPages;
+  }
+
+  function syncSegmentsPagerUI(entries = getFilteredSegmentsForView()) {
+    const pager = document.getElementById("analysisPager");
+    const currentInput = document.getElementById("segmentsCurrentPageInput");
+    const perPageInput = document.getElementById("segmentsPerPageInput");
+    const totalLabel = document.getElementById("segmentsTotalPagesLabel");
+    const meta = document.getElementById("analysisPagerMeta");
+    if (!pager || !currentInput || !perPageInput || !totalLabel || !meta) return;
+    const totalPages = ensureSegmentsPagination(entries);
+    pager.hidden = !segmentsState.length || !segmentsPanelExpanded;
+    currentInput.value = String(segmentsCurrentPage);
+    perPageInput.value = String(segmentsPerPage);
+    totalLabel.textContent = String(totalPages);
+    if (!entries.length) {
+      meta.textContent = "当前筛选结果为空。";
+      return;
+    }
+    const start = ((segmentsCurrentPage - 1) * segmentsPerPage) + 1;
+    const end = Math.min(entries.length, segmentsCurrentPage * segmentsPerPage);
+    meta.textContent = `当前显示第 ${start} - ${end} 条，共 ${entries.length} 条筛选结果。`;
+  }
+
+  function updateSegmentsPage(value) {
+    segmentsCurrentPage = Number(value);
+    ensureSegmentsPagination();
+    renderSegments(true);
+  }
+
+  function updateSegmentsPerPage(value) {
+    segmentsPerPage = normalizeSegmentsPerPage(value);
+    segmentsCurrentPage = 1;
+    renderSegments(true);
+  }
+
+  function setSegmentsPageForIndex(index, options = {}) {
+    const { showAll = false } = options;
+    if (showAll) {
+      activeAnalysisSpeaker = "";
+      activeAnalysisSpecialFilter = "";
+    }
+    const entries = getFilteredSegmentsForView();
+    const position = entries.findIndex((entry) => entry.index === index);
+    if (position < 0) {
+      ensureSegmentsPagination(entries);
+      return false;
+    }
+    segmentsCurrentPage = Math.floor(position / Math.max(1, segmentsPerPage)) + 1;
+    ensureSegmentsPagination(entries);
+    return true;
+  }
+
+  function setSelectedSegment(index, options = {}) {
+    const nextIndex = Number(index);
+    if (!Number.isFinite(nextIndex) || !segmentsState[nextIndex]) return;
+    selectedSegmentIndex = nextIndex;
+    if (options.showAll) {
+      setSegmentsPageForIndex(nextIndex, { showAll: true });
+    } else {
+      setSegmentsPageForIndex(nextIndex);
+    }
+    updateAnalysisResultActions();
+    if (options.render !== false) {
+      renderSegments(true);
+    }
+  }
+
+  function showSelectedSegmentContext() {
+    if (!(selectedSegmentIndex >= 0 && segmentsState[selectedSegmentIndex])) {
+      showToast("请先点击一条分析结果", "warn", 2200);
+      return;
+    }
+    activeAnalysisSpeaker = "";
+    activeAnalysisSpecialFilter = "";
+    setSegmentsPageForIndex(selectedSegmentIndex, { showAll: true });
+    toggleSegmentsPanel(true);
+    updateAnalysisFilterState();
+    updateSegmentsMeta();
+    renderSpeakerMergeList();
+    renderSegments(true);
+    requestAnimationFrame(() => {
+      const target = document.querySelector(`#segments [data-segment-index="${selectedSegmentIndex}"]`);
+      target?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    });
+  }
+
+  function pushSegmentEditLog(index, field, beforeValue, afterValue) {
+    const seg = segmentsState[index] || {};
+    const text = clipTextForLog(seg.text || beforeValue || afterValue || "", 28);
+    const fieldLabelMap = {
+      speaker: "角色",
+      style: "风格",
+      emotion: "情绪",
+      text: "文本",
+      gender: "性别",
+      voice_engine: "引擎",
+    };
+    const label = fieldLabelMap[field] || field;
+    const beforeText = clipTextForLog(beforeValue, field === "text" ? 20 : 16) || "空";
+    const afterText = clipTextForLog(afterValue, field === "text" ? 20 : 16) || "空";
+    pushLog(`手动保存第 ${index + 1} 段「${text || "空文本"}」：${label} ${beforeText} -> ${afterText}`);
+  }
+
+  function isContentFilteredSegment(seg) {
+    if (!seg) return false;
+    return String(seg._skip_reason || "").trim() === "content_filter"
+      || String(seg._original_skip_reason || "").trim() === "content_filter";
+  }
+
+  function needsContentFilterReview(seg) {
+    if (!isContentFilteredSegment(seg)) return false;
+    const speaker = String((seg && seg.speaker) || "").trim();
+    return !!(seg && seg._needs_review) || !speaker || speaker === "UNKNOWN" || speaker === "未知";
+  }
+
+  function buildSourceLineEntries() {
+    const text = String(document.getElementById("sourceText")?.value || "");
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line, index) => ({
+        number: index + 1,
+        label: `L${index + 1}`,
+        text: line,
+      }));
+  }
+
+  function extractLineNumbersFromRef(lineRef) {
+    const numbers = [];
+    const raw = String(lineRef || "");
+    const regex = /L(\d+)(?:\s*-\s*(?:L)?(\d+))?/gi;
+    let match;
+    while ((match = regex.exec(raw)) !== null) {
+      const start = Number(match[1]);
+      const end = Number(match[2] || match[1]);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+      const lower = Math.min(start, end);
+      const upper = Math.max(start, end);
+      for (let lineNo = lower; lineNo <= upper; lineNo += 1) {
+        numbers.push(lineNo);
+      }
+    }
+    return [...new Set(numbers)].sort((a, b) => a - b);
+  }
+
+  function buildContentFilterContext(seg) {
+    const entries = buildSourceLineEntries();
+    const selected = extractLineNumbersFromRef(seg?._source_lines || seg?._original_source_lines || "");
+    if (!entries.length || !selected.length) {
+      return "当前找不到可用的源文本上下文。";
+    }
+    const selectedSet = new Set(selected);
+    const minLine = Math.max(1, Math.min(...selected) - 2);
+    const maxLine = Math.min(entries.length, Math.max(...selected) + 2);
+    const lines = [];
+    for (let lineNo = minLine; lineNo <= maxLine; lineNo += 1) {
+      const entry = entries[lineNo - 1];
+      const prefix = selectedSet.has(lineNo) ? ">" : " ";
+      lines.push(`${prefix} ${entry.label} ${entry.text}`);
+    }
+    return lines.join("\n");
+  }
+
+  function getContentFilterReviewItems() {
+    return segmentsState
+      .map((seg, index) => ({ seg, index }))
+      .filter(({ seg }) => needsContentFilterReview(seg));
+  }
+
+  function resolveSegmentManualReview(seg, speaker) {
+    const nextSpeaker = String(speaker || "").trim() || "旁白";
+    const evidenceText = String(seg._evidence || seg.evidence || "").trim();
+    const reviewNote = `已人工补充角色：${nextSpeaker}`;
+    const nextEvidence = evidenceText ? `${evidenceText}；${reviewNote}` : reviewNote;
+    return {
+      ...seg,
+      speaker: nextSpeaker,
+      _manual_reviewed: true,
+      _manual_reviewed_at: new Date().toISOString(),
+      _needs_review: false,
+      _llm_skipped: false,
+      _original_skip_reason: seg._original_skip_reason || seg._skip_reason || "",
+      _original_source_title: seg._original_source_title || seg._source_title || "",
+      _original_source_lines: seg._original_source_lines || seg._source_lines || "",
+      _skip_reason: "",
+      _evidence: nextEvidence,
+      evidence: nextEvidence,
+    };
+  }
+
+  function applyContentFilterSpeaker(index) {
+    if (taskBusy) return;
+    const input = document.getElementById(`contentFilterSpeaker_${index}`);
+    const nextSpeaker = String(input?.value || "").trim();
+    if (!nextSpeaker) {
+      showToast("请先填写角色名", "warn", 2200);
+      input?.focus();
+      return;
+    }
+    segmentsState[index] = resolveSegmentManualReview(segmentsState[index] || {}, nextSpeaker);
+    ensureRoleProfile(nextSpeaker);
+    renderRoles();
+    renderRoleAssignments();
+    renderSpeakerMergeList();
+    updateAnalysisFilterState();
+    updateSegmentsMeta();
+    renderContentFilterReviewPanel();
+    setSelectedSegment(index, { render: false });
+    renderSegments(true);
+    saveLastSegments(segmentsState);
+    setStatus(`已将第 ${index + 1} 段内容过滤片段手动设为角色“${nextSpeaker}”。`);
+    showToast(`已补充角色：${nextSpeaker}`, "success", 1800);
+  }
+
+  function focusSegmentByIndex(index) {
+    setSelectedSegment(index, { render: false, showAll: true });
+    toggleSegmentsPanel(true);
+    updateAnalysisFilterState();
+    updateSegmentsMeta();
+    renderSpeakerMergeList();
+    renderSegments(true);
+    requestAnimationFrame(() => {
+      const target = document.querySelector(`#segments [data-segment-index="${index}"]`);
+      if (target?.scrollIntoView) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  }
+
+  function renderContentFilterReviewPanel() {
+    const panel = document.getElementById("contentFilterReviewPanel");
+    const list = document.getElementById("contentFilterReviewList");
+    const meta = document.getElementById("contentFilterReviewMeta");
+    if (!panel || !list || !meta) return;
+    const items = getContentFilterReviewItems();
+    panel.hidden = items.length <= 0;
+    meta.textContent = items.length
+      ? `当前还有 ${items.length} 条命中内容过滤且待人工补充的片段。`
+      : "命中内容过滤的片段都已处理。";
+    list.innerHTML = "";
+    if (!items.length) return;
+
+    const roleNames = getSpeakerList().filter((name) => name && name !== "UNKNOWN" && name !== "未知");
+    if (roleNames.length) {
+      const datalist = document.createElement("datalist");
+      datalist.id = "contentFilterRoleCandidates";
+      datalist.innerHTML = roleNames.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("");
+      list.appendChild(datalist);
+    }
+
+    const fragment = document.createDocumentFragment();
+    items.forEach(({ seg, index }) => {
+      const sourceTitle = String(seg._source_title || seg._original_source_title || "").trim() || `分析片段 ${index + 1}`;
+      const sourceLines = String(seg._source_lines || seg._original_source_lines || "").trim();
+      const card = document.createElement("div");
+      card.className = "content-filter-item";
+      card.innerHTML = `
+        <div class="content-filter-item-head">
+          <span class="content-filter-item-title">${escapeHtml(sourceTitle)}</span>
+          <span class="seg-flag seg-flag-filtered">内容过滤</span>
+          ${sourceLines ? `<span class="section-meta">${escapeHtml(sourceLines)}</span>` : ""}
+        </div>
+        <div class="content-filter-item-text">${escapeHtml(seg.text || "")}</div>
+        <div class="content-filter-context">${escapeHtml(buildContentFilterContext(seg))}</div>
+        <div class="content-filter-item-actions">
+          <input id="contentFilterSpeaker_${index}" list="contentFilterRoleCandidates" value="${escapeHtml(seg.speaker && seg.speaker !== "UNKNOWN" && seg.speaker !== "未知" ? seg.speaker : "")}" placeholder="手动填写角色名，例如 真唯" />
+          <button type="button" onclick="applyContentFilterSpeaker(${index})">应用角色</button>
+          <button type="button" class="secondary" onclick="focusSegmentByIndex(${index})">定位到原片段</button>
+        </div>
+      `;
+      fragment.appendChild(card);
+    });
+    list.appendChild(fragment);
   }
 
   function updateAnalysisFlowUI() {
@@ -4948,6 +5438,7 @@ very high pitch, very low pitch, whisper, young adult
     localStorage.setItem("ov_role_voice_assignments", JSON.stringify(roleVoiceAssignments));
     localStorage.setItem(INFERENCE_DEVICE_STORAGE_KEY, getInferenceDevice());
     setStatus("已保存配置。");
+    showToast("配置已保存", "info", 1800);
     setProgress({
       summary: "配置已保存",
       detail: "文本分析、音频生成和角色配置都已经写入本地浏览器缓存，刷新页面后仍可恢复。",
@@ -5394,6 +5885,9 @@ very high pitch, very low pitch, whisper, young adult
       };
       return normalized;
     });
+    if (!(selectedSegmentIndex >= 0 && segmentsState[selectedSegmentIndex])) {
+      selectedSegmentIndex = -1;
+    }
     const speakerSet = new Set(segmentsState.map((seg) => seg.speaker || "旁白"));
     Object.keys(roleProfilesState).forEach((speaker) => {
       if (!speakerSet.has(speaker)) {
@@ -5409,9 +5903,11 @@ very high pitch, very low pitch, whisper, young adult
     if (options.persist !== false) {
       persistResult = saveLastSegments(segmentsState);
     }
+    ensureSegmentsPagination();
     syncRoleProfilesFromSegments();
     renderSpeakerMergeList();
     updateAnalysisFilterState();
+    renderContentFilterReviewPanel();
     renderRoleAssignments();
     renderSegments(segmentsPanelExpanded);
     renderAnalysisPipelineMeta();
@@ -5541,6 +6037,8 @@ very high pitch, very low pitch, whisper, young adult
           cursor += replacements.length - 1;
           replaced += 1;
           applySegmentsState(segmentsState);
+          pushLog(`标记片段补充完成：${clipTextForLog(text, 24)} -> ${replacements.map((item) => item.speaker || "旁白").join(" / ")}`);
+          renderProgress();
           saveAnalysisFlowSnapshot(
             document.getElementById("sourceText")?.value || "",
             llm,
@@ -5568,6 +6066,8 @@ very high pitch, very low pitch, whisper, young adult
             _evidence: `${original._evidence || original.evidence || ""}；补充分析失败：${err.message || String(err)}`,
           };
           applySegmentsState(segmentsState);
+          pushLog(`标记片段补充失败：${clipTextForLog(text, 24)}（${err.message || String(err)}）`);
+          renderProgress();
           saveAnalysisFlowSnapshot(
             document.getElementById("sourceText")?.value || "",
             llm,
@@ -5802,6 +6302,7 @@ very high pitch, very low pitch, whisper, young adult
     const meta = document.getElementById("speakerMergeMeta");
     const counts = countSegmentsBySpeaker();
     const speakers = Object.keys(counts);
+    const contentFilterCount = segmentsState.filter((seg) => isContentFilteredSegment(seg)).length;
     cleanupMergeSelection(speakers);
     const selectedCount = getSelectedMergeSpeakers(speakers).length;
     if (!speakers.length) {
@@ -5813,9 +6314,11 @@ very high pitch, very low pitch, whisper, young adult
       activeAnalysisSpeaker = "";
     }
     if (meta) {
-      const filterText = activeAnalysisSpeaker
+      const filterText = activeAnalysisSpecialFilter === "content_filter"
+        ? "当前选中「内容过滤」，展开分析结果时会只显示命中过滤的片段"
+        : (activeAnalysisSpeaker
         ? `当前选中角色「${activeAnalysisSpeaker}」，展开分析结果时会只显示该角色`
-        : `当前共 ${speakers.length} 个角色，点击角色可筛选下方分析结果`;
+        : `当前共 ${speakers.length} 个角色，点击角色可筛选下方分析结果`);
       meta.textContent = selectedCount
         ? `${filterText}；已勾选 ${selectedCount} 个待合并角色`
         : filterText;
@@ -5826,7 +6329,7 @@ very high pitch, very low pitch, whisper, young adult
       const sampleStyle = inferDominantStyleForSpeaker(speaker) || profile.style || "";
       const gender = inferGenderLabel(sampleStyle);
       const tone = inferToneLabel(sampleStyle);
-      const activeClass = activeAnalysisSpeaker === speaker ? " active" : "";
+      const activeClass = activeAnalysisSpecialFilter !== "content_filter" && activeAnalysisSpeaker === speaker ? " active" : "";
       const checked = !!mergeSelectionState[speaker];
       return `
         <div class="character-card${activeClass}" onclick="setAnalysisSpeakerFilter('${escapeJs(speaker)}')">
@@ -5844,19 +6347,42 @@ very high pitch, very low pitch, whisper, young adult
     }).join("");
 
     container.innerHTML = `
-      <div class="character-card${!activeAnalysisSpeaker ? " active" : ""}" onclick="setAnalysisSpeakerFilter('')">
+      <div class="character-card${!activeAnalysisSpeaker && activeAnalysisSpecialFilter !== "content_filter" ? " active" : ""}" onclick="setAnalysisSpeakerFilter('')">
         <div class="character-card-head">
           <span class="character-card-name">全部角色</span>
           <span class="pill">${segmentsState.length} 段</span>
         </div>
         <div class="character-card-meta">显示当前 JSON 分析结果中的全部内容</div>
       </div>
+      ${contentFilterCount > 0 ? `
+      <div class="character-card${activeAnalysisSpecialFilter === "content_filter" ? " active" : ""}" onclick="setContentFilterOnlyView()">
+        <div class="character-card-head">
+          <span class="character-card-name">内容过滤</span>
+          <span class="pill">${contentFilterCount} 段</span>
+        </div>
+        <div class="character-card-meta">只显示触发过内容过滤的条目，便于逐条复核</div>
+      </div>
+      ` : ""}
       ${roster}
     `;
   }
 
   function setAnalysisSpeakerFilter(speaker) {
     activeAnalysisSpeaker = String(speaker || "").trim();
+    activeAnalysisSpecialFilter = "";
+    segmentsCurrentPage = 1;
+    renderSpeakerMergeList();
+    updateSegmentsMeta();
+    updateAnalysisFilterState();
+    if (segmentsPanelExpanded) {
+      renderSegments(true);
+    }
+  }
+
+  function setContentFilterOnlyView() {
+    activeAnalysisSpeaker = "";
+    activeAnalysisSpecialFilter = "content_filter";
+    segmentsCurrentPage = 1;
     renderSpeakerMergeList();
     updateSegmentsMeta();
     updateAnalysisFilterState();
@@ -5866,6 +6392,11 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function focusSelectedSpeakerInSegments() {
+    if (selectedSegmentIndex >= 0 && segmentsState[selectedSegmentIndex]) {
+      setSegmentsPageForIndex(selectedSegmentIndex, {
+        showAll: activeAnalysisSpecialFilter === "content_filter",
+      });
+    }
     if (!segmentsPanelExpanded) {
       toggleSegmentsPanel(true);
       return;
@@ -6562,7 +7093,6 @@ very high pitch, very low pitch, whisper, young adult
     const savedIds = new Set(selected.map(s => s.id));
     voiceDesignSamples = voiceDesignSamples.filter(s => !savedIds.has(s.id));
     renderDesignSamples();
-    setWorkspaceTab("library");
   }
 
   function copyDesignAnalysisPrompt() {
@@ -7757,23 +8287,32 @@ very high pitch, very low pitch, whisper, young adult
     const count = segmentsState.length;
     const meta = document.getElementById("segmentsMeta");
     const label = document.getElementById("segmentsToggleLabel");
-    const filteredCount = activeAnalysisSpeaker
-      ? segmentsState.filter((seg) => (seg.speaker || "旁白") === activeAnalysisSpeaker).length
-      : count;
+    const filteredEntries = getFilteredSegmentsForView();
+    const filteredCount = filteredEntries.length;
+    const totalPages = getTotalSegmentsPages(filteredEntries);
+    const filterLabel = activeAnalysisSpecialFilter === "content_filter"
+      ? "内容过滤"
+      : (activeAnalysisSpeaker ? `角色「${activeAnalysisSpeaker}」` : "全部结果");
     meta.textContent = segmentsPanelExpanded
-      ? `当前显示 ${filteredCount} / ${count} 条分析结果，已展开编辑视图`
+      ? `当前筛选：${filterLabel}，显示 ${filteredCount} / ${count} 条分析结果，第 ${segmentsCurrentPage} / ${totalPages} 页`
       : `当前共 ${count} 条分析结果，默认折叠以减少滚动卡顿`;
     label.textContent = segmentsPanelExpanded ? "收起分析结果" : "展开分析结果";
+    syncSegmentsPagerUI(filteredEntries);
   }
 
   function updateAnalysisFilterState() {
     const el = document.getElementById("analysisFilterState");
     if (!el) return;
+    if (activeAnalysisSpecialFilter === "content_filter") {
+      const count = getFilteredSegmentsForView().length;
+      el.innerHTML = `<span class="analysis-filter-chip">已筛选：内容过滤 · ${count} 段</span>`;
+      return;
+    }
     if (!activeAnalysisSpeaker) {
       el.textContent = "当前显示全部角色的分析结果。";
       return;
     }
-    const count = segmentsState.filter((seg) => (seg.speaker || "旁白") === activeAnalysisSpeaker).length;
+    const count = getFilteredSegmentsForView().length;
     el.innerHTML = `<span class="analysis-filter-chip">已筛选：${escapeHtml(activeAnalysisSpeaker)} · ${count} 段</span>`;
   }
 
@@ -8563,37 +9102,52 @@ very high pitch, very low pitch, whisper, young adult
     const container = document.getElementById("segments");
     container.hidden = !segmentsPanelExpanded;
     container.innerHTML = "";
+    syncSegmentsPagerUI();
     if (!segmentsState.length) {
       container.innerHTML = `<div class="analysis-empty">当前还没有可展示的分析结果。只有执行过“分析角色”后，这里才会填充内容，并允许前往音频生成。</div>`;
       return;
     }
-    const visibleSegments = segmentsState
-      .map((seg, idx) => ({ seg, idx }))
-      .filter(({ seg }) => !activeAnalysisSpeaker || (seg.speaker || "旁白") === activeAnalysisSpeaker);
+    const visibleSegments = getFilteredSegmentsForView();
+    const totalPages = ensureSegmentsPagination(visibleSegments);
     if (!visibleSegments.length) {
       container.innerHTML = `<div class="analysis-empty">当前筛选角色下没有可展示的分析结果。</div>`;
+      syncSegmentsPagerUI(visibleSegments);
       return;
     }
+    const pageStart = (segmentsCurrentPage - 1) * segmentsPerPage;
+    const pageSegments = visibleSegments.slice(pageStart, pageStart + segmentsPerPage);
+    syncSegmentsPagerUI(visibleSegments);
     const fragment = document.createDocumentFragment();
 
-    visibleSegments.forEach(({ seg, idx }) => {
+    pageSegments.forEach(({ seg, index: idx }, pageOffset) => {
       const div = document.createElement("div");
       const isSuspicious = !!seg._suspicious;
       const isSkipped = !!seg._llm_skipped;
+      const isContentFiltered = isContentFilteredSegment(seg);
       const needsReview = !!seg._needs_review || seg.speaker === "UNKNOWN";
       const conf = seg._confidence || "";  // "high" | "medium" | "low" | ""
       const isLowConf = conf === "low";
       const isMedConf = conf === "medium";
       const gender = inferGenderValue(seg.style || "");
+      const displayIndex = pageStart + pageOffset + 1;
+      const isSelected = idx === selectedSegmentIndex;
       div.className = "segment"
         + (isSuspicious ? " segment-suspicious" : "")
         + (isSkipped ? " segment-skipped" : "")
         + (needsReview ? " segment-unknown" : "")
+        + (isSelected ? " segment-selected" : "")
         + (isLowConf && !isSkipped ? " segment-conf-low" : "")
         + (isMedConf && !needsReview && !isSuspicious && !isSkipped ? " segment-conf-medium" : "");
+      div.dataset.segmentIndex = String(idx);
+      div.onclick = (event) => {
+        if (event.target.closest("input, textarea, select, button, summary, details, label")) return;
+        setSelectedSegment(idx);
+      };
       div.innerHTML = `
         <div class="segment-index-badge">
-          <span>第 ${idx + 1} 段</span>
+          <span>第 ${displayIndex} / ${visibleSegments.length} 条</span>
+          <span class="section-meta">原序号 #${idx + 1} · 第 ${segmentsCurrentPage} / ${totalPages} 页</span>
+          ${isContentFiltered ? `<span class="seg-flag seg-flag-filtered" title="这段曾触发远端内容过滤，建议人工确认角色归属">内容过滤</span>` : ""}
           ${isSkipped ? `<span class="seg-flag seg-flag-skipped" title="远端 LLM 未能处理该段，已保留原文并跳过，后续可用本地 LLM 补充">待补充</span>` : ""}
           ${isSuspicious ? `<span class="seg-flag seg-flag-suspicious" title="speaker 不在已知角色列表中，请核实">待核查</span>` : ""}
           ${needsReview ? `<span class="seg-flag seg-flag-unknown" title="LLM 无法确定说话人，请人工复核">UNKNOWN</span>` : ""}
@@ -8639,24 +9193,42 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function updateSegmentField(index, field, value) {
+    const originalSeg = { ...(segmentsState[index] || {}) };
+    let logBeforeValue = "";
+    let logAfterValue = "";
     if (field === "voice_engine") {
+      logBeforeValue = originalSeg[field] || "";
       segmentsState[index][field] = normalizeVoiceEngineValue(value);
       segmentsState[index].style = normalizeVoiceStyleValue(segmentsState[index].style, segmentsState[index].voice_engine);
       if (!isVoxCPMVoiceEngine(segmentsState[index].voice_engine) && !isMimoVoiceEngine(segmentsState[index].voice_engine)) {
         segmentsState[index].cfg_value = "";
         segmentsState[index].inference_timesteps = "";
       }
+      logAfterValue = segmentsState[index][field] || "";
     } else if (field === "gender") {
+      logBeforeValue = inferGenderValue(originalSeg.style || "");
       segmentsState[index].style = updateStyleGender(segmentsState[index].style, value);
+      logAfterValue = inferGenderValue(segmentsState[index].style || "");
     } else if (field === "style") {
+      logBeforeValue = originalSeg[field] || "";
       segmentsState[index][field] = normalizeVoiceStyleValue(value, segmentsState[index].voice_engine);
+      logAfterValue = segmentsState[index][field] || "";
     } else if (field === "cfg_value" || field === "inference_timesteps") {
+      logBeforeValue = String(originalSeg[field] ?? "").trim();
       segmentsState[index][field] = String(value ?? "").trim();
+      logAfterValue = String(segmentsState[index][field] ?? "").trim();
     } else {
+      logBeforeValue = originalSeg[field] || "";
       segmentsState[index][field] = value;
+      logAfterValue = segmentsState[index][field] || "";
     }
     if (field === "speaker") {
-      ensureRoleProfile(value || "旁白");
+      const normalizedSpeaker = String(value || "").trim();
+      if (normalizedSpeaker && normalizedSpeaker !== "UNKNOWN" && normalizedSpeaker !== "未知") {
+        segmentsState[index] = resolveSegmentManualReview(segmentsState[index], normalizedSpeaker);
+      }
+      logAfterValue = segmentsState[index].speaker || "";
+      ensureRoleProfile(normalizedSpeaker || "旁白");
       renderRoles();
       renderRoleAssignments();
       renderSpeakerMergeList();
@@ -8667,9 +9239,21 @@ very high pitch, very low pitch, whisper, young adult
     if (field === "style" || field === "voice_engine" || field === "gender" || field === "speaker") {
       updateAnalysisFilterState();
       updateSegmentsMeta();
+      renderContentFilterReviewPanel();
       renderSegments(true);
     }
+    if (field === "text") {
+      setSelectedSegment(index, { render: false });
+    }
     saveLastSegments(segmentsState);
+    if (String(logBeforeValue) !== String(logAfterValue)) {
+      setSelectedSegment(index, { render: false });
+      pushSegmentEditLog(index, field, logBeforeValue, logAfterValue);
+      if (!["style", "voice_engine", "gender", "speaker"].includes(field)) {
+        renderSegments(true);
+      }
+      renderProgress();
+    }
   }
 
   function addSegment() {
@@ -9831,7 +10415,7 @@ very high pitch, very low pitch, whisper, young adult
 
     const combo = llm.analysis_combo || getAnalysisComboValue();
     const comboDef = getAnalysisComboDef(combo);
-    beginTask("parse", "准备执行当前配置的文本分析流程", `系统会先完成章节识别，再按模型配置里设定的组合执行：${comboDef.label} ${comboDef.description}。`);
+    beginTask("parse", "准备执行当前配置的文本分析流程", `系统会先完成章节识别，再按模型配置里设定的组合执行：${comboDef.label} ${comboDef.description}。\n${formatActiveLlmRunSummary(llm)}`);
     try {
       const segments = await runAnalysisFlow(text, llm, null, combo);
       updateAnalysisFlowUI();
@@ -10221,6 +10805,18 @@ very high pitch, very low pitch, whisper, young adult
           done: index,
           }
         );
+        const interimMetaSummary = appendAnalysisMetaLogs(data.analysis_meta, unit.label);
+        if (interimMetaSummary) {
+          setProgress({
+            stage: "analyze",
+            summary: `正在整理第 ${index + 1} / ${units.length} ${unitKind}角色分析结果`,
+            detail: `${directChapterMode ? `当前章节：${unit.label}。` : `当前组：${unit.label}。`}后端已返回补充分析信息：${interimMetaSummary}`,
+            percent: Math.round(59 + ((index / Math.max(units.length, 1)) * 22)),
+            total: units.length,
+            done: index,
+            indeterminate: true,
+          });
+        }
       } catch (err) {
         const unitLength = unit.chunks.reduce((sum, chunk) => sum + String(chunk.content || "").length, 0);
         const canSplitDirectChapter = directChapterMode
@@ -10269,15 +10865,18 @@ very high pitch, very low pitch, whisper, young adult
       saveAnalysisFlowSnapshot(text, llm, combo, snapshotStage, index + 1, {
         directAnalysisChunks: directSourceChunks || undefined,
       });
+      const completionMetaSummary = summarizeAnalysisMeta(data.analysis_meta);
       setProgress({
         stage: "analyze",
         summary: `已完成 ${index + 1} / ${units.length} ${unitKind}角色分析`,
-        detail: `当前已累计 ${segments.length} 个分析分段。`,
+        detail: completionMetaSummary
+          ? `当前已累计 ${segments.length} 个分析分段。本${directChapterMode ? "章节" : "组"}内部回退：${completionMetaSummary}`
+          : `当前已累计 ${segments.length} 个分析分段。`,
         percent: Math.round(60 + (((index + 1) / Math.max(units.length, 1)) * 24)),
         total: units.length,
         done: index + 1,
         indeterminate: false,
-      }, { log: `完成第 ${index + 1} ${unitKind}角色分析，累计 ${segments.length} 段` });
+      }, { log: completionMetaSummary ? `完成第 ${index + 1} ${unitKind}角色分析，累计 ${segments.length} 段；${completionMetaSummary}` : `完成第 ${index + 1} ${unitKind}角色分析，累计 ${segments.length} 段` });
     }
     applySegmentsState(segments);
     renderAnalysisPipelineMeta();
@@ -10586,7 +11185,7 @@ very high pitch, very low pitch, whisper, young adult
     if (!llm) return;
     if (!warnIfThinkingModel(llm)) return;
 
-    beginTask("parse", "准备开始完整文本分析", '将按「智能分段 -> 语音适配优化 -> 角色分析」的顺序执行完整流程。');
+    beginTask("parse", "准备开始完整文本分析", `将按「智能分段 -> 语音适配优化 -> 角色分析」的顺序执行完整流程。\n${formatActiveLlmRunSummary(llm)}`);
 
     try {
       const segments = await runAnalysisFlow(text, llm, null, "separate");
@@ -10690,8 +11289,8 @@ very high pitch, very low pitch, whisper, young adult
       "parse",
       useCurrentConfig ? "准备使用当前配置继续分析" : "准备继续上次文本分析",
       useCurrentConfig
-        ? "正在恢复中断前的分析进度，并使用当前页面上的模型和流程配置继续。"
-        : "正在恢复中断前的分析快照，并使用快照中保存的模型和流程配置继续。"
+        ? `正在恢复中断前的分析进度，并使用当前页面上的模型和流程配置继续。\n${formatActiveLlmRunSummary(resumeLlm)}`
+        : `正在恢复中断前的分析快照，并使用快照中保存的模型和流程配置继续。\n${formatActiveLlmRunSummary(resumeLlm)}`
     );
 
     try {

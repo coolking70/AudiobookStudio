@@ -53,6 +53,7 @@ from output_layout import (
 )
 from pipeline import ASR_MODEL_NAME, HF_CACHE_DIRS, MODEL_NAME, VOXCPM_MODEL_NAME, OmniVoicePipeline, VoxCPMPipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status, get_voxcpm_runtime_dependency_status
 from role_analyzer import (
+    AnalyzeDiagnostics,
     CHARACTER_ALIAS_RESOLUTION_PROMPT,
     DEFAULT_SYSTEM_PROMPT,
     SEGMENT_PLAN_PROMPT,
@@ -2133,10 +2134,12 @@ def segment_optimize_chunks(req: ChunkOptimizeRequest):
 def analyze_chunks(req: AnalyzeChunksRequest):
     try:
         chunks = [item.model_dump() for item in req.chunks]
-        segments = analyze_chunks_with_llm(chunks, req.llm)
+        diagnostics = AnalyzeDiagnostics()
+        segments = analyze_chunks_with_llm(chunks, req.llm, diagnostics=diagnostics)
         return {
             "ok": True,
             "segments": segments,
+            "analysis_meta": diagnostics.to_dict(segments),
         }
     except Exception as exc:
         raise_api_error(exc)
