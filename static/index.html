@@ -2411,7 +2411,7 @@
               <div id="structuredParseOptions" class="structured-options" hidden>
                 <label>
                   角色提示（可选，逗号分隔）
-                  <input id="roleHintsInput" type="text" placeholder="例：张三,李四,王五" />
+                  <input id="roleHintsInput" type="text" placeholder='例：{"张三":["三哥"],"李四":[]} 或 张三,李四' />
                 </label>
                 <label>
                   第一人称叙述者（可选，填主角名）
@@ -10150,9 +10150,21 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function buildRoleHintsPrompt() {
-    const text = (document.getElementById("sourceText")?.value || "").trim();
-    const sample = text.length > 12000 ? `${text.slice(0, 12000)}\n\n【后文省略】` : text;
-    return `你是小说角色表整理助手。请从下面文本中提取适合 BookVoiceParser 使用的角色提示列表。\n\n输出要求：\n1. 只输出一行角色名列表，用中文逗号分隔。\n2. 只保留人物/明确拟人角色的标准姓名或常用称呼，不要输出“旁白”“众人”“大家”“他”“她”。\n3. 同一角色有多个称呼时，只输出最稳定的主名称。\n4. 不要解释，不要 Markdown，不要编号。\n\n输出示例：张三，李四，王五\n\n【待分析文本】\n${sample || "（请把小说原文粘贴在这里）"}`;
+    return `你是小说角色表整理助手。我会另外提供文本，请从中提取适合 BookVoiceParser 使用的角色提示，以 JSON 字典格式输出。
+
+【规则】
+1. 字典的键为角色的标准全名（最稳定的称呼，优先真实姓名）。
+2. 字典的值为该角色的别名列表，包括：
+   - 简称（如”真唯”→”王冢真唯”的简称）
+   - 敬称/职称变体（如”陆公子”、”殿下”、”队长”）
+   - 亲属称谓（如”妈妈”、”爸爸”、”兄长”），前提是该称谓在文中专指某一固定角色
+3. 若角色无别名，值填空列表 []。
+4. 不要输出”旁白””未知””众人””大家””他””她”等非固定角色。
+5. 亲属称谓（爸爸、妈妈等）只有在文中专指某一角色时才作为别名加入，不要单独作为键。
+6. 只输出 JSON，不要解释、不要 Markdown 代码块、不要编号。
+
+【输出示例】
+{“王冢真唯”: [“真唯”], “空音朱音”: [“朱音”, “队长”], “甘织玲奈子”: [“玲奈子”, “妈妈”], “大泽木小鞠”: []}`;
   }
 
   async function copyRoleHintsPrompt() {
@@ -10228,9 +10240,15 @@ very high pitch, very low pitch, whisper, young adult
     if (!text) return;
 
     const roleHintsRaw = (document.getElementById("roleHintsInput")?.value || "").trim();
-    const roleHints = roleHintsRaw
-      ? roleHintsRaw.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean)
-      : null;
+    let roleHints = null;
+    if (roleHintsRaw) {
+      if (roleHintsRaw.trimStart().startsWith("{")) {
+        try { roleHints = JSON.parse(roleHintsRaw); } catch { roleHints = null; }
+      }
+      if (!roleHints) {
+        roleHints = roleHintsRaw.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
+      }
+    }
     const useLlmReview = document.getElementById("useLlmReview")?.checked || false;
     const useBatchLlm = document.getElementById("useBatchLlm")?.checked || false;
     const narratorRaw = (document.getElementById("narratorInput")?.value || "").trim();
