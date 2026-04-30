@@ -10229,6 +10229,53 @@ very high pitch, very low pitch, whisper, young adult
     return indices;
   }
 
+  async function parseBatchLlmStream(payload, useLlmReview) {
+    const response = await fetch("/api/parse_v2/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return { ok: false, error: err.detail || err.error || `HTTP ${response.status}` };
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      if (taskCancelled) throw new Error("任务已取消");
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        let event;
+        try { event = JSON.parse(line.slice(6)); } catch { continue; }
+        if (event.type === "ping") continue;
+        if (event.type === "progress") {
+          const pct = event.total > 0 ? Math.round(12 + (event.done / event.total) * (useLlmReview ? 40 : 70)) : 12;
+          setProgress({
+            stage: "analyze",
+            summary: `BatchLLM 归因中 ${event.done} / ${event.total} 条`,
+            detail: `已完成 ${event.done} 条台词的 LLM 归因，共 ${event.total} 条。`,
+            percent: pct,
+            total: event.total,
+            done: event.done,
+            indeterminate: false,
+          }, { log: `BatchLLM 进度 ${event.done}/${event.total}` });
+          setStructuredParseStatus(`BatchLLM 归因中：已完成 ${event.done} / ${event.total} 条台词。`);
+        } else if (event.type === "complete") {
+          return { ok: true, segments: event.segments || [], stats: event.stats || {} };
+        } else if (event.type === "error") {
+          return { ok: false, error: event.error || "BatchLLM 解析失败" };
+        }
+      }
+    }
+    return { ok: false, error: "SSE 流意外结束" };
+  }
+
   function toggleBatchLlmOptions() {
     const checked = document.getElementById("useBatchLlm")?.checked;
     const opts = document.getElementById("batchLlmOptions");
@@ -10286,8 +10333,16 @@ very high pitch, very low pitch, whisper, young adult
         indeterminate: false,
       }, { log: "已提交结构化解析任务" });
 
-      setStructuredParseStatus("规则解析中：正在抽取台词、生成候选说话人、匹配显式说话提示并计算置信度。");
-      const resp = await withLlmRequestProgress(
+      setStructuredParseStatus(useBatchLlm
+        ? "BatchLLM 解析中：规则层抽取台词后分批送 LLM 归因，进度将逐批更新。"
+        : "规则解析中：正在抽取台词、生成候选说话人、匹配显式说话提示并计算置信度。");
+
+      // BatchLLM 启用时使用 SSE 流式端点，实时显示每批进度
+      let resp;
+      if (useBatchLlm) {
+        resp = await parseBatchLlmStream(payload, useLlmReview);
+      } else {
+        resp = await withLlmRequestProgress(
         () => fetchJson("/api/parse_v2", payload),
         {
           stage: "analyze",
@@ -10304,7 +10359,8 @@ very high pitch, very low pitch, whisper, young adult
           intervalMs: 2500,
           slowAfterSeconds: 8,
         }
-      );
+        );
+      }
       if (!resp.ok) throw new Error(resp.error || "parse_v2 失败");
 
       let segments = resp.segments || [];

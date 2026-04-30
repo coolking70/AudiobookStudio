@@ -46,11 +46,12 @@ def _append_evidence(seg: SegmentEx, note: str) -> None:
 
 
 # ── 修正 1：场景约束 ──────────────────────────────────────────────────────
-def _apply_scene_constraint(segments: list[SegmentEx]) -> None:
+def _apply_scene_constraint(segments: list[SegmentEx], narrator: str | None = None) -> None:
     """
     若 scene_characters 非空且说话人不在其中，降低 confidence。
     scene_characters 由 candidate_gen 根据上下文人名窗口生成，
     不在场景里的人说话大概率是误判。
+    叙述者（narrator）以第一人称叙事，名字不会出现在自己的上下文窗口，豁免此约束。
     """
     for seg in segments:
         if not _is_fixable(seg):
@@ -59,6 +60,8 @@ def _apply_scene_constraint(segments: list[SegmentEx]) -> None:
             continue
         if seg.speaker in seg.scene_characters:
             continue
+        if narrator and seg.speaker == narrator:
+            continue  # 叙述者豁免：其名字不出现在上下文是正常现象，不扣分
         # 说话人不在场景中，扣分
         seg.confidence = _clamp(seg.confidence - SCENE_PENALTY)
         _append_evidence(seg, f"场景约束：{seg.speaker} 不在 scene_characters")
@@ -250,16 +253,16 @@ def _apply_addressee_trap_check(segments: list[SegmentEx]) -> None:
 
 
 # ── 主入口 ────────────────────────────────────────────────────────────────
-def fix_consistency(segments: list[SegmentEx]) -> list[SegmentEx]:
+def fix_consistency(segments: list[SegmentEx], narrator: str | None = None) -> list[SegmentEx]:
     """
     对 SegmentEx 列表做全局一致性修正（in-place）。
 
     顺序：场景约束 → 受话人陷阱 → 跳变检测 → 双人重复惩罚 → 连续轮替 → 旁白下压
     """
-    _apply_scene_constraint(segments)
-    _apply_addressee_trap_check(segments)   # 新增：受话人陷阱
+    _apply_scene_constraint(segments, narrator=narrator)
+    _apply_addressee_trap_check(segments)
     _apply_jump_detection(segments)
-    _apply_two_person_repeat_penalty(segments)  # 新增：双人重复惩罚
+    _apply_two_person_repeat_penalty(segments)
     _apply_alternation(segments)
     _apply_unknown_penalty(segments)
     return segments

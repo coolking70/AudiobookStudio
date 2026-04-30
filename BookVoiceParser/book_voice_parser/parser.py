@@ -145,18 +145,26 @@ def _attribute_narrator_anchored(
     """
     台词含「我」时，归因给主视角叙述者（日式轻小说常用主角固定视角）。
 
-    置信度 0.82：中高置信，允许 fix_consistency 层进一步调整，
-    但足够高以压过 implicit 层的随机猜测。
+    置信度 0.82：中高置信，允许 fix_consistency 层进一步调整。
+
+    误触发守卫：若叙述者的简称出现在台词文本中（被称呼为受话人），
+    说明说话人另有其人，不归因给叙述者。
+    例：「怎么了，玲奈子？看来，是重新迷上我了吗？」→ 真唯在对玲奈子说话。
     """
-    if _FIRST_PERSON_RE.search(quote.text or ""):
-        return Attribution(
-            quote_id=quote.quote_id,
-            speaker=narrator,
-            confidence=0.82,
-            evidence="一人称代词「我」→叙述者锚点",
-            attribution_type=AttributionType.IMPLICIT,
-        )
-    return None
+    if not _FIRST_PERSON_RE.search(quote.text or ""):
+        return None
+    # 守卫：叙述者名字（全名或末2字简称）出现在台词内 → 是受话对象，非说话人
+    narrator_short = narrator[-2:] if len(narrator) >= 2 else narrator
+    text = quote.text or ""
+    if narrator in text or (narrator_short and narrator_short in text):
+        return None
+    return Attribution(
+        quote_id=quote.quote_id,
+        speaker=narrator,
+        confidence=0.82,
+        evidence="一人称代词「我」→叙述者锚点",
+        attribution_type=AttributionType.IMPLICIT,
+    )
 
 
 # ── P2：对话块检测 ────────────────────────────────────────────────────────────
@@ -214,6 +222,7 @@ def _parse_with_batch_llm(
     review_threshold: float,
     include_narration: bool,
     initial_recent_speakers: list[str] | None = None,
+    on_progress: Any | None = None,
 ) -> list[SegmentEx] | ParseResult:
     """
     使用 BatchLLMAttributor 的完整归因路径。
@@ -232,7 +241,7 @@ def _parse_with_batch_llm(
     all_candidates: dict[str, CandidateSet] = {}
     for quote in quotes:
         cset = generate_candidates(quote, aliases=aliases, nlp_backend=ner_backend,
-                                   recent_speakers=recent_speakers_acc)
+                                   recent_speakers=recent_speakers_acc, narrator=narrator)
         all_candidates[quote.quote_id] = cset
 
     # ② 预过滤：纯规则层（高精确率，低召回率）
@@ -270,6 +279,7 @@ def _parse_with_batch_llm(
             all_candidates,
             role_hints=role_hints_list,
             block_hints=block_hints,
+            on_progress=on_progress,
         )
 
     # ④ 合并并按文档顺序构建 SegmentEx
@@ -318,7 +328,7 @@ def _parse_with_batch_llm(
     if include_narration and cursor < len(cleaned):
         _append_narrator_segments(segments, cleaned[cursor:], "tail")
 
-    segments = fix_consistency(segments)
+    segments = fix_consistency(segments, narrator=narrator)
     result = ParseResult(
         segments=segments,
         review_items=collect_review_items(segments, threshold=review_threshold),
@@ -351,6 +361,7 @@ def parse_novel(
     implicit_ranker: CandidateRanker | None = None,
     include_narration: bool = False,
     initial_recent_speakers: list[str] | None = None,
+    on_progress: Any | None = None,
 ) -> list[SegmentEx] | ParseResult:
     """Parse Chinese novel text into speaker-attributed TTS segments.
 
@@ -395,6 +406,7 @@ def parse_novel(
             review_threshold=review_threshold,
             include_narration=include_narration,
             initial_recent_speakers=initial_recent_speakers,
+            on_progress=on_progress,
         )
 
     # ── 经典逐条路径（兼容旧接口）──────────────────────────────────────────────
@@ -418,6 +430,7 @@ def parse_novel(
             aliases=aliases,
             recent_speakers=recent_speakers,
             nlp_backend=ner_backend,
+            narrator=narrator,
         )
 
         # P1a：自我介绍优先
@@ -468,7 +481,7 @@ def parse_novel(
     if include_narration and cursor < len(cleaned):
         _append_narrator_segments(segments, cleaned[cursor:], "tail")
 
-    segments = fix_consistency(segments)
+    segments = fix_consistency(segments, narrator=narrator)
     result = ParseResult(
         segments=segments,
         review_items=collect_review_items(segments, threshold=review_threshold),

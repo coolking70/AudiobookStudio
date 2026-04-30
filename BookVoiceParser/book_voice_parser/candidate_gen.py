@@ -80,6 +80,7 @@ def generate_candidates(
     recent_speakers: list[str] | None = None,
     nlp_backend: NERBackend | None = None,
     max_candidates: int = 8,
+    narrator: str | None = None,
 ) -> CandidateSet:
     aliases = aliases or AliasRegistry()
     recent_speakers = recent_speakers or []
@@ -123,6 +124,11 @@ def generate_candidates(
             _add_candidate(names, sources, role, "role_hints_fallback", aliases)
         # 允许更多候选位，让 LLM 有完整选项
         max_candidates = max(max_candidates, len(aliases.known_names()) + 2)
+
+    # narrator 始终保留在候选集中（叙述者视角下其名字不会出现在自己的上下文窗口里）
+    if narrator and narrator not in names:
+        names.append(narrator)
+        sources.setdefault(narrator, []).append("narrator_anchor")
 
     counts = Counter(names)
     before = quote.context_before

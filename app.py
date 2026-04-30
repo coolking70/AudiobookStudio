@@ -37,8 +37,8 @@ except ImportError:
     WinSpeechSynthesizer = None
     DataReader = None
     InputStreamOptions = None
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from audio_utils import AudioDurationValidationError, build_lrc, join_wavs_auto, validate_audio_duration_for_text
@@ -2014,6 +2014,101 @@ def parse_text_v2(req: ParseV2Request):
         }
     except Exception as exc:
         raise_api_error(exc)
+
+
+@app.post("/api/parse_v2/stream")
+async def parse_v2_stream(req: ParseV2Request):
+    """
+    与 /api/parse_v2 相同的参数，但以 SSE 流式返回进度事件。
+    BatchLLM 每处理完一批台词就推送一条 progress 事件，最终推送 complete 事件。
+    """
+    import asyncio, json as _json, concurrent.futures
+
+    parse_novel, route_to_llm, _, OpenAICompatibleSPCRanker, _, _, BatchConfig = _load_book_voice_parser()
+
+    batch_llm_config = None
+    if req.use_batch_llm and req.llm:
+        batch_llm_config = BatchConfig(
+            base_url=str(req.llm.base_url),
+            model=str(req.llm.model),
+            api_key=str(req.llm.api_key) if req.llm.api_key else "lm-studio",
+            max_tokens=max(int(req.batch_llm_max_tokens or 8192), 4096),
+            temperature=float(req.llm.temperature or 0.0),
+            timeout=180,
+        )
+
+    implicit_ranker = None
+    if req.implicit_strategy == "llm_spc" and req.llm and not batch_llm_config:
+        implicit_ranker = OpenAICompatibleSPCRanker(req.llm)
+
+    loop = asyncio.get_event_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def _sse(obj: dict) -> str:
+        return f"data: {_json.dumps(obj, ensure_ascii=False)}\n\n"
+
+    def on_progress(done: int, total: int):
+        asyncio.run_coroutine_threadsafe(
+            queue.put({"type": "progress", "done": done, "total": total}), loop
+        )
+
+    def run_parse():
+        try:
+            result = parse_novel(
+                req.text,
+                role_hints=req.role_hints,
+                narrator=req.narrator or None,
+                batch_llm_config=batch_llm_config,
+                return_result=True,
+                review_threshold=req.review_threshold,
+                implicit_strategy=req.implicit_strategy,
+                implicit_ranker=implicit_ranker,
+                include_narration=True,
+                on_progress=on_progress if batch_llm_config else None,
+            )
+            segments = result.segments
+            llm_stats = {}
+            if req.use_llm_review and req.llm:
+                segments, llm_stats = route_to_llm(
+                    segments,
+                    _build_bvp_llm_config(req.llm),
+                    threshold=req.review_threshold,
+                )
+            asyncio.run_coroutine_threadsafe(
+                queue.put({
+                    "type": "complete",
+                    "segments": [_bvp_segment_to_dict(s) for s in segments],
+                    "stats": {**result.stats, "llm_review": llm_stats,
+                              "review_items_count": len(result.review_items)},
+                }),
+                loop,
+            )
+        except Exception as e:
+            asyncio.run_coroutine_threadsafe(
+                queue.put({"type": "error", "error": str(e)}), loop
+            )
+
+    async def event_generator():
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = loop.run_in_executor(executor, run_parse)
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=25.0)
+                except asyncio.TimeoutError:
+                    yield _sse({"type": "ping"})
+                    continue
+                yield _sse(event)
+                if event.get("type") in ("complete", "error"):
+                    break
+        finally:
+            executor.shutdown(wait=False)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/parse_v2/review")

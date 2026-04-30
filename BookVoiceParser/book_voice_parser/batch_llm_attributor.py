@@ -51,7 +51,7 @@ class BatchConfig:
     max_tokens: int = 4096           # 批量输出需要更多 token（Qwen3 thinking 模式下建议 ≥4096）
     temperature: float = 0.0
     timeout: int = 180               # 秒，批处理比单条慢
-    context_chars: int = 200         # 每条台词截取的前后文字符数
+    context_chars: int = 80          # 每条台词截取的前后文字符数（减少 token 消耗）
     max_retries: int = 2             # 解析失败后重试次数
     disable_thinking: bool = True    # 禁用 Qwen3/DeepSeek 等模型的扩展思考模式
 
@@ -61,9 +61,9 @@ class BatchConfig:
 _SYSTEM_PROMPT = """\
 你是一个中文/中译日式小说的说话人归因专家。判断每句台词最可能的说话人。
 
-【优先级最高：紧前文动作主语】
-每条台词都有 [紧前文]（台词引号前的最后 50 字）。
-若 [紧前文] 中出现「X 说/道/问/答/开口/笑道/喊道」等表达，X 即说话人，
+【优先级最高：前文末尾动作主语】
+每条台词都有 [前文]（台词引号前约 80 字）。
+若 [前文] 末尾出现「X 说/道/问/答/开口/笑道/喊道」等表达，X 即说话人，
 置信度设 0.92+，不允许被候选排序或角色知名度覆盖。
 例：「玲奈子深吸一口气，说道：」→ 玲奈子是说话人，即使王冢真唯是主角也不能改。
 
@@ -110,7 +110,6 @@ _USER_TEMPLATE = """\
 _QUOTE_ITEM_TEMPLATE = """\
 --- 台词 {idx} | id: {quote_id} | 候选人: {candidates} | 上一句说话人: {prev_speaker}{block_hint} ---
 [前文] {context_before}
-[紧前文(最重要)] {context_before_tail}
 [台词] {quote_text}
 [后文] {context_after}
 {addressee_hint}"""
@@ -179,8 +178,6 @@ def _build_prompt(
         # 受话人陷阱检测
         addressee_hint = _detect_addressee_trap(quote.context_before or "", role_hints)
 
-        cb_tail = (quote.context_before or "")[-50:].strip()
-
         part = _QUOTE_ITEM_TEMPLATE.format(
             idx=i + 1,
             quote_id=quote.quote_id,
@@ -188,7 +185,6 @@ def _build_prompt(
             prev_speaker=prev_sp,
             block_hint=block_hint_str,
             context_before=cb or "（无前文）",
-            context_before_tail=cb_tail or "（无紧前文）",
             quote_text=quote.text,
             context_after=ca or "（无后文）",
             addressee_hint=addressee_hint,
@@ -215,23 +211,48 @@ _ATTR_TYPE_MAP = {
 }
 
 
+def _extract_json_array(text: str) -> list | None:
+    """从 LLM 原始输出中提取 JSON 数组，支持思维链模型的多种输出格式。"""
+    # 1. 剥离 <think>...</think> 块（完整或因 max_tokens 截断的残缺块）
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<think>.*$", "", text, flags=re.DOTALL)  # 残缺 <think>（无闭合标签）
+    text = text.strip()
+
+    # 2. 优先从代码围栏提取（```json ... ``` 或 ``` ... ```）
+    fence = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", text, re.DOTALL)
+    if fence:
+        try:
+            return json.loads(fence.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # 3. 找文本中最后一个 [...] 块（思维链可能在前面产生伪数组）
+    spans = [(m.start(), m.end()) for m in re.finditer(r"\[", text)]
+    for start in reversed(spans):
+        # 从每个 [ 开始往后找匹配的 ]
+        depth = 0
+        for i, ch in enumerate(text[start[0]:]):
+            if ch == "[":
+                depth += 1
+            elif ch == "]":
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start[0]: start[0] + i + 1]
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        break  # 这个 [ 不行，试上一个
+    return None
+
+
 def _parse_llm_response(text: str, batch: list[tuple[QuoteSpan, CandidateSet]]) -> list[Attribution]:
     """从 LLM 输出中解析归因结果，失败返回空列表。"""
-    # 提取 JSON 数组
-    text = text.strip()
-    # 移除 Qwen3 的 <think>...</think> 块
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-
-    # 找 [ ... ]
-    m = re.search(r"\[.*\]", text, re.DOTALL)
-    if not m:
+    items = _extract_json_array(text)
+    if items is None:
         logger.warning("LLM response contains no JSON array")
         return []
-
-    try:
-        items = json.loads(m.group())
-    except json.JSONDecodeError as e:
-        logger.warning(f"JSON parse failed: {e}")
+    if not isinstance(items, list):
+        logger.warning(f"JSON root is not an array: {type(items)}")
         return []
 
     # 建 id→QuoteSpan 映射
