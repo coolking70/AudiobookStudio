@@ -51,7 +51,8 @@ class BatchConfig:
     max_tokens: int = 4096           # 批量输出需要更多 token（Qwen3 thinking 模式下建议 ≥4096）
     temperature: float = 0.0
     timeout: int = 180               # 秒，批处理比单条慢
-    context_chars: int = 80          # 每条台词截取的前后文字符数（减少 token 消耗）
+    context_chars: int = 200         # 每条台词截取的前后文字符数
+    output_mode: str = "compact"     # "verbose"（JSON 数组）或 "compact"（管道分隔行）
     max_retries: int = 2             # 解析失败后重试次数
     disable_thinking: bool = True    # 禁用 Qwen3/DeepSeek 等模型的扩展思考模式
 
@@ -62,8 +63,8 @@ _SYSTEM_PROMPT = """\
 你是一个中文/中译日式小说的说话人归因专家。判断每句台词最可能的说话人。
 
 【优先级最高：前文末尾动作主语】
-每条台词都有 [前文]（台词引号前约 80 字）。
-若 [前文] 末尾出现「X 说/道/问/答/开口/笑道/喊道」等表达，X 即说话人，
+每条台词都有 [前文] 和 [紧前文(最重要)]（台词引号前最近约 40 字）。
+若 [紧前文] 末尾出现「X 说/道/问/答/开口/笑道/喊道」等表达，X 即说话人，
 置信度设 0.92+，不允许被候选排序或角色知名度覆盖。
 例：「玲奈子深吸一口气，说道：」→ 玲奈子是说话人，即使王冢真唯是主角也不能改。
 
@@ -92,6 +93,43 @@ attribution_type: explicit_before | explicit_after | implicit | latent | group |
 不要输出任何解释，只输出 JSON 数组。不确定时 confidence 填低值，不要猜测。
 """
 
+_SYSTEM_PROMPT_COMPACT = """\
+你是一个中文/中译日式小说的说话人归因专家。判断每句台词最可能的说话人。
+
+【优先级最高：前文末尾动作主语】
+每条台词都有 [前文] 和 [紧前文(最重要)]（台词引号前最近约 40 字）。
+若 [紧前文] 末尾出现「X 说/道/问/答/开口/笑道/喊道」等表达，X 即说话人，
+置信度设 0.92+，不允许被候选排序或角色知名度覆盖。
+例：「玲奈子深吸一口气，说道：」→ 玲奈子是说话人，即使王冢真唯是主角也不能改。
+
+【关键区分：动作主语 vs 被提及对象】
+以下两类上下文中出现的角色名，"不是"台词说话人：
+  ① 对象/受话人：「对着真唯说道」「朝她问道」「冲玲奈子笑」→ 说话人另有其人
+  ② 被观察者：「看见真唯站在那里」「眼见她点头」→ 说话人是观察者
+真正的说话人是动作的主语，例如：
+  「真唯压住长发，开口说道：」→ 真唯是说话人（主语）✓
+  「我望着真唯，如此说道：」 → 我（叙述者）是说话人（主语），真唯只是被提及 ✓
+
+【对话轮换】
+- 每条台词都附有[上一条说话人]信息，若上一条已确认是A，当前无归属标记时应优先考虑B
+- 连续多句相同说话人需要有支撑证据，不要仅因为"方便"就连续归给同一人
+- 禁止"知名度偏差"：不要因为某角色是主角/更重要就优先选择，要依据证据
+
+【对话块】
+- 标有「对话块#N 第M/K句」的台词属于同一段连续对话（原文中紧密相邻）
+- 同一对话块内，若无明确归属标记，应严格交替归因（A→B→A→B...）
+- 每轮新的对话块重新判断首句归属，不要无根据地沿用上一块的顺序
+
+【输出格式】
+每行一条，格式：序号|说话人|置信度|类型|依据(≤15字)
+类型缩写：eb=explicit_before, ea=explicit_after, im=implicit, la=latent, gr=group, un=unknown
+例：
+1|王冢真唯|0.92|eb|前文「真唯说道」
+2|甘织玲奈子|0.70|im|上句真唯，轮换
+3|旁白|0.95|eb|无引号叙述
+不要输出任何解释或多余文本，只输出上述格式的行。
+"""
+
 _USER_TEMPLATE = """\
 角色列表：{role_list}
 （第一人称叙述者"我"通常映射到角色列表中的某一固定角色，请结合上下文判断）
@@ -107,9 +145,19 @@ _USER_TEMPLATE = """\
 ]
 """
 
+_USER_TEMPLATE_COMPACT = """\
+角色列表：{role_list}
+（第一人称叙述者"我"通常映射到角色列表中的某一固定角色，请结合上下文判断）
+
+请对以下 {count} 条台词逐一归因，每行输出：序号|说话人|置信度|类型|依据
+
+{quotes_block}
+"""
+
 _QUOTE_ITEM_TEMPLATE = """\
 --- 台词 {idx} | id: {quote_id} | 候选人: {candidates} | 上一句说话人: {prev_speaker}{block_hint} ---
 [前文] {context_before}
+[紧前文(最重要)] {context_before_tail}
 [台词] {quote_text}
 [后文] {context_after}
 {addressee_hint}"""
@@ -145,11 +193,13 @@ def _build_prompt(
     context_chars: int,
     prev_speakers: list[str] | None = None,
     block_hints: dict[str, str] | None = None,
+    output_mode: str = "compact",
 ) -> tuple[str, str]:
     """返回 (system_prompt, user_prompt)
 
     Args:
-        block_hints: {quote_id: "对话块#N 第M/K句"} —— 由 parser 层传入，注入提示词。
+        block_hints:  {quote_id: "对话块#N 第M/K句"} —— 由 parser 层传入，注入提示词。
+        output_mode:  "compact"（管道分隔行，减少输出 token）或 "verbose"（JSON 数组）
     """
     role_list = "、".join(role_hints) if role_hints else "（未指定，从上下文推断）"
     prev_speakers = prev_speakers or []
@@ -158,6 +208,7 @@ def _build_prompt(
     quotes_block_parts = []
     for i, (quote, cset) in enumerate(batch):
         cb = (quote.context_before or "")[-context_chars:]
+        cb_tail = cb[-40:]  # 紧前文：最靠近台词的 40 字，是最重要的归因线索
         ca = (quote.context_after or "")[:context_chars]
         candidates_str = "、".join(c for c in (cset.candidates or []) if c not in {"旁白", "未知"})
         if not candidates_str:
@@ -185,18 +236,28 @@ def _build_prompt(
             prev_speaker=prev_sp,
             block_hint=block_hint_str,
             context_before=cb or "（无前文）",
+            context_before_tail=cb_tail or "（无紧前文）",
             quote_text=quote.text,
             context_after=ca or "（无后文）",
             addressee_hint=addressee_hint,
         )
         quotes_block_parts.append(part)
 
-    user_prompt = _USER_TEMPLATE.format(
-        role_list=role_list,
-        count=len(batch),
-        quotes_block="\n".join(quotes_block_parts),
-    )
-    return _SYSTEM_PROMPT, user_prompt
+    quotes_block = "\n".join(quotes_block_parts)
+    if output_mode == "compact":
+        user_prompt = _USER_TEMPLATE_COMPACT.format(
+            role_list=role_list,
+            count=len(batch),
+            quotes_block=quotes_block,
+        )
+        return _SYSTEM_PROMPT_COMPACT, user_prompt
+    else:
+        user_prompt = _USER_TEMPLATE.format(
+            role_list=role_list,
+            count=len(batch),
+            quotes_block=quotes_block,
+        )
+        return _SYSTEM_PROMPT, user_prompt
 
 
 # ── JSON 解析 ──────────────────────────────────────────────────────────────
@@ -243,6 +304,69 @@ def _extract_json_array(text: str) -> list | None:
                     except json.JSONDecodeError:
                         break  # 这个 [ 不行，试上一个
     return None
+
+
+_COMPACT_TYPE_MAP = {
+    "eb": AttributionType.EXPLICIT_BEFORE,
+    "ea": AttributionType.EXPLICIT_AFTER,
+    "im": AttributionType.IMPLICIT,
+    "la": AttributionType.LATENT,
+    "gr": AttributionType.GROUP,
+    "un": AttributionType.UNKNOWN,
+    # 兼容全称
+    "explicit_before": AttributionType.EXPLICIT_BEFORE,
+    "explicit_after":  AttributionType.EXPLICIT_AFTER,
+    "implicit":        AttributionType.IMPLICIT,
+    "latent":          AttributionType.LATENT,
+    "group":           AttributionType.GROUP,
+    "unknown":         AttributionType.UNKNOWN,
+}
+
+
+def _parse_compact_response(text: str, batch: list[tuple[QuoteSpan, CandidateSet]]) -> list[Attribution]:
+    """解析紧凑管道分隔格式的 LLM 输出：序号|说话人|置信度|类型|依据"""
+    # 剥离思维链
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<think>.*$", "", text, flags=re.DOTALL)
+    text = text.strip()
+
+    results: list[Attribution] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("|")
+        if len(parts) < 4:
+            continue
+        idx_str, speaker = parts[0].strip(), parts[1].strip()
+        if not idx_str.isdigit():
+            continue
+        idx = int(idx_str) - 1
+        if idx < 0 or idx >= len(batch):
+            logger.debug(f"Compact: index {idx+1} out of range (batch size {len(batch)})")
+            continue
+
+        try:
+            confidence = float(parts[2].strip())
+        except ValueError:
+            confidence = 0.5
+        confidence = min(max(confidence, 0.0), 1.0)
+
+        attr_str = parts[3].strip()
+        attr_type = _COMPACT_TYPE_MAP.get(attr_str, AttributionType.IMPLICIT)
+
+        evidence = parts[4].strip() if len(parts) > 4 else ""
+
+        quote = batch[idx][0]
+        results.append(Attribution(
+            quote_id=quote.quote_id,
+            speaker=speaker,
+            confidence=confidence,
+            evidence=evidence,
+            attribution_type=attr_type,
+        ))
+
+    return results
 
 
 def _parse_llm_response(text: str, batch: list[tuple[QuoteSpan, CandidateSet]]) -> list[Attribution]:
@@ -373,12 +497,16 @@ class BatchLLMAttributor:
             prev_speakers:  批次前的最近若干说话人（用于对话轮换上下文）
             block_hints:    {quote_id: "对话块#N 第M/K句"}，注入 prompt（P2）
         """
-        system, user = _build_prompt(batch, role_hints, self.cfg.context_chars, prev_speakers, block_hints)
+        system, user = _build_prompt(
+            batch, role_hints, self.cfg.context_chars, prev_speakers, block_hints,
+            output_mode=self.cfg.output_mode,
+        )
+        parse_fn = _parse_compact_response if self.cfg.output_mode == "compact" else _parse_llm_response
 
         for attempt in range(self.cfg.max_retries + 1):
             try:
                 raw = self._call_llm(system, user)
-                results = _parse_llm_response(raw, batch)
+                results = parse_fn(raw, batch)
                 if results:
                     logger.debug(f"Batch {len(batch)} quotes → {len(results)} attributions")
                     return results
