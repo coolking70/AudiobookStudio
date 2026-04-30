@@ -2413,12 +2413,26 @@
                   角色提示（可选，逗号分隔）
                   <input id="roleHintsInput" type="text" placeholder="例：张三,李四,王五" />
                 </label>
+                <label>
+                  第一人称叙述者（可选，填主角名）
+                  <input id="narratorInput" type="text" placeholder="例：甘织玲奈子" />
+                </label>
                 <button type="button" class="secondary" onclick="copyRoleHintsPrompt()">复制角色提示词</button>
                 <label class="structured-check">
-                  <input type="checkbox" id="useLlmReview" />
-                  <span>对低置信度片段使用 LLM 复核（使用当前文本模型配置）</span>
+                  <input type="checkbox" id="useBatchLlm" onchange="toggleBatchLlmOptions()" />
+                  <span>使用 BatchLLM 主管线（推荐，使用当前文本模型配置）</span>
                 </label>
-                <div class="mini-note" style="margin:0;">规则层直接抽取台词并归属说话人，速度更快；低置信度片段会标注证据，适合先快速得到可人工核查的分段。</div>
+                <div id="batchLlmOptions" hidden style="margin-left:20px;display:flex;align-items:center;gap:8px;">
+                  <label style="font-size:0.85em;margin:0;">max_tokens
+                    <input id="batchLlmMaxTokens" type="number" value="8192" min="4096" max="32768" step="1024" style="width:90px;" />
+                  </label>
+                  <span class="mini-note" style="margin:0;">思考模型建议 8192+</span>
+                </div>
+                <label class="structured-check">
+                  <input type="checkbox" id="useLlmReview" />
+                  <span>对低置信度片段使用 LLM 复核（规则层完成后再处理）</span>
+                </label>
+                <div class="mini-note" style="margin:0;">BatchLLM 主管线同时处理所有台词，准确率更高；规则层速度更快，低置信度片段可事后 LLM 复核。</div>
               </div>
             </div>
 
@@ -10203,6 +10217,12 @@ very high pitch, very low pitch, whisper, young adult
     return indices;
   }
 
+  function toggleBatchLlmOptions() {
+    const checked = document.getElementById("useBatchLlm")?.checked;
+    const opts = document.getElementById("batchLlmOptions");
+    if (opts) opts.hidden = !checked;
+  }
+
   async function runStructuredParseFlow() {
     const text = validateSourceText();
     if (!text) return;
@@ -10212,9 +10232,13 @@ very high pitch, very low pitch, whisper, young adult
       ? roleHintsRaw.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean)
       : null;
     const useLlmReview = document.getElementById("useLlmReview")?.checked || false;
+    const useBatchLlm = document.getElementById("useBatchLlm")?.checked || false;
+    const narratorRaw = (document.getElementById("narratorInput")?.value || "").trim();
+    const narrator = narratorRaw || null;
+    const batchLlmMaxTokens = parseInt(document.getElementById("batchLlmMaxTokens")?.value || "8192", 10);
 
     let llm = null;
-    if (useLlmReview) {
+    if (useLlmReview || useBatchLlm) {
       llm = validateLLMConfig();
       if (!llm) return;
     }
@@ -10222,7 +10246,16 @@ very high pitch, very low pitch, whisper, young adult
     beginTask("parse", "结构化解析中…", "使用 BookVoiceParser 规则层抽取台词并归属说话人，低置信度片段将标注证据。");
     try {
       const reviewThreshold = 0.7;
-      const payload = { text, role_hints: roleHints, use_llm_review: false, review_threshold: reviewThreshold };
+      const payload = {
+        text,
+        role_hints: roleHints,
+        narrator,
+        use_llm_review: false,
+        use_batch_llm: useBatchLlm,
+        batch_llm_max_tokens: batchLlmMaxTokens,
+        review_threshold: reviewThreshold,
+        ...(llm ? { llm } : {}),
+      };
 
       setStructuredParseStatus(`准备解析：已读取 ${text.length} 个字符，正在提交到 BookVoiceParser。`);
       setProgress({

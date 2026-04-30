@@ -38,13 +38,14 @@ try:
 except ImportError:
     VoxCPM = None
 
-from audio_utils import join_wavs_auto
+from audio_utils import AudioDurationValidationError, join_wavs_auto, validate_audio_duration_for_text
 from output_layout import build_segment_output_path, resolve_named_output_path
 
 
 MODEL_NAME = "k2-fsa/OmniVoice"
 VOXCPM_MODEL_NAME = "openbmb/VoxCPM2"
 ASR_MODEL_NAME = "openai/whisper-large-v3-turbo"
+DEFAULT_TTS_DURATION_MAX_RETRIES = 2
 
 
 def _iter_hf_cache_roots() -> list[Path]:
@@ -112,6 +113,41 @@ DEFAULT_ROLE_STYLES = {
     "张三": "male, young adult, low pitch",
     "李四": "male, middle-aged, low pitch",
 }
+
+
+def _get_tts_duration_max_retries() -> int:
+    raw = os.getenv("AUDIOBOOK_TTS_DURATION_MAX_RETRIES", "").strip()
+    if not raw:
+        return DEFAULT_TTS_DURATION_MAX_RETRIES
+    try:
+        return max(0, min(5, int(raw)))
+    except ValueError:
+        return DEFAULT_TTS_DURATION_MAX_RETRIES
+
+
+def _remove_invalid_audio(path: str | Path) -> None:
+    try:
+        Path(path).unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _duration_checked_synthesize(text: str, output_path: str | Path, synthesize_once) -> dict:
+    max_retries = _get_tts_duration_max_retries()
+    last_error: AudioDurationValidationError | None = None
+    for attempt in range(1, max_retries + 2):
+        synthesize_once()
+        try:
+            return validate_audio_duration_for_text(output_path, text)
+        except AudioDurationValidationError as exc:
+            last_error = exc
+            _remove_invalid_audio(output_path)
+            if attempt > max_retries:
+                raise
+            print(f"[tts-duration-check] 第 {attempt} 次生成时长异常，正在重试：{exc}")
+    if last_error:
+        raise last_error
+    raise RuntimeError("音频时长校验失败。")
 
 
 _ORIGINAL_TORCHAUDIO_LOAD = torchaudio.load if torchaudio is not None else None
@@ -625,12 +661,16 @@ class OmniVoicePipeline:
             style = None if ref_audio else (seg.get("style") or profile.get("style"))
 
             wav_path = build_segment_output_path(base_name, idx)
-            self.synthesize_segment(
-                text=text,
-                output_path=wav_path,
-                instruct=style,
-                ref_audio=ref_audio,
-                ref_text=ref_text,
+            _duration_checked_synthesize(
+                text,
+                wav_path,
+                lambda: self.synthesize_segment(
+                    text=text,
+                    output_path=wav_path,
+                    instruct=style,
+                    ref_audio=ref_audio,
+                    ref_text=ref_text,
+                ),
             )
             wav_paths.append(str(wav_path))
 

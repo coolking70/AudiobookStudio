@@ -227,9 +227,15 @@ class ParseV2Request(BaseModel):
     text: str
     # 角色提示：列表 ["张三","李四"] 或别名字典 {"张三":["三哥","张公子"]}
     role_hints: Optional[Any] = None
+    # 第一人称叙述者角色名（如"甘织玲奈子"），设置后台词中「我」自动锚定到该角色
+    narrator: Optional[str] = None
+    # 是否使用 BatchLLM 主管线（推荐，含 P0/P1/P2/P3/P4 全流程）
+    use_batch_llm: bool = False
+    # BatchLLM 的 max_tokens（思考模式需要更大空间，建议 8192）
+    batch_llm_max_tokens: int = 8192
     # 是否对低置信度片段调用 LLM 复核（需提供 llm 配置）
     use_llm_review: bool = False
-    # LLM 配置（复用现有 LLMConfig，use_llm_review=True 时必填）
+    # LLM 配置（复用现有 LLMConfig，use_batch_llm 或 use_llm_review=True 时必填）
     llm: Optional[LLMConfig] = None
     # 低置信度阈值，低于此值才送 LLM 复核
     review_threshold: float = 0.7

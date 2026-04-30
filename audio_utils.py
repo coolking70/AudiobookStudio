@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 import numpy as np
 import soundfile as sf
@@ -6,6 +7,19 @@ import soundfile as sf
 DEFAULT_MAX_OUTPUT_BYTES = 512 * 1024 * 1024
 DEFAULT_MAX_SEGMENTS_PER_FILE = 750
 PCM16_BYTES_PER_SAMPLE = 2
+DEFAULT_TTS_CHARS_PER_SECOND = 3.8
+DEFAULT_TTS_WORDS_PER_SECOND = 2.4
+DEFAULT_TTS_MIN_DURATION_RATIO = 0.35
+DEFAULT_TTS_MAX_DURATION_RATIO = 2.8
+DEFAULT_TTS_MIN_ABSOLUTE_SECONDS = 0.45
+DEFAULT_TTS_MAX_ABSOLUTE_SECONDS = 4.0
+DEFAULT_TTS_MIN_UNITS_TO_VALIDATE = 2
+
+
+class AudioDurationValidationError(RuntimeError):
+    def __init__(self, message: str, details: dict[str, float | int | str | bool]):
+        super().__init__(message)
+        self.details = details
 
 
 def ensure_dir(path: str | Path) -> Path:
@@ -19,6 +33,78 @@ def get_wav_duration_seconds(wav_path: str | Path) -> float:
     if not info.samplerate:
         return 0.0
     return float(info.frames) / float(info.samplerate)
+
+
+def count_tts_text_units(text: str) -> dict[str, int]:
+    normalized = str(text or "")
+    cjk_chars = re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", normalized)
+    latin_words = re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", normalized)
+    punctuation_pauses = re.findall(r"[，。！？、；：,.!?;:]", normalized)
+    return {
+        "cjk_chars": len(cjk_chars),
+        "latin_words": len(latin_words),
+        "punctuation_pauses": len(punctuation_pauses),
+        "units": len(cjk_chars) + len(latin_words),
+    }
+
+
+def estimate_tts_duration_bounds(text: str) -> dict[str, float | int | str | bool]:
+    units = count_tts_text_units(text)
+    if units["units"] < DEFAULT_TTS_MIN_UNITS_TO_VALIDATE:
+        return {
+            **units,
+            "enabled": False,
+            "estimated_seconds": 0.0,
+            "min_seconds": 0.0,
+            "max_seconds": 0.0,
+            "reason": "text_too_short",
+        }
+
+    cjk_seconds = units["cjk_chars"] / DEFAULT_TTS_CHARS_PER_SECOND
+    latin_seconds = units["latin_words"] / DEFAULT_TTS_WORDS_PER_SECOND
+    pause_seconds = min(units["punctuation_pauses"] * 0.12, (cjk_seconds + latin_seconds) * 0.25)
+    estimated = max(DEFAULT_TTS_MIN_ABSOLUTE_SECONDS, cjk_seconds + latin_seconds + pause_seconds)
+    min_seconds = max(DEFAULT_TTS_MIN_ABSOLUTE_SECONDS, estimated * DEFAULT_TTS_MIN_DURATION_RATIO)
+    max_seconds = max(DEFAULT_TTS_MAX_ABSOLUTE_SECONDS, estimated * DEFAULT_TTS_MAX_DURATION_RATIO + 2.0)
+    return {
+        **units,
+        "enabled": True,
+        "estimated_seconds": round(estimated, 3),
+        "min_seconds": round(min_seconds, 3),
+        "max_seconds": round(max_seconds, 3),
+        "reason": "ok",
+    }
+
+
+def validate_audio_duration_for_text(
+    wav_path: str | Path,
+    text: str,
+    *,
+    raise_on_invalid: bool = True,
+) -> dict[str, float | int | str | bool]:
+    bounds = estimate_tts_duration_bounds(text)
+    duration = get_wav_duration_seconds(wav_path)
+    result = {
+        **bounds,
+        "duration_seconds": round(duration, 3),
+        "path": str(wav_path),
+        "valid": True,
+    }
+    if not bounds.get("enabled"):
+        return result
+
+    min_seconds = float(bounds["min_seconds"])
+    max_seconds = float(bounds["max_seconds"])
+    if duration < min_seconds or duration > max_seconds:
+        result["valid"] = False
+        message = (
+            "生成音频时长异常："
+            f"文本约 {bounds['units']} 字/词，预计 {bounds['estimated_seconds']} 秒，"
+            f"允许范围 {min_seconds:.2f}-{max_seconds:.2f} 秒，实际 {duration:.2f} 秒。"
+        )
+        if raise_on_invalid:
+            raise AudioDurationValidationError(message, result)
+    return result
 
 
 def _format_lrc_timestamp(seconds: float) -> str:

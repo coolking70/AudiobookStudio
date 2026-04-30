@@ -41,7 +41,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from audio_utils import build_lrc, join_wavs_auto
+from audio_utils import AudioDurationValidationError, build_lrc, join_wavs_auto, validate_audio_duration_for_text
 from llm_client import OpenAICompatibleClient
 from local_llm import get_local_llm_runner, get_local_llm_status, unload_all_local_llm_runners
 from output_layout import (
@@ -140,7 +140,44 @@ MIMO_TTS_MODEL = "mimo-v2.5-tts"
 MIMO_TTS_VOICE_DESIGN_MODEL = "mimo-v2.5-tts-voicedesign"
 MIMO_TTS_VOICE_CLONE_MODEL = "mimo-v2.5-tts-voiceclone"
 MIMO_TTS_BUILTIN_VOICES = {"mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"}
+DEFAULT_TTS_DURATION_MAX_RETRIES = 2
 VOXCPM_BRIDGE_SCRIPT = Path(__file__).resolve().parent / "voxcpm_bridge.py"
+
+
+def get_tts_duration_max_retries() -> int:
+    raw = os.getenv("AUDIOBOOK_TTS_DURATION_MAX_RETRIES", "").strip()
+    if not raw:
+        return DEFAULT_TTS_DURATION_MAX_RETRIES
+    try:
+        return max(0, min(5, int(raw)))
+    except ValueError:
+        return DEFAULT_TTS_DURATION_MAX_RETRIES
+
+
+def remove_invalid_audio(path: str | Path) -> None:
+    try:
+        Path(path).unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def synthesize_with_duration_retry(text: str, output_path: Path, synthesize_once) -> tuple[object, dict]:
+    max_retries = get_tts_duration_max_retries()
+    last_error: AudioDurationValidationError | None = None
+    for attempt in range(1, max_retries + 2):
+        result = synthesize_once()
+        try:
+            validation = validate_audio_duration_for_text(output_path, text)
+            return result, validation
+        except AudioDurationValidationError as exc:
+            last_error = exc
+            remove_invalid_audio(output_path)
+            if attempt > max_retries:
+                raise
+            print(f"[tts-duration-check] 第 {attempt} 次生成时长异常，正在重试：{exc}")
+    if last_error:
+        raise last_error
+    raise RuntimeError("音频时长校验失败。")
 
 
 def augment_process_path_from_python_env() -> None:
@@ -1643,11 +1680,15 @@ def tts(req: TTSRequest):
         voice_engine = str(req.voice_engine or "").strip().lower()
         if voice_engine == "microsoft":
             output_path = resolve_named_output_path(output_name, ".wav", temp_category="preview")
-            file_path = synthesize_microsoft_tts(
-                text=req.text,
-                output_path=output_path,
-                voice_name=req.voice_name or "",
-                style=req.instruct,
+            file_path, duration_validation = synthesize_with_duration_retry(
+                req.text,
+                output_path,
+                lambda: synthesize_microsoft_tts(
+                    text=req.text,
+                    output_path=output_path,
+                    voice_name=req.voice_name or "",
+                    style=req.instruct,
+                ),
             )
             return {
                 "ok": True,
@@ -1656,6 +1697,7 @@ def tts(req: TTSRequest):
                 "engine": "microsoft",
                 "voice_name": req.voice_name,
                 "voice_locale": req.voice_locale,
+                "duration_validation": duration_validation,
             }
 
         backend_data = req.backend.model_dump() if req.backend else None
@@ -1686,50 +1728,63 @@ def tts(req: TTSRequest):
 
         if mode == "mimo":
             output_path = resolve_named_output_path(output_name, ".wav", temp_category="preview")
-            result = synthesize_mimo_tts(
-                backend=backend_data,
-                text=req.text,
-                output_path=output_path,
-                instruct=req.instruct,
-                ref_audio=req.ref_audio,
-                voice_name=req.voice_name,
-                voice_engine=req.voice_engine,
+            result, duration_validation = synthesize_with_duration_retry(
+                req.text,
+                output_path,
+                lambda: synthesize_mimo_tts(
+                    backend=backend_data,
+                    text=req.text,
+                    output_path=output_path,
+                    instruct=req.instruct,
+                    ref_audio=req.ref_audio,
+                    voice_name=req.voice_name,
+                    voice_engine=req.voice_engine,
+                ),
             )
             return {
                 "ok": True,
                 "file": str(output_path),
                 "audio_url": build_output_file_url(output_path),
+                "duration_validation": duration_validation,
                 **result,
             }
 
         output_path = resolve_named_output_path(output_name, ".wav", temp_category="preview")
         if voice_engine == "voxcpm":
             if get_voxcpm_runtime_dependency_status().get("ready"):
-                result = synthesize_local_voxcpm_tts_with_fallback(
-                    inference_device=inference_device,
-                    model_name=resolve_local_audio_model_path(backend_data),
-                    text=req.text,
-                    output_path=output_path,
-                    instruct=req.instruct,
-                    ref_audio=req.ref_audio,
-                    ref_text=req.ref_text,
-                    cfg_value=req.cfg_value,
-                    inference_timesteps=req.inference_timesteps,
+                result, duration_validation = synthesize_with_duration_retry(
+                    req.text,
+                    output_path,
+                    lambda: synthesize_local_voxcpm_tts_with_fallback(
+                        inference_device=inference_device,
+                        model_name=resolve_local_audio_model_path(backend_data),
+                        text=req.text,
+                        output_path=output_path,
+                        instruct=req.instruct,
+                        ref_audio=req.ref_audio,
+                        ref_text=req.ref_text,
+                        cfg_value=req.cfg_value,
+                        inference_timesteps=req.inference_timesteps,
+                    ),
                 )
             else:
-                bridge_result = run_voxcpm_bridge(
-                    "tts",
-                    {
-                        "device": normalize_inference_device(inference_device),
-                        "model_name": resolve_local_audio_model_path(backend_data) or VOXCPM_MODEL_NAME,
-                        "text": req.text,
-                        "output_path": str(output_path.resolve()),
-                        "instruct": req.instruct,
-                        "ref_audio": req.ref_audio,
-                        "ref_text": req.ref_text,
-                        "cfg_value": req.cfg_value,
-                        "inference_timesteps": req.inference_timesteps,
-                    },
+                bridge_result, duration_validation = synthesize_with_duration_retry(
+                    req.text,
+                    output_path,
+                    lambda: run_voxcpm_bridge(
+                        "tts",
+                        {
+                            "device": normalize_inference_device(inference_device),
+                            "model_name": resolve_local_audio_model_path(backend_data) or VOXCPM_MODEL_NAME,
+                            "text": req.text,
+                            "output_path": str(output_path.resolve()),
+                            "instruct": req.instruct,
+                            "ref_audio": req.ref_audio,
+                            "ref_text": req.ref_text,
+                            "cfg_value": req.cfg_value,
+                            "inference_timesteps": req.inference_timesteps,
+                        },
+                    ),
                 )
                 result = {
                     "device": bridge_result.get("device"),
@@ -1746,17 +1801,22 @@ def tts(req: TTSRequest):
                 "fallback_device": result.get("fallback_device"),
                 "original_device": result.get("original_device"),
                 "bridge_python_executable": result.get("bridge_python_executable"),
+                "duration_validation": duration_validation,
             }
 
-        result = synthesize_local_tts_with_fallback(
-            inference_device=inference_device,
-            model_name=resolve_local_audio_model_path(backend_data),
-            asr_model_name=resolve_local_asr_model_path(backend_data),
-            text=req.text,
-            output_path=output_path,
-            instruct=req.instruct,
-            ref_audio=req.ref_audio,
-            ref_text=req.ref_text,
+        result, duration_validation = synthesize_with_duration_retry(
+            req.text,
+            output_path,
+            lambda: synthesize_local_tts_with_fallback(
+                inference_device=inference_device,
+                model_name=resolve_local_audio_model_path(backend_data),
+                asr_model_name=resolve_local_asr_model_path(backend_data),
+                text=req.text,
+                output_path=output_path,
+                instruct=req.instruct,
+                ref_audio=req.ref_audio,
+                ref_text=req.ref_text,
+            ),
         )
 
         return {
@@ -1766,6 +1826,7 @@ def tts(req: TTSRequest):
             "device": result.get("device"),
             "fallback_device": result.get("fallback_device"),
             "original_device": result.get("original_device"),
+            "duration_validation": duration_validation,
         }
     except Exception as exc:
         raise_api_error(exc)
@@ -1797,15 +1858,15 @@ def _load_book_voice_parser():
     if str(_bvp_root) not in _sys.path:
         _sys.path.insert(0, str(_bvp_root))
 
-    from book_voice_parser import LLMRouterConfig, parse_novel, route_to_llm
+    from book_voice_parser import BatchConfig, LLMRouterConfig, parse_novel, route_to_llm
     from book_voice_parser.schema import AttributionType, SegmentEx
     from book_voice_parser.spc_ranker import OpenAICompatibleSPCRanker
 
-    return parse_novel, route_to_llm, LLMRouterConfig, OpenAICompatibleSPCRanker, SegmentEx, AttributionType
+    return parse_novel, route_to_llm, LLMRouterConfig, OpenAICompatibleSPCRanker, SegmentEx, AttributionType, BatchConfig
 
 
 def _build_bvp_llm_config(llm):
-    _, _, LLMRouterConfig, _, _, _ = _load_book_voice_parser()
+    _, _, LLMRouterConfig, _, _, _, _ = _load_book_voice_parser()
     return LLMRouterConfig(
         base_url=str(llm.base_url),
         model=str(llm.model),
@@ -1857,7 +1918,7 @@ def _bvp_segment_to_dict(seg) -> dict[str, object]:
 
 
 def _dict_to_bvp_segment(data: dict[str, object]):
-    _, _, _, _, SegmentEx, AttributionType = _load_book_voice_parser()
+    _, _, _, _, SegmentEx, AttributionType, _ = _load_book_voice_parser()
     attribution_type = data.get("attribution_type") or None
     if attribution_type:
         try:
@@ -1900,16 +1961,30 @@ def parse_text_v2(req: ParseV2Request):
     返回与 /api/parse 兼容的 segments 列表，并附带 confidence / evidence 等扩展字段。
     """
     try:
-        parse_novel, route_to_llm, _, OpenAICompatibleSPCRanker, _, _ = _load_book_voice_parser()
+        parse_novel, route_to_llm, _, OpenAICompatibleSPCRanker, _, _, BatchConfig = _load_book_voice_parser()
 
-        # 构建 SPC ranker（如果需要 LLM 内联推断）
+        # 构建 BatchConfig（BatchLLM 主管线）
+        batch_llm_config = None
+        if req.use_batch_llm and req.llm:
+            batch_llm_config = BatchConfig(
+                base_url=str(req.llm.base_url),
+                model=str(req.llm.model),
+                api_key=str(req.llm.api_key) if req.llm.api_key else "lm-studio",
+                max_tokens=max(int(req.batch_llm_max_tokens or 8192), 4096),
+                temperature=float(req.llm.temperature or 0.0),
+                timeout=180,
+            )
+
+        # 构建 SPC ranker（旧式逐条 LLM 内联推断，batch_llm 优先）
         implicit_ranker = None
-        if req.implicit_strategy == "llm_spc" and req.llm:
+        if req.implicit_strategy == "llm_spc" and req.llm and not batch_llm_config:
             implicit_ranker = OpenAICompatibleSPCRanker(req.llm)
 
         result = parse_novel(
             req.text,
             role_hints=req.role_hints,
+            narrator=req.narrator or None,
+            batch_llm_config=batch_llm_config,
             return_result=True,
             review_threshold=req.review_threshold,
             implicit_strategy=req.implicit_strategy,
@@ -1945,7 +2020,7 @@ def parse_text_v2(req: ParseV2Request):
 def review_parse_v2_segments(req: ParseV2ReviewRequest):
     """对 BookVoiceParser 低置信度片段执行独立 LLM 复核。"""
     try:
-        _, route_to_llm, _, _, _, _ = _load_book_voice_parser()
+        _, route_to_llm, _, _, _, _, _ = _load_book_voice_parser()
         segments = [_dict_to_bvp_segment(item) for item in req.segments]
         reviewed, llm_stats = route_to_llm(
             segments,
@@ -1971,7 +2046,7 @@ def review_parse_v2_segment(req: ParseV2ReviewOneRequest):
         if req.index < 0 or req.index >= len(req.segments):
             raise HTTPException(status_code=400, detail=f"review index out of range: {req.index}")
 
-        _, route_to_llm, _, _, _, _ = _load_book_voice_parser()
+        _, route_to_llm, _, _, _, _, _ = _load_book_voice_parser()
         segments = [_dict_to_bvp_segment(item) for item in req.segments]
         original = segments[req.index].model_copy()
 
