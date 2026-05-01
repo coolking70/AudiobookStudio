@@ -27,10 +27,17 @@ NARRATOR_CUE_ONLY_RE = re.compile(
 _FIRST_PERSON_RE = re.compile(r"我(?!们|方|国|家|辈|等)")
 
 
+# 纯标点/连词微段（相邻引号之间的连接字符，如「嗯」和「这样啊」中的"和"）
+_MICRO_CONNECTOR_RE = re.compile(r"^[，。、！？…—和与或及以]+$")
+
+
 def _clean_narrator_text(text: str) -> str:
     cleaned = re.sub(r"\s+", " ", str(text or "").strip())
     cleaned = cleaned.strip(" \t\r\n")
     if not cleaned:
+        return ""
+    # 过滤相邻引号间的单字/双字连词或纯标点（TTS 无法处理）
+    if len(cleaned) <= 2 and _MICRO_CONNECTOR_RE.fullmatch(cleaned):
         return ""
     if NARRATOR_CUE_ONLY_RE.fullmatch(cleaned):
         return ""
