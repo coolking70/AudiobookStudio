@@ -8550,22 +8550,37 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function choosePreviewTextForSpeaker(speaker) {
-    const candidates = segmentsState
-      .filter((seg) => (seg.speaker || "旁白") === speaker && String(seg.text || "").trim())
-      .sort((a, b) => String(a.text || "").length - String(b.text || "").length);
-    if (!candidates.length) return null;
-    const shortlist = candidates.slice(0, Math.min(6, candidates.length));
-    return shortlist[Math.floor(Math.random() * shortlist.length)];
+    const MIN_LEN = 8, MAX_LEN = 60;
+    const all = segmentsState.filter(
+      (seg) => (seg.speaker || "旁白") === speaker && String(seg.text || "").trim()
+    );
+    if (!all.length) return null;
+    // 优先从长度适中的句子中随机选取；若无适中句子则放宽到所有句子
+    const preferred = all.filter((seg) => {
+      const len = String(seg.text || "").trim().length;
+      return len >= MIN_LEN && len <= MAX_LEN;
+    });
+    const pool = preferred.length ? preferred : all;
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
   function choosePreviewTextsForSpeaker(speaker, maxCount = MICROSOFT_PREVIEW_SEGMENT_COUNT) {
-    const candidates = segmentsState
-      .filter((seg) => (seg.speaker || "旁白") === speaker && String(seg.text || "").trim())
-      .sort((a, b) => String(a.text || "").length - String(b.text || "").length);
-    if (!candidates.length) return [];
+    const MIN_LEN = 8, MAX_LEN = 80;
+    const all = segmentsState.filter(
+      (seg) => (seg.speaker || "旁白") === speaker && String(seg.text || "").trim()
+    );
+    if (!all.length) return [];
+    // 优先从长度适中的句子中去重后随机选取；不足时用全部候选补充
+    const preferred = all.filter((seg) => {
+      const len = String(seg.text || "").trim().length;
+      return len >= MIN_LEN && len <= MAX_LEN;
+    });
+    const pool = preferred.length ? preferred : all;
+    // 随机打乱后去重取前 maxCount 条
+    const shuffled = pool.slice().sort(() => Math.random() - 0.5);
     const deduped = [];
     const seen = new Set();
-    for (const seg of candidates) {
+    for (const seg of shuffled) {
       const text = String(seg.text || "").trim();
       if (!text || seen.has(text)) continue;
       seen.add(text);
