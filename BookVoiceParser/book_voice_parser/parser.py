@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from .alias_registry import AliasRegistry
 from .candidate_gen import generate_candidates
@@ -26,9 +29,45 @@ NARRATOR_CUE_ONLY_RE = re.compile(
 # P1b：匹配「我」但排除「我们/我方/我国/我家/我辈/我等」
 _FIRST_PERSON_RE = re.compile(r"我(?!们|方|国|家|辈|等)")
 
+# 章节标题识别（仅识别结构性章节，不做激进分割）
+_CHAPTER_HEADING_RE = re.compile(
+    r"(?m)^("
+    r"第[零一二三四五六七八九十百千万\d]+[章节回卷]"
+    r"|序章|终章|尾声|幕间|插话|后记|番外"
+    r"|Chapter\s+\d+"
+    r").*$"
+)
+
 
 # 纯标点/连词微段（相邻引号之间的连接字符，如「嗯」和「这样啊」中的"和"）
 _MICRO_CONNECTOR_RE = re.compile(r"^[，。、！？…—和与或及以]+$")
+
+
+def _detect_chapter_offsets(cleaned: str) -> list[int]:
+    """返回 cleaned 文本中各章节标题起始字符偏移（升序）。"""
+    return [m.start() for m in _CHAPTER_HEADING_RE.finditer(cleaned)]
+
+
+def _chapter_opening(cleaned: str, chapter_offset: int, next_offset: int | None = None, window: int = 400) -> str:
+    """返回章节标题之后的开头文本（用于视角检测），不越过下一章节边界。"""
+    start = cleaned.find("\n", chapter_offset)
+    if start == -1:
+        start = chapter_offset
+    end = min(start + window, next_offset if next_offset is not None else len(cleaned))
+    return cleaned[start:end]
+
+
+def _is_perspective_shift_chapter(chapter_opening_text: str, narrator: str) -> bool:
+    """
+    启发式检测视角转换章节：在非引号叙述中出现叙述者姓名，
+    说明该章以第三人称或其他视角叙述（叙述者成了被描述的角色）。
+    """
+    if not narrator or len(narrator) < 2:
+        return False
+    # 去掉引号内对话后检查剩余叙述文本
+    stripped = re.sub(r"「[^」]*」", "", chapter_opening_text)
+    narrator_short = narrator[-2:] if len(narrator) >= 2 else narrator
+    return narrator in stripped or narrator_short in stripped
 
 
 def _clean_narrator_text(text: str) -> str:
@@ -243,10 +282,52 @@ def _parse_with_batch_llm(
     """
     from .batch_llm_attributor import BatchLLMAttributor, attribute_explicit_conservative
 
-    # ① 生成所有候选集（传入 initial_recent_speakers，支持章节级累积上下文）
+    # ── 章节边界检测 ─────────────────────────────────────────────────────────
+    chapter_offsets = _detect_chapter_offsets(cleaned)  # 各章起始偏移（升序）
+    if chapter_offsets:
+        logger.info(f"[parser] 检测到 {len(chapter_offsets)} 个章节边界，将按章节隔离归因上下文")
+    else:
+        logger.info("[parser] 未检测到章节标题，全文共用归因上下文")
+
+    def _quote_chapter_idx(quote: QuoteSpan) -> int:
+        """返回该台词属于第几章（0 = 第一章或无章节头）。"""
+        pos = quote.start
+        idx = 0
+        for off in chapter_offsets:
+            if pos >= off:
+                idx += 1
+            else:
+                break
+        return idx
+
+    # 预计算视角转换标志：perspective_shift_chapters[i] = True 表示第 i 章是视角转换章节
+    perspective_shift_chapters: list[bool] = [False] * (len(chapter_offsets) + 1)
+    if narrator and chapter_offsets:
+        first_next = chapter_offsets[0] if chapter_offsets else None
+        if first_next is None or first_next == 0:
+            # 第一章从文头开始，没有前置内容
+            perspective_shift_chapters[0] = False
+        else:
+            perspective_shift_chapters[0] = _is_perspective_shift_chapter(
+                cleaned[:min(400, first_next)], narrator
+            )
+        for ci, off in enumerate(chapter_offsets):
+            next_off = chapter_offsets[ci + 1] if ci + 1 < len(chapter_offsets) else None
+            opening = _chapter_opening(cleaned, off, next_offset=next_off)
+            perspective_shift_chapters[ci + 1] = _is_perspective_shift_chapter(opening, narrator)
+        shift_count = sum(perspective_shift_chapters)
+        if shift_count:
+            logger.info(f"[parser] 检测到 {shift_count} 个视角转换章节，该章节内叙述者锚点将被禁用")
+
+    # ① 生成所有候选集（章节边界处重置 recent_speakers，避免跨章上下文污染）
     recent_speakers_acc: list[str] = list(initial_recent_speakers or [])
     all_candidates: dict[str, CandidateSet] = {}
+    prev_chapter_idx = -1
     for quote in quotes:
+        ch_idx = _quote_chapter_idx(quote)
+        if ch_idx != prev_chapter_idx and prev_chapter_idx != -1:
+            recent_speakers_acc = []
+        prev_chapter_idx = ch_idx
         cset = generate_candidates(quote, aliases=aliases, nlp_backend=ner_backend,
                                    recent_speakers=recent_speakers_acc, narrator=narrator)
         all_candidates[quote.quote_id] = cset
@@ -257,12 +338,14 @@ def _parse_with_batch_llm(
 
     for quote in quotes:
         attr: Attribution | None = None
+        ch_idx = _quote_chapter_idx(quote)
+        is_shift = perspective_shift_chapters[ch_idx]
 
         # P1a：自我介绍（「我是X」「我X」模式）
         attr = _attribute_self_identified(quote, role_hints_list)
 
-        # P1b：叙述者锚点（「我」→ narrator）
-        if attr is None and narrator:
+        # P1b：叙述者锚点（「我」→ narrator）— 视角转换章节中跳过
+        if attr is None and narrator and not is_shift:
             attr = _attribute_narrator_anchored(quote, narrator)
 
         # 保守规则层（前/后显性，必须 role_hints 中存在的角色）
@@ -274,20 +357,44 @@ def _parse_with_batch_llm(
         else:
             unresolved_quotes.append(quote)
 
-    # ③ 批量 LLM 归因
+    # ③ 批量 LLM 归因（按章节分组，各章独立传递说话人上下文）
     llm_attributions: dict[str, Attribution] = {}
     if unresolved_quotes:
         # P2：基于所有 quotes（含已预解决的）计算对话块，保留位置关系
         block_hints = _build_dialogue_blocks(quotes)
 
         attributor = BatchLLMAttributor(batch_llm_config)
-        llm_attributions = attributor.attribute(
-            unresolved_quotes,
-            all_candidates,
-            role_hints=role_hints_list,
-            block_hints=block_hints,
-            on_progress=on_progress,
-        )
+
+        # 将未解决台词按章节分组（保持文档顺序），各组独立重置 recent_speakers
+        chapter_groups: dict[int, list[QuoteSpan]] = {}
+        for q in unresolved_quotes:
+            ci = _quote_chapter_idx(q)
+            chapter_groups.setdefault(ci, []).append(q)
+
+        total_unresolved = len(unresolved_quotes)
+        completed_count = 0
+
+        for ci in sorted(chapter_groups.keys()):
+            group = chapter_groups[ci]
+            offset = completed_count
+            total = total_unresolved
+
+            def _make_progress(off: int, tot: int, cb: Any) -> Any:
+                if cb is None:
+                    return None
+                def _cb(done: int, _tot: int) -> None:
+                    cb(off + done, tot)
+                return _cb
+
+            group_result = attributor.attribute(
+                group,
+                all_candidates,
+                role_hints=role_hints_list,
+                block_hints=block_hints,
+                on_progress=_make_progress(offset, total, on_progress),
+            )
+            llm_attributions.update(group_result)
+            completed_count += len(group)
 
     # ④ 合并并按文档顺序构建 SegmentEx
     segments: list[SegmentEx] = []
