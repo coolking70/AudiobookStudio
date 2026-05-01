@@ -684,7 +684,10 @@ def attribute_explicit_conservative(
 
     # ── 前显性 ──
     if _SPEECH_VERB_END.search(cb_clause) and len(cb_clause) >= 4:
-        role = _find_role_in_clause(cb_window, role_hints)
+        # 只在最后逗号之后的子句里找角色名，避免假设/条件从句（"若是X说的"）误匹配
+        tight_parts = _re.split(r"[，、]", cb_clause)
+        tight_clause = tight_parts[-1].strip() if tight_parts else cb_clause
+        role = _find_role_in_clause(tight_clause, role_hints)
         if role:
             evidence_text = cb_clause[-40:].strip()
             return Attribution(
