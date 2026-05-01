@@ -674,7 +674,7 @@ class OmniVoicePipeline:
             )
             wav_paths.append(str(wav_path))
 
-        final_path = resolve_named_output_path(f"{base_name}_merged", ".wav", temp_category="preview_merge")
+        final_path = resolve_named_output_path(base_name, ".wav", temp_category="preview_merge")
         merge_result = join_wavs_auto(wav_paths, final_path, silence_ms=silence_ms)
         merge_result["wav_paths"] = wav_paths
         return merge_result

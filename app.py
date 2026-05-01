@@ -45,6 +45,7 @@ from audio_utils import AudioDurationValidationError, build_lrc, join_wavs_auto,
 from llm_client import OpenAICompatibleClient
 from local_llm import get_local_llm_runner, get_local_llm_status, unload_all_local_llm_runners
 from output_layout import (
+    build_segment_output_path,
     build_segment_output_paths,
     build_temp_archive_path,
     ensure_output_dir,
@@ -803,9 +804,9 @@ def resolve_mimo_tts_model(backend: dict | None, voice_engine: str, voice_name: 
     configured = str((backend or {}).get("mimo_model") or "auto").strip()
     if configured and configured.lower() != "auto":
         return configured
-    if str(voice_engine or "").strip().lower() == "mimo" and ref_audio:
+    if str(ref_audio or "").strip():
         return MIMO_TTS_VOICE_CLONE_MODEL
-    if str(voice_engine or "").strip().lower() == "mimo" and not voice_name:
+    if not str(voice_name or "").strip():
         return MIMO_TTS_VOICE_DESIGN_MODEL
     return MIMO_TTS_MODEL
 
@@ -1445,6 +1446,52 @@ def synthesize_local_narration_with_fallback(
             "fallback_device": "cpu",
             "original_device": resolved_device,
         }
+
+
+def synthesize_mimo_narration(
+    *,
+    backend: dict | None,
+    segments: list[dict],
+    output_name: str,
+    silence_ms: int,
+    role_profiles: dict,
+) -> dict:
+    wav_paths: list[str] = []
+
+    for idx, seg in enumerate(segments, start=1):
+        speaker = seg.get("speaker", "旁白")
+        text = str(seg.get("text") or "").strip()
+        if not text:
+            continue
+
+        profile = role_profiles.get(speaker) or {}
+        output_path = build_segment_output_path(output_name, idx)
+        synthesize_with_duration_retry(
+            text,
+            output_path,
+            lambda: synthesize_mimo_tts(
+                backend=backend,
+                text=text,
+                output_path=output_path,
+                instruct=seg.get("style") or profile.get("style"),
+                ref_audio=seg.get("ref_audio") or profile.get("ref_audio"),
+                voice_name=seg.get("voice_name") or profile.get("voice_name"),
+                voice_engine=seg.get("voice_engine") or profile.get("voice_engine"),
+            ),
+        )
+        wav_paths.append(str(output_path))
+
+    if not wav_paths:
+        raise RuntimeError("没有可用于 MiMo 合成的有效分段。")
+
+    final_path = resolve_named_output_path(output_name, ".wav", temp_category="preview_merge")
+    merge_result = join_wavs_auto(wav_paths, final_path, silence_ms=silence_ms)
+    merge_result["wav_paths"] = wav_paths
+    return {
+        "merge_result": merge_result,
+        "engine": "mimo",
+        "backend_mode": "mimo",
+    }
 
 
 def get_audio_model_status() -> dict:
@@ -2357,6 +2404,26 @@ def narrate(req: NarrateRequest):
             remote_resp["lrc_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("lrc_url"))
             return remote_resp
 
+        if mode == "mimo":
+            result = synthesize_mimo_narration(
+                backend=backend_data,
+                segments=segments,
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+                role_profiles=role_profiles,
+            )
+            merge_result = result["merge_result"]
+            wav_paths = [Path(path) for path in merge_result.get("wav_paths", build_segment_wav_paths(output_name, len(segments)))]
+            response = build_merge_response_payload(
+                merge_result=merge_result,
+                wav_paths=wav_paths,
+                lyric_lines=build_lyric_lines(segments),
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+            )
+            response["engine"] = "mimo"
+            return response
+
         result = synthesize_local_narration_with_fallback(
             inference_device=inference_device,
             model_name=resolve_local_audio_model_path(backend_data),
@@ -2412,6 +2479,27 @@ def auto_narrate(req: AutoNarrateRequest):
             remote_resp["audio_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("audio_url"))
             remote_resp["lrc_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("lrc_url"))
             return remote_resp
+
+        if mode == "mimo":
+            result = synthesize_mimo_narration(
+                backend=backend_data,
+                segments=segments,
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+                role_profiles=role_profiles,
+            )
+            merge_result = result["merge_result"]
+            wav_paths = [Path(path) for path in merge_result.get("wav_paths", build_segment_wav_paths(output_name, len(segments)))]
+            response = build_merge_response_payload(
+                merge_result=merge_result,
+                wav_paths=wav_paths,
+                lyric_lines=build_lyric_lines(segments),
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+            )
+            response["segments"] = segments
+            response["engine"] = "mimo"
+            return response
 
         result = synthesize_local_narration_with_fallback(
             inference_device=inference_device,
@@ -2882,7 +2970,7 @@ def merge_audio(req: MergeRequest):
                 raise FileNotFoundError(f"找不到分段音频: {requested}")
             wav_paths.append(wav_path)
 
-        output_path = resolve_named_output_path(f"{output_name}_merged", ".wav", temp_category="preview_merge")
+        output_path = resolve_named_output_path(output_name, ".wav", temp_category="preview_merge")
         merge_result = join_wavs_auto(wav_paths, output_path, silence_ms=req.silence_ms)
         lyric_lines = None
         if req.lyrics:
