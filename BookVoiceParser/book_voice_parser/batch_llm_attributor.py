@@ -48,7 +48,7 @@ class BatchConfig:
     api_key: str = "lm-studio"
     model: str = "qwen/qwen3.6-35b-a3b"
     batch_size: int = 10             # 每批台词数量（日式轻小说推荐 8-12）
-    max_tokens: int = 4096           # 批量输出需要更多 token（Qwen3 thinking 模式下建议 ≥4096）
+    max_tokens: int = 8192           # 批量输出需要更多 token；thinking 模型建议 ≥8192（reasoning 约占 3000-6000 tokens）
     temperature: float = 0.0
     timeout: int = 180               # 秒，批处理比单条慢
     context_chars: int = 200         # 每条台词截取的前后文字符数
@@ -476,7 +476,8 @@ class BatchLLMAttributor:
                 if reasoning:
                     logger.warning(
                         "content 为空，thinking 模型可能耗尽 max_tokens；"
-                        f"reasoning_content 长度={len(reasoning)}，请增大 max_tokens"
+                        f"reasoning_content 长度={len(reasoning)} 字（≈{len(reasoning)//2} tokens），"
+                        f"当前 max_tokens={self.cfg.max_tokens}，建议设为 {max(self.cfg.max_tokens, len(reasoning)//2 + 2048)}"
                     )
                     content = reasoning  # 尽力解析，通常也不含完整 JSON
             except Exception:

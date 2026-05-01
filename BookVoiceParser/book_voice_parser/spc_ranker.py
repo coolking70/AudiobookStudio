@@ -115,6 +115,8 @@ def _config_value(config: Any, key: str, default: Any = None) -> Any:
 
 
 def _extract_json(text: str) -> dict[str, Any]:
+    if not text or not text.strip():
+        raise ValueError("LLM returned empty content")
     try:
         return json.loads(text)
     except json.JSONDecodeError:
