@@ -10,8 +10,11 @@ review_router.py
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from .schema import AttributionType, SegmentEx
 from .spc_ranker import (
@@ -148,6 +151,7 @@ def route_to_llm(
         try:
             attribution = ranker.rank(quote_span, candidate_set, recent_speakers=recent)
         except Exception as exc:
+            logger.warning(f"[review_router] LLM call failed for {seg.quote_id}: {exc}")
             if verbose:
                 print(f"[review_router] LLM call failed for {seg.quote_id}: {exc}")
             stats["failed"] += 1

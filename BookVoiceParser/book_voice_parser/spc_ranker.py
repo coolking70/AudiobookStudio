@@ -4,7 +4,7 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib import request
+from urllib import error, request
 
 from .schema import Attribution, AttributionType, CandidateSet, QuoteSpan
 
@@ -153,7 +153,9 @@ class OpenAICompatibleSPCRanker:
             # Qwen3 系列是 thinking 模型，reasoning tokens 约 700，需留足空间；
             # 其他模型 512 足够，取两者较大值以兼容。
             "max_tokens": max(min(int(_config_value(self.llm_config, "max_tokens", 1024) or 1024), 4096), 1024),
-            "reasoning_effort": "none",
+            # 禁用 Qwen3/DeepSeek 等模型的扩展思考模式（LM Studio 兼容参数）
+            # 注意：reasoning_effort 是 OpenAI o 系列专用字段，会导致 LM Studio 返回 422
+            "enable_thinking": False,
         }
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = request.Request(
@@ -165,12 +167,23 @@ class OpenAICompatibleSPCRanker:
             },
             method="POST",
         )
-        with request.urlopen(req, timeout=180) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        try:
+            with request.urlopen(req, timeout=180) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            body_text = ""
+            try:
+                body_text = exc.read().decode("utf-8", errors="replace")[:300]
+            except Exception:
+                pass
+            raise RuntimeError(f"HTTP {exc.code} from LLM: {body_text}") from exc
         content = data["choices"][0]["message"]["content"]
         if isinstance(content, list):
             return "".join(item.get("text", "") for item in content if isinstance(item, dict))
-        return str(content)
+        # 剥离思维链（Qwen3 在禁用 thinking 失败时仍可能输出 <think>...</think>）
+        text = re.sub(r"<think>.*?</think>", "", str(content), flags=re.DOTALL)
+        text = re.sub(r"<think>.*$", "", text, flags=re.DOTALL)
+        return text.strip()
 
     def rank(
         self,

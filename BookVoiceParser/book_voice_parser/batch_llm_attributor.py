@@ -339,9 +339,11 @@ def _parse_compact_response(text: str, batch: list[tuple[QuoteSpan, CandidateSet
         if len(parts) < 4:
             continue
         idx_str, speaker = parts[0].strip(), parts[1].strip()
-        if not idx_str.isdigit():
+        # 容错：允许 "1." / "1、" / " 1 " 等变体，只取数字部分
+        idx_digits = re.sub(r"\D", "", idx_str)
+        if not idx_digits:
             continue
-        idx = int(idx_str) - 1
+        idx = int(idx_digits) - 1
         if idx < 0 or idx >= len(batch):
             logger.debug(f"Compact: index {idx+1} out of range (batch size {len(batch)})")
             continue
