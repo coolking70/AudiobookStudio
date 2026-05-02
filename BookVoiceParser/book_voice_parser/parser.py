@@ -30,8 +30,9 @@ NARRATOR_CUE_ONLY_RE = re.compile(
 _FIRST_PERSON_RE = re.compile(r"我(?!们|方|国|家|辈|等)")
 
 # 章节标题识别（仅识别结构性章节，不做激进分割）
+# 使用 ^\s* 允许行首有空格（部分电子书格式每行有前置空白）
 _CHAPTER_HEADING_RE = re.compile(
-    r"(?m)^("
+    r"(?m)^\s*("
     r"第[零一二三四五六七八九十百千万\d]+[章节回卷]"
     r"|序章|终章|尾声|幕间|插话|后记|番外"
     r"|Chapter\s+\d+"
@@ -57,17 +58,51 @@ def _chapter_opening(cleaned: str, chapter_offset: int, next_offset: int | None 
     return cleaned[start:end]
 
 
-def _is_perspective_shift_chapter(chapter_opening_text: str, narrator: str) -> bool:
+def _is_perspective_shift_chapter(
+    chapter_heading: str,
+    chapter_opening_text: str,
+    narrator: str,
+    role_hints: list[str] | None = None,
+) -> bool:
     """
-    启发式检测视角转换章节：在非引号叙述中出现叙述者姓名，
-    说明该章以第三人称或其他视角叙述（叙述者成了被描述的角色）。
+    启发式检测视角转换章节，两种信号任一成立即返回 True：
+
+    信号1：叙述者姓名出现在引号外叙述文字中（叙述者被第三方描述）。
+    信号2：章节标题包含「[他人角色名]的故事」等模式（明确他者视角章节）。
     """
     if not narrator or len(narrator) < 2:
         return False
-    # 去掉引号内对话后检查剩余叙述文本
+
+    # 信号1：叙述者名在非引号叙述中出现（排除「我是X」「X就是我」等自称表达）
     stripped = re.sub(r"「[^」]*」", "", chapter_opening_text)
     narrator_short = narrator[-2:] if len(narrator) >= 2 else narrator
-    return narrator in stripped or narrator_short in stripped
+    if narrator in stripped or narrator_short in stripped:
+        # 自称模式：叙述者用自己名字自我介绍，不视为视角转换
+        # 同时检查全名和简称，且允许全名在「我是」后间隔任意长度出现
+        _self_ref = re.compile(
+            r"我[是叫就为—]{0,2}" + re.escape(narrator)
+            + r"|我[是叫就为—]{0,2}" + re.escape(narrator_short)
+            + r"|" + re.escape(narrator) + r"[就是—]{0,2}我"
+            + r"|" + re.escape(narrator_short) + r"[就是—]{0,2}我"
+        )
+        if not _self_ref.search(stripped):
+            return True
+
+    # 信号2：标题含「[非叙述者角色]的故事/物語」
+    if role_hints and chapter_heading:
+        for role in role_hints:
+            if role == narrator:
+                continue
+            aliases = [role]
+            if len(role) >= 3:
+                aliases.append(role[-2:])
+            if len(role) >= 4:
+                aliases.append(role[-3:])
+            for alias in aliases:
+                if f"{alias}的故事" in chapter_heading or f"{alias}的物語" in chapter_heading:
+                    return True
+
+    return False
 
 
 def _clean_narrator_text(text: str) -> str:
@@ -305,16 +340,21 @@ def _parse_with_batch_llm(
     if narrator and chapter_offsets:
         first_next = chapter_offsets[0] if chapter_offsets else None
         if first_next is None or first_next == 0:
-            # 第一章从文头开始，没有前置内容
             perspective_shift_chapters[0] = False
         else:
             perspective_shift_chapters[0] = _is_perspective_shift_chapter(
-                cleaned[:min(400, first_next)], narrator
+                "", cleaned[:min(400, first_next)], narrator, role_hints=role_hints_list
             )
         for ci, off in enumerate(chapter_offsets):
             next_off = chapter_offsets[ci + 1] if ci + 1 < len(chapter_offsets) else None
+            # off 可能指向行首 \n，跳过它找到标题文本起始位置
+            h_start = off + 1 if off < len(cleaned) and cleaned[off] == "\n" else off
+            h_end = cleaned.find("\n", h_start)
+            heading = cleaned[h_start:h_end].strip() if h_end != -1 else cleaned[h_start:h_start + 80].strip()
             opening = _chapter_opening(cleaned, off, next_offset=next_off)
-            perspective_shift_chapters[ci + 1] = _is_perspective_shift_chapter(opening, narrator)
+            perspective_shift_chapters[ci + 1] = _is_perspective_shift_chapter(
+                heading, opening, narrator, role_hints=role_hints_list
+            )
         shift_count = sum(perspective_shift_chapters)
         if shift_count:
             logger.info(f"[parser] 检测到 {shift_count} 个视角转换章节，该章节内叙述者锚点将被禁用")

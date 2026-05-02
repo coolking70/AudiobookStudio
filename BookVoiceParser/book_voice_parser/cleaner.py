@@ -32,7 +32,7 @@ def split_chapters(text: str) -> list[tuple[str, str]]:
     if not normalized:
         return []
 
-    pattern = re.compile(r"(?m)^(第[零一二三四五六七八九十百千万\d]+[章节回卷].*|Chapter\s+\d+.*)$")
+    pattern = re.compile(r"(?m)^\s*(第[零一二三四五六七八九十百千万\d]+[章节回卷].*|Chapter\s+\d+.*)\s*$")
     matches = list(pattern.finditer(normalized))
     if not matches:
         return [("全文", normalized)]
