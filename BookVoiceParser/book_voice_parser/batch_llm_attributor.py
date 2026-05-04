@@ -42,6 +42,10 @@ logger = logging.getLogger(__name__)
 
 # ── 配置 ──────────────────────────────────────────────────────────────────
 
+MAX_COMPLETION_TOKENS = 131072
+CHAPTER_NARRATOR_MAX_TOKENS = 4096
+MIN_REASONING_MODEL_TOKENS = 4096
+
 @dataclass
 class BatchConfig:
     base_url: str = "http://127.0.0.1:1234/v1"
@@ -55,6 +59,19 @@ class BatchConfig:
     output_mode: str = "compact"     # "verbose"（JSON 数组）或 "compact"（管道分隔行）
     max_retries: int = 2             # 解析失败后重试次数
     disable_thinking: bool = True    # 禁用 Qwen3/DeepSeek 等模型的扩展思考模式
+
+
+@dataclass
+class ChapterNarratorResult:
+    """LLM 对章节叙述者身份的分析结果。"""
+    narrator: str | None  # 叙述者全名；不确定时为 None
+    confidence: float      # 0.0–1.0
+    reason: str            # 简短推理说明（≤30字）
+    is_shift: bool         # 相对于主叙述者是否发生视角转换
+
+
+class EmptyLLMContentError(RuntimeError):
+    """Raised when the provider returns only reasoning/metadata and no answer text."""
 
 
 # ── Prompt 构建 ────────────────────────────────────────────────────────────
@@ -85,6 +102,13 @@ _SYSTEM_PROMPT = """\
 - 标有「对话块#N 第M/K句」的台词属于同一段连续对话（原文中紧密相邻）
 - 同一对话块内，若无明确归属标记，应严格交替归因（A→B→A→B...）
 - 每轮新的对话块重新判断首句归属，不要无根据地沿用上一块的顺序
+
+【未命名人物】
+若说话人是场景中以外貌/身份描述出现、尚无姓名的人物（如"亮发少女""鲍伯头女孩"），
+且候选列表中无对应名字，可用不超过 6 字的外貌/身份描述作为 speaker。
+仅在确定该人物不是叙述者/旁白且无法归给任何已知角色时使用。
+若候选人中出现"朋友A/朋友B/朋友C/访客/对面的少女/旁边的孩子"等临时角色，
+说明上下文确有未命名人物在场；应优先在这些临时角色中判断，不要强行归给叙述者或知名主角。
 
 【输出格式】
 必须输出合法 JSON 数组，每个对象包含：
@@ -120,6 +144,13 @@ _SYSTEM_PROMPT_COMPACT = """\
 - 同一对话块内，若无明确归属标记，应严格交替归因（A→B→A→B...）
 - 每轮新的对话块重新判断首句归属，不要无根据地沿用上一块的顺序
 
+【未命名人物】
+若说话人是场景中以外貌/身份描述出现、尚无姓名的人物（如"亮发少女""鲍伯头女孩"），
+且候选列表中无对应名字，可用不超过 6 字的外貌/身份描述作为 speaker。
+仅在确定该人物不是叙述者/旁白且无法归给任何已知角色时使用。
+若候选人中出现"朋友A/朋友B/朋友C/访客/对面的少女/旁边的孩子"等临时角色，
+说明上下文确有未命名人物在场；应优先在这些临时角色中判断，不要强行归给叙述者或知名主角。
+
 【输出格式】
 每行一条，格式：序号|说话人|置信度|类型|依据(≤15字)
 类型缩写：eb=explicit_before, ea=explicit_after, im=implicit, la=latent, gr=group, un=unknown
@@ -127,13 +158,14 @@ _SYSTEM_PROMPT_COMPACT = """\
 1|王冢真唯|0.92|eb|前文「真唯说道」
 2|甘织玲奈子|0.70|im|上句真唯，轮换
 3|旁白|0.95|eb|无引号叙述
+4|亮发少女|0.75|im|前文描述亮色发女孩靠近
+5|朋友A|0.72|im|朋友群中一人发言
 不要输出任何解释或多余文本，只输出上述格式的行。
 """
 
 _USER_TEMPLATE = """\
 角色列表：{role_list}
-（第一人称叙述者"我"通常映射到角色列表中的某一固定角色，请结合上下文判断）
-
+{narrator_line}
 请对以下 {count} 条台词逐一归因，输出 JSON 数组：
 
 {quotes_block}
@@ -147,8 +179,7 @@ _USER_TEMPLATE = """\
 
 _USER_TEMPLATE_COMPACT = """\
 角色列表：{role_list}
-（第一人称叙述者"我"通常映射到角色列表中的某一固定角色，请结合上下文判断）
-
+{narrator_line}
 请对以下 {count} 条台词逐一归因，每行输出：序号|说话人|置信度|类型|依据
 
 {quotes_block}
@@ -160,7 +191,26 @@ _QUOTE_ITEM_TEMPLATE = """\
 [紧前文(最重要)] {context_before_tail}
 [台词] {quote_text}
 [后文] {context_after}
-{addressee_hint}"""
+{addressee_hint}{narrator_hint}{relation_hint}"""
+
+
+# ── 章节叙述者检测 Prompt ──────────────────────────────────────────────────
+_CHAPTER_NARRATOR_SYSTEM = """\
+你是中文小说第一人称视角分析专家。根据章节开头文字，判断该章节叙述者是否仍是已知主叙述者，或已切换到其他角色视角。
+
+判断依据：
+1. 若主叙述者姓名/简称在非引号叙述中被第三方提及（如「玲奈子走进了教室」）→ 视角切换，is_shift=true
+2. 若叙述自然以「我」进行，且主叙述者未以第三方角色身份出现 → 仍是主叙述者视角，is_shift=false
+3. 若切换视角：寻找谁以第一人称行动、内心独白、身体感知 → 确定新叙述者
+
+输出严格合法 JSON（无注释无多余文本）：
+{"narrator": "角色全名或null", "confidence": 0.00-1.00, "reason": "≤30字理由", "is_shift": true/false}
+
+narrator 规则：
+- is_shift=false：填主叙述者名，或 null（不确定）
+- is_shift=true ：填新叙述者全名，不确定时填 null
+- confidence<0.5 时 narrator 通常填 null
+"""
 
 
 def _detect_addressee_trap(context_before: str, role_hints: list[str]) -> str:
@@ -194,23 +244,54 @@ def _build_prompt(
     prev_speakers: list[str] | None = None,
     block_hints: dict[str, str] | None = None,
     output_mode: str = "compact",
+    narrator: str | None = None,
+    narrator_hints: set[str] | None = None,
 ) -> tuple[str, str]:
     """返回 (system_prompt, user_prompt)
 
     Args:
-        block_hints:  {quote_id: "对话块#N 第M/K句"} —— 由 parser 层传入，注入提示词。
-        output_mode:  "compact"（管道分隔行，减少输出 token）或 "verbose"（JSON 数组）
+        block_hints:    {quote_id: "对话块#N 第M/K句"} —— 由 parser 层传入，注入提示词。
+        output_mode:    "compact"（管道分隔行）或 "verbose"（JSON 数组）
+        narrator:       主视角叙述者姓名，用于生成叙述者角色提示行。
+        narrator_hints: 含「我」且 P1b 认为可能是叙述者的 quote_id 集合；
+                        对应台词会在 prompt 中附加💡提示，由 LLM 最终确认。
     """
     role_list = "、".join(role_hints) if role_hints else "（未指定，从上下文推断）"
     prev_speakers = prev_speakers or []
     block_hints = block_hints or {}
+    narrator_hints = narrator_hints or set()
+
+    # 叙述者角色提示行（注入 user template）
+    if narrator:
+        narrator_line = (
+            f"（叙述者是「{narrator}」，叙述段落中「我」通常指她；"
+            f"但对话场景里其他角色也可能说「我」，标有💡的台词请结合上下文判断）"
+        )
+    else:
+        narrator_line = "（第一人称叙述者「我」通常映射到角色列表中的某一固定角色，请结合上下文判断）"
 
     quotes_block_parts = []
     for i, (quote, cset) in enumerate(batch):
         cb = (quote.context_before or "")[-context_chars:]
         cb_tail = cb[-40:]  # 紧前文：最靠近台词的 40 字，是最重要的归因线索
         ca = (quote.context_after or "")[:context_chars]
-        candidates_str = "、".join(c for c in (cset.candidates or []) if c not in {"旁白", "未知"})
+
+        # 将候选人按来源强度分组：
+        #   relation_mention（仅称谓，无 owner 关联）→ 独立提示行（弱参考）
+        #   其余（role_hints / relation_conditional / relation_inferred 等）→ 正常候选列表
+        _STRONG_RELATION_SOURCES = {"relation_conditional", "relation_inferred"}
+        _relation_mention_only: list[str] = []
+        _main_candidates: list[str] = []
+        for c in (cset.candidates or []):
+            if c in {"旁白", "未知"}:
+                continue
+            c_sources = set(cset.candidate_sources.get(c, []))
+            if "relation_mention" in c_sources and not (c_sources & _STRONG_RELATION_SOURCES):
+                _relation_mention_only.append(c)
+            else:
+                _main_candidates.append(c)
+
+        candidates_str = "、".join(_main_candidates)
         if not candidates_str:
             candidates_str = role_list
 
@@ -229,6 +310,24 @@ def _build_prompt(
         # 受话人陷阱检测
         addressee_hint = _detect_addressee_trap(quote.context_before or "", role_hints)
 
+        # 叙述者候选提示（P1b demoted：含「我」但不确定说话人，提示 LLM 结合上下文判断）
+        narrator_hint_str = ""
+        if narrator and quote.quote_id in narrator_hints:
+            narrator_hint_str = (
+                f"\n💡叙述者参考：台词含「我」，叙述者是「{narrator}」，"
+                f"但场景中其他人物也可能说「我」——请结合前后文确认实际说话人，勿强行归给叙述者。"
+            )
+
+        # 关系称谓弱参考提示（relation_mention：仅在上下文出现称谓，未关联具体角色）
+        relation_hint_str = ""
+        if _relation_mention_only:
+            terms_str = "、".join(_relation_mention_only)
+            relation_hint_str = (
+                f"\n📌关系称谓参考：「{terms_str}」出现在上下文中，"
+                f"请优先从候选人列表中找到对应的具体角色；"
+                f"仅当确认说话人不在候选列表时，才以称谓本身标记。"
+            )
+
         part = _QUOTE_ITEM_TEMPLATE.format(
             idx=i + 1,
             quote_id=quote.quote_id,
@@ -240,6 +339,8 @@ def _build_prompt(
             quote_text=quote.text,
             context_after=ca or "（无后文）",
             addressee_hint=addressee_hint,
+            narrator_hint=narrator_hint_str,
+            relation_hint=relation_hint_str,
         )
         quotes_block_parts.append(part)
 
@@ -247,6 +348,7 @@ def _build_prompt(
     if output_mode == "compact":
         user_prompt = _USER_TEMPLATE_COMPACT.format(
             role_list=role_list,
+            narrator_line=narrator_line,
             count=len(batch),
             quotes_block=quotes_block,
         )
@@ -254,6 +356,7 @@ def _build_prompt(
     else:
         user_prompt = _USER_TEMPLATE.format(
             role_list=role_list,
+            narrator_line=narrator_line,
             count=len(batch),
             quotes_block=quotes_block,
         )
@@ -442,26 +545,56 @@ class BatchLLMAttributor:
             )
         return self._client
 
-    def _call_llm(self, system: str, user: str) -> str:
+    def _resolve_max_tokens(self, max_tokens: int | None = None) -> int:
+        """Return a completion-token budget accepted by common OpenAI-compatible servers."""
+        raw = max_tokens if max_tokens is not None else self.cfg.max_tokens
+        try:
+            value = int(raw or 512)
+        except (TypeError, ValueError):
+            value = 512
+        value = max(MIN_REASONING_MODEL_TOKENS, value)
+        if value > MAX_COMPLETION_TOKENS:
+            logger.warning(
+                "BatchLLM max_tokens=%s 超过接口常见上限，已钳制为 %s",
+                value,
+                MAX_COMPLETION_TOKENS,
+            )
+            value = MAX_COMPLETION_TOKENS
+        return value
+
+    def _call_llm(self, system: str, user: str, max_tokens: int | None = None) -> str:
         """调用 LLM，返回原始文本。
 
-        兼容思考模型（MiMo / Qwen3 等）：
-        - 正常情况下答案在 message.content
-        - 若 content 为空（max_tokens 不足时思考把空间耗尽），尝试从
-          message.reasoning_content 中提取（仅作保底，通常意味着需要加大 max_tokens）
+        兼容思考模型（Qwen3 / MiMo / DeepSeek-R1 等）禁用思考的三种策略：
+        1. extra_body enable_thinking=False（vLLM / Ollama 原生支持，LM Studio 可能忽略）
+        2. assistant 前缀注入空思考块 <think>\\n\\n</think>（在 LM Studio 上最可靠）
+           ——模型看到思考阶段"已完成"，直接输出答案，reasoning_tokens 降至 0
+        3. /no_think user 前缀（部分 Qwen3 变体支持，LM Studio 通常忽略）
+        策略 1 + 2 同时启用，互为兜底。
+
+        Args:
+            max_tokens: 覆盖 BatchConfig.max_tokens，用于轻量级调用（如章节叙述者检测）。
         """
         client = self._get_client()
+        resolved_max_tokens = self._resolve_max_tokens(max_tokens)
+        messages: list[dict] = [
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user},
+        ]
         extra_body: dict = {}
         if self.cfg.disable_thinking:
-            # Qwen3 / MiMo 等思考模型支持通过 extra_body 禁用扩展思考
+            # 策略 1：通过 extra_body 通知后端禁用思考（vLLM/Ollama 有效）
             extra_body["enable_thinking"] = False
+            # 策略 2：注入空思考块作为 assistant 前缀（LM Studio 上最可靠）
+            # 模型看到 <think>...</think> 已闭合，认为思考已完成，直接生成答案
+            messages.append({"role": "assistant", "content": "<think>\n\n</think>\n"})
+            # 策略 3：Qwen3 系列常见的 no-think 指令。即使后端忽略，也不会改变任务语义。
+            messages[1]["content"] = "/no_think\n" + str(messages[1]["content"])
+
         resp = client.chat.completions.create(
             model=self.cfg.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": user},
-            ],
-            max_tokens=self.cfg.max_tokens,
+            messages=messages,
+            max_tokens=resolved_max_tokens,
             temperature=self.cfg.temperature,
             timeout=self.cfg.timeout,
             **({"extra_body": extra_body} if extra_body else {}),
@@ -475,14 +608,110 @@ class BatchLLMAttributor:
                 reasoning = extra.get("reasoning_content", "") or ""
                 if reasoning:
                     logger.warning(
-                        "content 为空，thinking 模型可能耗尽 max_tokens；"
+                        "content 为空，模型仅返回 reasoning_content；可能是 thinking 预算不足、"
+                        "服务端内容过滤或模型模板未把最终答案写入 content。"
                         f"reasoning_content 长度={len(reasoning)} 字（≈{len(reasoning)//2} tokens），"
-                        f"当前 max_tokens={self.cfg.max_tokens}，建议设为 {max(self.cfg.max_tokens, len(reasoning)//2 + 2048)}"
+                        f"当前 max_tokens={resolved_max_tokens}，建议设为 "
+                        f"{min(MAX_COMPLETION_TOKENS, max(resolved_max_tokens, len(reasoning)//2 + 2048))}"
                     )
-                    content = reasoning  # 尽力解析，通常也不含完整 JSON
             except Exception:
                 pass
         return content
+
+    @staticmethod
+    def _unknown_attribution(quote: QuoteSpan, evidence: str = "LLM 空正文/疑似内容过滤") -> Attribution:
+        return Attribution(
+            quote_id=quote.quote_id,
+            speaker="未知",
+            confidence=0.2,
+            evidence=evidence,
+            attribution_type=AttributionType.UNKNOWN,
+        )
+
+    def detect_chapter_narrator(
+        self,
+        chapter_opening: str,
+        main_narrator: str,
+        role_hints: list[str],
+        heading: str = "",
+        title_hint: str | None = None,
+    ) -> ChapterNarratorResult:
+        """
+        使用 LLM 判断章节叙述者。
+
+        Args:
+            chapter_opening: 章节开头文字（~400字，建议已剥离引号对话）
+            main_narrator:   已知主叙述者全名
+            role_hints:      全部已知角色名列表
+            heading:         章节标题（可为空字符串）
+            title_hint:      规则层从标题提取的叙述者名（仅作参考提示）
+
+        Returns:
+            ChapterNarratorResult
+        """
+        if not main_narrator:
+            return ChapterNarratorResult(
+                narrator=None, confidence=0.0, reason="无主叙述者信息", is_shift=False
+            )
+
+        roles_str = "、".join(role_hints) if role_hints else "（未知）"
+        hint_line = ""
+        if title_hint:
+            hint_line = f"\n规则提示：标题「{heading}」含模式，疑似叙述者「{title_hint}」（仅供参考）。"
+
+        user_prompt = (
+            f"主叙述者：{main_narrator}\n"
+            f"全部角色：{roles_str}\n"
+            f"章节标题：{heading or '（无）'}{hint_line}\n\n"
+            f"章节开头（对话已剥离）：\n{chapter_opening[:400]}\n\n"
+            f"请分析叙述视角并输出 JSON。"
+        )
+
+        try:
+            # 叙述者检测只需要小 JSON，但 thinking 模型若无法禁用思考，512 token
+            # 容易全部耗在 reasoning_content，导致 content 为空。
+            raw = self._call_llm(
+                _CHAPTER_NARRATOR_SYSTEM,
+                user_prompt,
+                max_tokens=CHAPTER_NARRATOR_MAX_TOKENS,
+            )
+            # 剥离思维链残留
+            raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL)
+            raw = re.sub(r"<think>.*$", "", raw, flags=re.DOTALL)
+            raw = raw.strip()
+            # 提取 JSON 对象（允许前后有多余文字）
+            m = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+            if m:
+                obj = json.loads(m.group())
+                narrator_val: str | None = obj.get("narrator")
+                if isinstance(narrator_val, str):
+                    narrator_val = narrator_val.strip() or None
+                    # 兼容 LLM 返回字符串 "null" / "none"
+                    if narrator_val and narrator_val.lower() in ("null", "none", "不确定"):
+                        narrator_val = None
+                else:
+                    narrator_val = None
+                confidence = float(obj.get("confidence", 0.5))
+                confidence = min(max(confidence, 0.0), 1.0)
+                reason = str(obj.get("reason", "")).strip()
+                is_shift = bool(obj.get("is_shift", False))
+                return ChapterNarratorResult(
+                    narrator=narrator_val,
+                    confidence=confidence,
+                    reason=reason,
+                    is_shift=is_shift,
+                )
+            logger.warning(f"detect_chapter_narrator: JSON not found in: {raw[:200]!r}")
+        except Exception as e:
+            logger.warning(f"detect_chapter_narrator failed: {e}")
+
+        # 失败降级：假设视角未转换
+        return ChapterNarratorResult(
+            narrator=main_narrator,
+            confidence=0.0,
+            reason="LLM 失败，降级为主叙述者",
+            is_shift=False,
+        )
 
     def attribute_batch(
         self,
@@ -490,25 +719,35 @@ class BatchLLMAttributor:
         role_hints: list[str],
         prev_speakers: list[str] | None = None,
         block_hints: dict[str, str] | None = None,
+        narrator: str | None = None,
+        narrator_hints: set[str] | None = None,
     ) -> list[Attribution]:
         """
         对一批台词归因，返回 Attribution 列表。
 
         Args:
-            batch:          (QuoteSpan, CandidateSet) 对的列表
-            role_hints:     已知角色名列表
-            prev_speakers:  批次前的最近若干说话人（用于对话轮换上下文）
-            block_hints:    {quote_id: "对话块#N 第M/K句"}，注入 prompt（P2）
+            batch:           (QuoteSpan, CandidateSet) 对的列表
+            role_hints:      已知角色名列表
+            prev_speakers:   批次前的最近若干说话人（用于对话轮换上下文）
+            block_hints:     {quote_id: "对话块#N 第M/K句"}，注入 prompt（P2）
+            narrator:        叙述者姓名，用于生成叙述者角色提示行
+            narrator_hints:  P1b 触发的 quote_id 集合，注入💡提示
         """
         system, user = _build_prompt(
             batch, role_hints, self.cfg.context_chars, prev_speakers, block_hints,
             output_mode=self.cfg.output_mode,
+            narrator=narrator,
+            narrator_hints=narrator_hints,
         )
         parse_fn = _parse_compact_response if self.cfg.output_mode == "compact" else _parse_llm_response
+        last_empty = False
 
         for attempt in range(self.cfg.max_retries + 1):
             try:
                 raw = self._call_llm(system, user)
+                if not raw.strip():
+                    last_empty = True
+                    raise EmptyLLMContentError("LLM 返回空 content")
                 results = parse_fn(raw, batch)
                 if results:
                     logger.debug(f"Batch {len(batch)} quotes → {len(results)} attributions")
@@ -521,6 +760,43 @@ class BatchLLMAttributor:
                 if attempt < self.cfg.max_retries:
                     time.sleep(2)
 
+        if len(batch) > 1:
+            mid = max(1, len(batch) // 2)
+            reason = "空 content" if last_empty else "空解析结果"
+            logger.warning(
+                "BatchLLM %s，已将 %s 条台词拆成 %s/%s 条以定位疑似过滤片段",
+                reason,
+                len(batch),
+                mid,
+                len(batch) - mid,
+            )
+            left = self.attribute_batch(
+                batch[:mid],
+                role_hints,
+                prev_speakers=prev_speakers,
+                block_hints=block_hints,
+                narrator=narrator,
+                narrator_hints=narrator_hints,
+            )
+            next_prev = (list(prev_speakers or []) + [a.speaker for a in left])[-4:]
+            right = self.attribute_batch(
+                batch[mid:],
+                role_hints,
+                prev_speakers=next_prev,
+                block_hints=block_hints,
+                narrator=narrator,
+                narrator_hints=narrator_hints,
+            )
+            return left + right
+
+        if batch:
+            quote, _ = batch[0]
+            logger.warning(
+                "BatchLLM 单句仍无法解析，已标记为未知待复核：%s",
+                quote.quote_id,
+            )
+            return [self._unknown_attribution(quote)]
+
         return []
 
     def attribute(
@@ -529,17 +805,21 @@ class BatchLLMAttributor:
         candidates_map: dict[str, CandidateSet],
         role_hints: list[str] | None = None,
         block_hints: dict[str, str] | None = None,
+        narrator: str | None = None,
+        narrator_hints: set[str] | None = None,
         on_progress: Optional[Callable[[int, int], None]] = None,
     ) -> dict[str, Attribution]:
         """
         对所有台词批量归因，批次间传递说话人上下文。
 
         Args:
-            quotes:         QuoteSpan 列表（应按文档顺序排列）
-            candidates_map: quote_id → CandidateSet
-            role_hints:     已知角色名列表
-            block_hints:    {quote_id: "对话块#N 第M/K句"}，由 parser 层传入（P2）
-            on_progress:    进度回调 (已完成数, 总数)
+            quotes:          QuoteSpan 列表（应按文档顺序排列）
+            candidates_map:  quote_id → CandidateSet
+            role_hints:      已知角色名列表
+            block_hints:     {quote_id: "对话块#N 第M/K句"}，由 parser 层传入（P2）
+            narrator:        叙述者姓名，传递给每批的 attribute_batch
+            narrator_hints:  P1b 触发的 quote_id 集合，传递给每批的 attribute_batch
+            on_progress:     进度回调 (已完成数, 总数)
 
         Returns:
             dict: quote_id → Attribution
@@ -575,6 +855,8 @@ class BatchLLMAttributor:
                 batch, role_hints,
                 prev_speakers=recent_speakers[-4:],
                 block_hints=block_hints,
+                narrator=narrator,
+                narrator_hints=narrator_hints,
             )
 
             # 建 id→Attribution 映射

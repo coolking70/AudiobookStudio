@@ -28,6 +28,32 @@ from .spc_ranker import (
 
 # ── 默认复核阈值 ───────────────────────────────────────────────────────────
 DEFAULT_THRESHOLD = 0.7
+SKIP_SPEAKERS = {"", "旁白", "未知", "UNKNOWN"}
+MIN_AUTO_CORRECT_CONFIDENCE = 0.75
+MIN_AUTO_CORRECT_MARGIN = 0.08
+
+# These sources mean the speaker was supported by local context, explicit
+# relation-role logic, or the active narrator anchor. Fallback-only candidates
+# are useful for LLM choice, but too noisy to auto-overwrite existing labels.
+STRONG_CANDIDATE_SOURCES = {
+    "role_hints",
+    "appearance_alias",
+    "group_cue",
+    "rule_cue",
+    "title",
+    "hanlp_ner",
+    "relation_conditional",
+}
+MODERATE_CANDIDATE_SOURCES = {
+    "relation_inferred",
+    "narrator_anchor",
+}
+WEAK_CANDIDATE_SOURCES = {
+    "role_hints_fallback",
+    "recent_speakers_extended",
+    "recent_speakers",
+    "relation_mention",
+}
 
 
 # ── LLM 连接配置（dict 或 dataclass 均可，与 spc_ranker 兼容同一接口）──────
@@ -66,6 +92,65 @@ def _segment_to_candidate_set(seg: SegmentEx) -> CandidateSet:
         candidate_sources=seg.candidate_sources or {},
         scene_characters=seg.scene_characters or [],
     )
+
+
+def _candidate_sources(seg: SegmentEx, speaker: str) -> set[str]:
+    sources = seg.candidate_sources or {}
+    return {str(item) for item in sources.get(speaker, []) if item}
+
+
+def _has_strong_candidate_support(seg: SegmentEx, speaker: str) -> bool:
+    if speaker in SKIP_SPEAKERS:
+        return False
+    sources = _candidate_sources(seg, speaker)
+    if sources & STRONG_CANDIDATE_SOURCES:
+        return True
+    if sources & MODERATE_CANDIDATE_SOURCES:
+        return True
+    if sources and sources <= WEAK_CANDIDATE_SOURCES:
+        return False
+    # No source metadata usually means an old snapshot. In that case, treat
+    # scene_characters as moderate support, but still require high confidence.
+    return speaker in set(seg.scene_characters or [])
+
+
+def _should_auto_apply_review(
+    original: SegmentEx,
+    new_speaker: str,
+    new_confidence: float,
+) -> tuple[bool, str]:
+    """Return whether an LLM review correction is safe enough to overwrite.
+
+    The review model is allowed to propose corrections from broad fallback
+    candidates, but automatic writes require local scene evidence. Otherwise
+    the segment stays unchanged and is marked for human/local-model review.
+    """
+    if not new_speaker or new_speaker in SKIP_SPEAKERS:
+        return False, "复核未给出明确说话人"
+    if new_speaker == original.speaker:
+        return True, ""
+    if new_confidence < MIN_AUTO_CORRECT_CONFIDENCE:
+        return False, f"复核置信度 {new_confidence:.2f} 低于自动覆盖阈值"
+    if not _has_strong_candidate_support(original, new_speaker):
+        sources = sorted(_candidate_sources(original, new_speaker))
+        source_text = "、".join(sources) if sources else "无候选来源"
+        return False, f"复核目标缺少场景强支持（{source_text}）"
+    sources = _candidate_sources(original, new_speaker)
+    if new_speaker != original.speaker and sources <= {"narrator_anchor"}:
+        return False, "复核目标仅有叙述者锚点支持"
+    if (
+        new_speaker != original.speaker
+        and sources <= {"relation_inferred"}
+        and original.speaker not in SKIP_SPEAKERS
+    ):
+        return False, "复核目标仅有关系称谓推断支持"
+    if original.speaker not in SKIP_SPEAKERS and original.confidence >= 0.85:
+        if sources & STRONG_CANDIDATE_SOURCES and new_confidence >= 0.88:
+            return True, ""
+        margin = new_confidence - original.confidence
+        if margin < MIN_AUTO_CORRECT_MARGIN:
+            return False, f"原结果非低置信，复核优势不足（+{margin:.2f}）"
+    return True, ""
 
 
 # ── 原有接口（不变） ──────────────────────────────────────────────────────
@@ -127,6 +212,7 @@ def route_to_llm(
         "confirmed": 0,
         "failed": 0,
         "skipped": 0,
+        "blocked": 0,
         "threshold": threshold,
     }
 
@@ -160,7 +246,9 @@ def route_to_llm(
         new_speaker = attribution.speaker
         new_confidence = attribution.confidence
 
-        if new_speaker and new_speaker != seg.speaker and new_speaker != "未知":
+        can_apply, block_reason = _should_auto_apply_review(seg, new_speaker, new_confidence)
+
+        if new_speaker and new_speaker != seg.speaker and can_apply:
             if verbose:
                 print(
                     f"[review_router] {seg.quote_id} "
@@ -173,6 +261,19 @@ def route_to_llm(
             seg.attribution_type = AttributionType.IMPLICIT
             seg.evidence = f"LLM复核: {attribution.evidence or ''}"
             stats["corrected"] += 1
+        elif new_speaker and new_speaker != seg.speaker:
+            if verbose:
+                print(
+                    f"[review_router] {seg.quote_id} blocked "
+                    f"{seg.speaker!r}({seg.confidence:.2f}) → "
+                    f"{new_speaker!r}({new_confidence:.2f}): {block_reason}"
+                )
+            seg.evidence = (
+                f"{seg.evidence or ''}；LLM复核待人工: "
+                f"建议 {new_speaker}({new_confidence:.2f})，{block_reason}"
+            )
+            seg.confidence = min(seg.confidence, threshold - 0.01)
+            stats["blocked"] += 1
         else:
             # LLM 确认原归属，小幅提升置信度
             seg.confidence = min(seg.confidence + 0.12, 0.85)

@@ -29,6 +29,14 @@ NARRATOR_CUE_ONLY_RE = re.compile(
 # P1b：匹配「我」但排除「我们/我方/我国/我家/我辈/我等」
 _FIRST_PERSON_RE = re.compile(r"我(?!们|方|国|家|辈|等)")
 
+# P1c：发送消息上下文检测
+# 匹配「我…回/发了（一条/一封）讯息/消息/短信」模式（允许中间有任意非句末内容）。
+# 允许发送动词和消息名词之间有量词（如"一条"），例：「我发了一条消息给妈妈」。
+_MSG_SEND_RE = re.compile(
+    r"我[^。！？\n]{0,30}?(?:回复|发送|转发|回|发|传|送)了[^。！？\n]{0,8}?(?:讯息|消息|短信|信息)",
+    re.DOTALL,
+)
+
 # 章节标题识别（仅识别结构性章节，不做激进分割）
 # 使用 ^\s* 允许行首有空格（部分电子书格式每行有前置空白）
 _CHAPTER_HEADING_RE = re.compile(
@@ -56,6 +64,72 @@ def _chapter_opening(cleaned: str, chapter_offset: int, next_offset: int | None 
         start = chapter_offset
     end = min(start + window, next_offset if next_offset is not None else len(cleaned))
     return cleaned[start:end]
+
+
+def _extract_chapter_narrator(heading: str, role_hints: list[str]) -> str | None:
+    """
+    从「X的故事」「X的物語」章节标题中提取该章节的叙述者角色名（规范化全名）。
+    支持全名与后 2/3 字简称匹配。找不到时返回 None。
+    """
+    for role in role_hints:
+        aliases_to_check: list[str] = [role]
+        if len(role) >= 3:
+            aliases_to_check.append(role[-2:])
+        if len(role) >= 4:
+            aliases_to_check.append(role[-3:])
+        for alias in aliases_to_check:
+            if f"{alias}的故事" in heading or f"{alias}的物語" in heading:
+                return role
+    return None
+
+
+def _extract_dual_chapter_roles(heading: str, role_hints: list[str]) -> list[str]:
+    """Return canonical roles from titles like 「遥奈与紫阳花的故事」."""
+    dual_m = re.search(
+        r"([一-龥A-Za-z0-9]{2,8})与([一-龥A-Za-z0-9]{2,8})(?:的故事|的物語)", heading
+    )
+    if not dual_m:
+        return []
+    matched_roles: list[str] = []
+    for name in (dual_m.group(1), dual_m.group(2)):
+        for role in role_hints:
+            if role == name or role.endswith(name) or role.startswith(name):
+                if role not in matched_roles:
+                    matched_roles.append(role)
+                break
+    return matched_roles
+
+
+# 非叙事性元段落关键词：这类章节没有小说内视角，跳过 LLM 叙述者检测
+_META_SECTION_KEYWORDS = frozenset(["后记", "後記", "插图", "插圖", "前言", "附录", "附錄"])
+
+
+def _extract_chapter_narrator_hint(heading: str, role_hints: list[str]) -> str | None:
+    """
+    生成供 LLM 参考的章节叙述者提示文字（比 _extract_chapter_narrator 更宽泛）：
+    - 「X的故事」→ X 的规范全名
+    - 「X与Y的故事」→ "X、Y（双角色章节）"
+    找不到模式时返回 None。
+    """
+    # 双角色模式：X与Y的故事 / X与Y的物語
+    matched_roles = _extract_dual_chapter_roles(heading, role_hints)
+    if matched_roles:
+        return "、".join(matched_roles) + "（双角色章节）"
+
+    # 单角色模式
+    single = _extract_chapter_narrator(heading, role_hints)
+    return single
+
+
+def _title_fallback_narrator(heading: str, main_narrator: str, role_hints: list[str]) -> str | None:
+    """Conservative fallback used only after the shift detector says "shift"."""
+    dual_roles = _extract_dual_chapter_roles(heading, role_hints)
+    if dual_roles and dual_roles[0] != main_narrator:
+        return dual_roles[0]
+    single = _extract_chapter_narrator(heading, role_hints)
+    if single and single != main_narrator:
+        return single
+    return None
 
 
 def _is_perspective_shift_chapter(
@@ -133,6 +207,28 @@ def _clean_narrator_text(text: str) -> str:
     return cleaned
 
 
+def _is_dialogue_fragment(text: str) -> bool:
+    """
+    检测旁白区的文本段是否实为漏提取的引号或被段落分隔符切断的对话碎片。
+
+    触发条件（二选一）：
+    1. 整体被单对 「」 包裹（= 漏提取的引号，通常含嵌套引号或其他边缘情况）
+    2. 「/」 括号不平衡（= 某段对话被 \\n\\n 切成了头尾两截）
+
+    注意：不包含引号的纯叙述文本不受影响。含有嵌入引用（如「词语」了一声）
+    的叙述文本因括号平衡也不受影响。
+    """
+    open_count = text.count("「")
+    close_count = text.count("」")
+    if open_count == 0 and close_count == 0:
+        return False
+    # 整体被单对 「」 包裹
+    if text.startswith("「") and text.endswith("」") and open_count == 1 and close_count == 1:
+        return True
+    # 括号不平衡（对话碎片）
+    return open_count != close_count
+
+
 def _append_narrator_segments(
     segments: list[SegmentEx],
     raw_text: str,
@@ -145,21 +241,65 @@ def _append_narrator_segments(
     # 保持段落感，避免把整章旁白塞成单个超长 TTS 片段。
     parts = [part.strip() for part in re.split(r"\n\s*\n+", cleaned) if part.strip()] or [cleaned]
     for idx, part in enumerate(parts, start=1):
-        segments.append(
-            SegmentEx(
-                quote_id=f"{quote_id_prefix}_n{idx}",
-                speaker="旁白",
-                text=part,
-                confidence=1.0,
-                evidence="引号外叙述文本",
-                attribution_type=AttributionType.NARRATOR,
-                candidates=["旁白"],
-                candidate_sources={"旁白": ["narrator_gap"]},
-                scene_characters=[],
-                context_before=part[:context_chars],
-                context_after=part[-context_chars:],
+        if _is_dialogue_fragment(part):
+            # 括号不平衡或整体被单对「」包裹 → 疑似漏提取的对话，标记为待复核
+            segments.append(
+                SegmentEx(
+                    quote_id=f"{quote_id_prefix}_n{idx}",
+                    speaker="未知",
+                    text=part,
+                    confidence=0.25,
+                    evidence="旁白区含对话括号，疑似漏提取引号",
+                    attribution_type=AttributionType.UNKNOWN,
+                    candidates=["旁白", "未知"],
+                    candidate_sources={"旁白": ["narrator_gap"], "未知": ["dialogue_fragment"]},
+                    scene_characters=[],
+                    context_before=part[:context_chars],
+                    context_after=part[-context_chars:],
+                )
             )
-        )
+        else:
+            segments.append(
+                SegmentEx(
+                    quote_id=f"{quote_id_prefix}_n{idx}",
+                    speaker="旁白",
+                    text=part,
+                    confidence=1.0,
+                    evidence="引号外叙述文本",
+                    attribution_type=AttributionType.NARRATOR,
+                    candidates=["旁白"],
+                    candidate_sources={"旁白": ["narrator_gap"]},
+                    scene_characters=[],
+                    context_before=part[:context_chars],
+                    context_after=part[-context_chars:],
+                )
+            )
+
+
+# ── 辅助：解包外层 role_hints 包装结构 ──────────────────────────────────────
+
+def _unwrap_role_hints(
+    role_hints: Any,
+    narrator: str | None = None,
+) -> tuple[Any, str | None]:
+    """
+    解包外部 AI 角色提取结果常用的 {"narrator": "...", "roles": {...}} 包装格式。
+
+    若 role_hints 是含 "roles" 键的字典，则提取内层 roles 字典作为实际 role_hints；
+    同时若 narrator 未设置，从 "narrator" 键中提取叙述者名。
+
+    Returns:
+        (unwrapped_role_hints, resolved_narrator)
+    """
+    if not isinstance(role_hints, dict):
+        return role_hints, narrator
+    if "roles" in role_hints and isinstance(role_hints["roles"], dict):
+        inner = role_hints["roles"]
+        resolved_narrator = narrator
+        if resolved_narrator is None and isinstance(role_hints.get("narrator"), str):
+            resolved_narrator = role_hints["narrator"].strip() or None
+        return inner, resolved_narrator
+    return role_hints, narrator
 
 
 # ── 辅助：规范化 role_hints 为扁平列表 ───────────────────────────────────────
@@ -175,6 +315,36 @@ def _normalize_role_hints(
     if isinstance(role_hints, dict):
         return list(role_hints.keys())
     return []
+
+
+_TEMPORARY_SCENE_SOURCE = "temporary_scene"
+
+
+def _candidate_sources_for(cset, speaker: str) -> set[str]:
+    if not cset or not speaker:
+        return set()
+    return {str(item) for item in (cset.candidate_sources or {}).get(speaker, []) if item}
+
+
+def _has_temporary_scene_candidate(cset) -> bool:
+    if not cset:
+        return False
+    for name in cset.candidates or []:
+        if _TEMPORARY_SCENE_SOURCE in _candidate_sources_for(cset, name):
+            return True
+    return False
+
+
+def _guard_batch_llm_attribution(attr: Attribution, cset) -> None:
+    """Demote narrator-only guesses when unnamed people are present."""
+    if not cset or not attr or attr.speaker in {"旁白", "未知", "UNKNOWN"}:
+        return
+    sources = _candidate_sources_for(cset, attr.speaker)
+    if sources <= {"narrator_anchor"} and _has_temporary_scene_candidate(cset):
+        if attr.confidence > 0.69:
+            attr.confidence = 0.69
+        note = "仅叙述者锚点支持，场景含未命名人物"
+        attr.evidence = f"{attr.evidence}；{note}" if attr.evidence else note
 
 
 # ── P1a：自我介绍检测 ────────────────────────────────────────────────────────
@@ -219,6 +389,14 @@ def _attribute_self_identified(
 
 # ── P1b：一人称叙述者锚点 ────────────────────────────────────────────────────
 
+# 长辈称呼守卫：若台词含「姐姐/哥哥」等向年长者的称呼，说话人是在称呼叙述者，而非叙述者自身。
+# 注：只拦截对上位亲属的称呼（「姐姐/哥哥」），不拦叙述者对下位亲属的称呼（「妹妹/弟弟」）。
+# 注意：[大人]? 是字符类，需用 (?:大人)? 匹配两字字符串。
+_ELDER_VOCATIVE_RE = re.compile(
+    r"(?:^|[，,\s「])(?:姐姐|哥哥)(?:大人)?(?=[，,\s!！?？」]|$)"
+)
+
+
 def _attribute_narrator_anchored(
     quote: QuoteSpan,
     narrator: str,
@@ -228,16 +406,21 @@ def _attribute_narrator_anchored(
 
     置信度 0.82：中高置信，允许 fix_consistency 层进一步调整。
 
-    误触发守卫：若叙述者的简称出现在台词文本中（被称呼为受话人），
-    说明说话人另有其人，不归因给叙述者。
-    例：「怎么了，玲奈子？看来，是重新迷上我了吗？」→ 真唯在对玲奈子说话。
+    误触发守卫：
+    1. 叙述者简称出现在台词内 → 叙述者是受话对象，非说话人
+       例：「怎么了，玲奈子？看来，是重新迷上我了吗？」→ 真唯在对玲奈子说话。
+    2. 台词含长辈称呼「姐姐/哥哥」→ 说话人是在称呼叙述者（年幼角色），而非叙述者自身
+       例：「嘿嘿，姐姐大人，我的炸鸡分你一块吧？」→ 妹妹在对叙述者说话。
     """
     if not _FIRST_PERSON_RE.search(quote.text or ""):
         return None
-    # 守卫：叙述者名字（全名或末2字简称）出现在台词内 → 是受话对象，非说话人
-    narrator_short = narrator[-2:] if len(narrator) >= 2 else narrator
     text = quote.text or ""
+    # 守卫1：叙述者名字（全名或末2字简称）出现在台词内 → 是受话对象，非说话人
+    narrator_short = narrator[-2:] if len(narrator) >= 2 else narrator
     if narrator in text or (narrator_short and narrator_short in text):
+        return None
+    # 守卫2：台词含长辈称呼 → 说话人比叙述者年幼，不是叙述者
+    if _ELDER_VOCATIVE_RE.search(text):
         return None
     return Attribution(
         quote_id=quote.quote_id,
@@ -335,9 +518,16 @@ def _parse_with_batch_llm(
                 break
         return idx
 
-    # 预计算视角转换标志：perspective_shift_chapters[i] = True 表示第 i 章是视角转换章节
-    perspective_shift_chapters: list[bool] = [False] * (len(chapter_offsets) + 1)
+    # 预计算视角转换标志 + 各章叙述者
+    # perspective_shift_chapters[i] = True  → 第 i 章是他人视角章节
+    # chapter_narrators[i]                  → 第 i 章的叙述者（正常章节=主叙述者，视角转换章节=章节角色）
+    n_chapters = len(chapter_offsets) + 1
+    perspective_shift_chapters: list[bool] = [False] * n_chapters
+    chapter_narrators: list[str | None] = [narrator] * n_chapters  # 默认全用主叙述者
+    uncertain_chapters: list[dict] = []  # 叙述者身份不确定的章节，收录到 stats 供人工处理
+
     if narrator and chapter_offsets:
+        _chapter_attributor = BatchLLMAttributor(batch_llm_config)
         first_next = chapter_offsets[0] if chapter_offsets else None
         if first_next is None or first_next == 0:
             perspective_shift_chapters[0] = False
@@ -352,12 +542,99 @@ def _parse_with_batch_llm(
             h_end = cleaned.find("\n", h_start)
             heading = cleaned[h_start:h_end].strip() if h_end != -1 else cleaned[h_start:h_start + 80].strip()
             opening = _chapter_opening(cleaned, off, next_offset=next_off)
-            perspective_shift_chapters[ci + 1] = _is_perspective_shift_chapter(
-                heading, opening, narrator, role_hints=role_hints_list
+            # 剥离引号对话，只保留叙述文字，避免台词内容干扰视角判断
+            opening_stripped = re.sub(r"「[^」]*」", "", opening).strip()
+
+            # ── 前置过滤：不需要/无法 LLM 判断的章节 ─────────────────────────────
+            # 1. 空标题或元段落（后记/插图/前言等）：不存在小说内视角，直接跳过
+            _is_meta = not heading or any(kw in heading for kw in _META_SECTION_KEYWORDS)
+            # 2. 开头叙述文字过短（纯标题页/插图页等无内容章节）：LLM 无法判断
+            _too_short = len(opening_stripped) < 30
+            if _is_meta or _too_short:
+                reason_skip = "元段落" if _is_meta else f"叙述内容过短（{len(opening_stripped)}字）"
+                logger.info(f"[parser] ch{ci + 1} 「{heading}」{reason_skip}，跳过视角检测")
+                continue
+
+            # 规则层标题提示（作为 hint 供 LLM 参考，不再作为最终判断依据）
+            # 支持单角色「X的故事」和双角色「X与Y的故事」两种模式
+            title_hint = _extract_chapter_narrator_hint(heading, role_hints_list)
+
+            # LLM 视角判断（主路径）
+            llm_result = _chapter_attributor.detect_chapter_narrator(
+                chapter_opening=opening_stripped,
+                main_narrator=narrator,
+                role_hints=role_hints_list,
+                heading=heading,
+                title_hint=title_hint,
             )
+
+            # LLM 置信度足够时直接采用；否则回退到启发式规则
+            if llm_result.confidence >= 0.5:
+                is_shift = llm_result.is_shift
+            else:
+                is_shift = _is_perspective_shift_chapter(
+                    heading, opening, narrator, role_hints=role_hints_list
+                )
+
+            perspective_shift_chapters[ci + 1] = is_shift
+
+            if is_shift:
+                if llm_result.narrator and llm_result.confidence >= 0.65:
+                    # 高置信度：直接使用 LLM 识别的叙述者
+                    chapter_narrators[ci + 1] = llm_result.narrator
+                    logger.info(
+                        f"[parser] ch{ci + 1} 视角转换 → 叙述者={llm_result.narrator}"
+                        f"（conf={llm_result.confidence:.2f}，{llm_result.reason}）"
+                    )
+                else:
+                    title_fallback = _title_fallback_narrator(heading, narrator, role_hints_list)
+                    # 叙述者不确定：优先使用标题弱回退，仍标记待人工处理；
+                    # 若标题也无法给出可用角色，再回退到主叙述者。
+                    chapter_narrators[ci + 1] = title_fallback or narrator
+                    uncertain_chapters.append({
+                        "chapter_idx": ci + 1,
+                        "heading": heading,
+                        "llm_confidence": llm_result.confidence,
+                        "llm_reason": llm_result.reason,
+                        "narrator_hint": llm_result.narrator or title_fallback or title_hint,
+                        "fallback_narrator": title_fallback,
+                    })
+                    logger.warning(
+                        f"[parser] ch{ci + 1} 视角转换但叙述者不确定"
+                        f"（conf={llm_result.confidence:.2f}，{llm_result.reason}）→ "
+                        f"暂用{title_fallback or '主叙述者'}兜底"
+                    )
+            else:
+                if llm_result.confidence < 0.5:
+                    # LLM 对"未转换"也不确定，记录待审查
+                    uncertain_chapters.append({
+                        "chapter_idx": ci + 1,
+                        "heading": heading,
+                        "llm_confidence": llm_result.confidence,
+                        "llm_reason": llm_result.reason,
+                        "narrator_hint": title_hint,
+                    })
+                    logger.warning(
+                        f"[parser] ch{ci + 1} 视角判断不确定"
+                        f"（conf={llm_result.confidence:.2f}，{llm_result.reason}）"
+                    )
+                else:
+                    logger.info(
+                        f"[parser] ch{ci + 1} 视角未转换（conf={llm_result.confidence:.2f}，"
+                        f"{llm_result.reason}）"
+                    )
+
         shift_count = sum(perspective_shift_chapters)
         if shift_count:
-            logger.info(f"[parser] 检测到 {shift_count} 个视角转换章节，该章节内叙述者锚点将被禁用")
+            shift_detail = ", ".join(
+                f"ch{i}={chapter_narrators[i]}" for i, s in enumerate(perspective_shift_chapters) if s
+            )
+            logger.info(f"[parser] 检测到 {shift_count} 个视角转换章节：{shift_detail}")
+        if uncertain_chapters:
+            logger.warning(
+                f"[parser] {len(uncertain_chapters)} 个章节叙述者不确定，需人工确认：" +
+                ", ".join(f"ch{c['chapter_idx']}「{c['heading']}」" for c in uncertain_chapters)
+            )
 
     # ① 生成所有候选集（章节边界处重置 recent_speakers，避免跨章上下文污染）
     recent_speakers_acc: list[str] = list(initial_recent_speakers or [])
@@ -368,13 +645,15 @@ def _parse_with_batch_llm(
         if ch_idx != prev_chapter_idx and prev_chapter_idx != -1:
             recent_speakers_acc = []
         prev_chapter_idx = ch_idx
+        ch_narrator = chapter_narrators[ch_idx] if ch_idx < len(chapter_narrators) else narrator
         cset = generate_candidates(quote, aliases=aliases, nlp_backend=ner_backend,
-                                   recent_speakers=recent_speakers_acc, narrator=narrator)
+                                   recent_speakers=recent_speakers_acc, narrator=ch_narrator)
         all_candidates[quote.quote_id] = cset
 
     # ② 预过滤：纯规则层（高精确率，低召回率）
     pre_resolved: dict[str, Attribution] = {}
     unresolved_quotes: list[QuoteSpan] = []
+    narrator_hint_quotes: set[str] = set()  # P1b 触发但不预解析的台词 id
 
     for quote in quotes:
         attr: Attribution | None = None
@@ -384,13 +663,35 @@ def _parse_with_batch_llm(
         # P1a：自我介绍（「我是X」「我X」模式）
         attr = _attribute_self_identified(quote, role_hints_list)
 
-        # P1b：叙述者锚点（「我」→ narrator）— 视角转换章节中跳过
-        if attr is None and narrator and not is_shift:
-            attr = _attribute_narrator_anchored(quote, narrator)
-
         # 保守规则层（前/后显性，必须 role_hints 中存在的角色）
+        # 优先于 P1b 运行：若前文已明确指出说话人（如「真唯说道：」），
+        # 该角色即使台词含「我」也不应被错误归因给叙述者。
         if attr is None:
             attr = attribute_explicit_conservative(quote, role_hints_list)
+
+        # P1b：叙述者锚点（改为提示模式，不再预解析）
+        # 使用该章节的实际叙述者（正常章节=主叙述者，视角转换章节=章节角色）。
+        # 视角转换章节不再禁用 P1b，而是换用正确的叙述者进行锚定提示。
+        ch_narrator = chapter_narrators[ch_idx]
+        if attr is None and ch_narrator:
+            if _attribute_narrator_anchored(quote, ch_narrator) is not None:
+                narrator_hint_quotes.add(quote.quote_id)
+
+        # P1c：发送消息上下文 → 该台词是叙述者发出的消息正文（预解析）
+        # 触发条件：
+        #   1. 前文含「我…（回/发/传/送）了（讯息/消息/短信）」模式
+        #   2. 台词文本较短（≤30字，符合消息内容特征）
+        # 典型场景：叙述者发了一条回复，下一段引号即是那条消息的内容。
+        if attr is None and ch_narrator:
+            cb_tail = (quote.context_before or "")[-100:]
+            if (_MSG_SEND_RE.search(cb_tail) and len(quote.text or "") <= 30):
+                attr = Attribution(
+                    quote_id=quote.quote_id,
+                    speaker=ch_narrator,
+                    confidence=0.78,
+                    evidence="发送消息上下文：叙述者发出的消息内容",
+                    attribution_type=AttributionType.IMPLICIT,
+                )
 
         if attr is not None:
             pre_resolved[quote.quote_id] = attr
@@ -426,26 +727,107 @@ def _parse_with_batch_llm(
                     cb(off + done, tot)
                 return _cb
 
+            # 使用该章节的专属叙述者（视角转换章节用章节角色，普通章节用主叙述者）
+            ci_narrator = chapter_narrators[ci] if ci < len(chapter_narrators) else narrator
+
             group_result = attributor.attribute(
                 group,
                 all_candidates,
                 role_hints=role_hints_list,
                 block_hints=block_hints,
+                narrator=ci_narrator,
+                narrator_hints=narrator_hint_quotes,
                 on_progress=_make_progress(offset, total, on_progress),
             )
             llm_attributions.update(group_result)
             completed_count += len(group)
 
+    # ③.5 LLM 输出别名规范化：将 LLM 可能输出的别名（如「紫阳花」「紫阳花同学」）
+    # 映射回 AliasRegistry 中的规范名（如「濑名紫阳花」），保证输出名字一致性。
+    # 跳过特殊名（旁白/未知/众人及外貌描述型名字：非 alias_map 的短名直接保留）。
+    _SKIP_CANON = {"旁白", "未知", "众人", "大家", "二人", "三人", "所有人"}
+    if aliases.has_hints():
+        for attr in llm_attributions.values():
+            if attr.speaker not in _SKIP_CANON:
+                canonical = aliases.canonicalize(attr.speaker)
+                if canonical != attr.speaker:
+                    attr.speaker = canonical
+
+    # ③.5b 关系称谓置信度约束
+    # 若 LLM 返回原始关系称谓（妹妹/哥哥 等）作为说话人，
+    # 先尝试 alias 规范化（已在上方处理）；若仍为原始称谓（无别名映射），
+    # 则将置信度压低至 ≤0.65 并追加"关系称谓待关联"标记，令其进入复核队列。
+    # 有别名映射的情况在上方已转换为规范名，不受此约束。
+    _RELATION_TERMS_SET = {
+        "妹妹", "哥哥", "姐姐", "弟弟",
+        "爸爸", "妈妈", "父亲", "母亲", "爷爷", "奶奶",
+    }
+    for attr in llm_attributions.values():
+        if attr.speaker in _RELATION_TERMS_SET:
+            # 再次尝试规范化（兜底）
+            canonical = aliases.canonicalize(attr.speaker)
+            if canonical != attr.speaker:
+                attr.speaker = canonical
+            else:
+                # 未映射到具体角色 → 压低置信度，标记待关联
+                if attr.confidence > 0.65:
+                    attr.confidence = 0.65
+                note = "关系称谓待关联"
+                attr.evidence = f"{attr.evidence}；{note}" if attr.evidence else note
+
+    # ③.5c 临时角色场景保护
+    # 当候选集中有朋友/少女/访客等未命名人物，而 LLM 仍选择仅由
+    # narrator_anchor 注入的叙述者时，通常是“主角吸附”风险。保留建议
+    # speaker 但降为待复核，避免高置信误判直接进入生产结果。
+    for qid, attr in llm_attributions.items():
+        _guard_batch_llm_attribution(attr, all_candidates.get(qid))
+
     # ④ 合并并按文档顺序构建 SegmentEx
     segments: list[SegmentEx] = []
     cursor = 0
+
+    def _append_narrator_gap(gap_start: int, gap_end: int, prefix: str) -> None:
+        """
+        将 cleaned[gap_start:gap_end] 作为旁白处理，自动在章节标题处切分。
+        章节标题本身作为独立旁白片段，前后文本分别处理。
+        """
+        boundaries = [off for off in chapter_offsets if gap_start <= off < gap_end]
+        if not boundaries:
+            _append_narrator_segments(segments, cleaned[gap_start:gap_end], prefix)
+            return
+        sub_start = gap_start
+        for off in boundaries:
+            if off > sub_start:
+                _append_narrator_segments(segments, cleaned[sub_start:off], prefix)
+            # 章节标题行
+            h_start = off + 1 if off < len(cleaned) and cleaned[off] == "\n" else off
+            h_end_pos = cleaned.find("\n", h_start)
+            h_end = h_end_pos if h_end_pos != -1 else min(h_start + 120, len(cleaned))
+            heading_text = cleaned[h_start:h_end].strip()
+            if heading_text:
+                segments.append(SegmentEx(
+                    quote_id=f"{prefix}_ch_title",
+                    speaker="旁白",
+                    text=heading_text,
+                    confidence=1.0,
+                    evidence="章节标题",
+                    attribution_type=AttributionType.NARRATOR,
+                    candidates=["旁白"],
+                    candidate_sources={"旁白": ["chapter_heading"]},
+                    scene_characters=[],
+                    context_before="",
+                    context_after="",
+                ))
+            sub_start = h_end
+        if sub_start < gap_end:
+            _append_narrator_segments(segments, cleaned[sub_start:gap_end], prefix)
 
     for quote in quotes:
         raw_start = quote.raw_start if quote.raw_start is not None else quote.start
         raw_end   = quote.raw_end   if quote.raw_end   is not None else quote.end
 
         if include_narration and raw_start > cursor:
-            _append_narrator_segments(segments, cleaned[cursor:raw_start], quote.quote_id)
+            _append_narrator_gap(cursor, raw_start, quote.quote_id)
 
         cset = all_candidates.get(quote.quote_id)
 
@@ -480,7 +862,7 @@ def _parse_with_batch_llm(
         cursor = max(cursor, raw_end)
 
     if include_narration and cursor < len(cleaned):
-        _append_narrator_segments(segments, cleaned[cursor:], "tail")
+        _append_narrator_gap(cursor, len(cleaned), "tail")
 
     segments = fix_consistency(segments, narrator=narrator)
     result = ParseResult(
@@ -492,6 +874,7 @@ def _parse_with_batch_llm(
             "pre_resolved": len(pre_resolved),
             "llm_resolved": len(llm_attributions),
             "batch_llm_enabled": True,
+            "uncertain_narrator_chapters": uncertain_chapters,
         },
     )
     return result if return_result else result.segments
@@ -531,6 +914,9 @@ def parse_novel(
         include_narration:  是否在 segments 中插入旁白片段。
         （其余参数控制 NER 后端和隐式归因策略，仅在非 batch_llm 路径下生效。）
     """
+    # 解包 {"narrator": "...", "roles": {...}} 外层包装（外部 AI 角色提取结果常用此格式）
+    role_hints, narrator = _unwrap_role_hints(role_hints, narrator)
+
     cleaned = normalize_text(text)
     aliases = AliasRegistry.from_role_hints(role_hints)
     ner_backend = nlp_backend or (HanLPNERBackend(hanlp_model) if use_hanlp else None)

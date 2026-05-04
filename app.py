@@ -143,6 +143,15 @@ MIMO_TTS_VOICE_CLONE_MODEL = "mimo-v2.5-tts-voiceclone"
 MIMO_TTS_BUILTIN_VOICES = {"mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"}
 DEFAULT_TTS_DURATION_MAX_RETRIES = 2
 VOXCPM_BRIDGE_SCRIPT = Path(__file__).resolve().parent / "voxcpm_bridge.py"
+MAX_BATCH_LLM_COMPLETION_TOKENS = 131072
+
+
+def _clamp_batch_llm_max_tokens(value: object, default: int = 8192) -> int:
+    try:
+        resolved = int(value or default)
+    except (TypeError, ValueError):
+        resolved = default
+    return min(max(resolved, 4096), MAX_BATCH_LLM_COMPLETION_TOKENS)
 
 
 def get_tts_duration_max_retries() -> int:
@@ -1918,7 +1927,7 @@ def _build_bvp_llm_config(llm):
         base_url=str(llm.base_url),
         model=str(llm.model),
         api_key=str(llm.api_key) if llm.api_key else "local",
-        max_tokens=max(int(llm.max_tokens or 1024), 1024),
+        max_tokens=max(int(llm.max_tokens or 4096), 4096),
         temperature=float(llm.temperature or 0.0),
     )
 
@@ -1933,7 +1942,76 @@ def _confidence_label(c: float | None) -> str:
     return "low"
 
 
+def _bvp_role_aliases(name: str) -> set[str]:
+    value = str(name or "").strip()
+    if not value or value in {"旁白", "未知", "UNKNOWN"}:
+        return set()
+    aliases = {value}
+    chinese = re.sub(r"[^\u4e00-\u9fff]", "", value)
+    if len(chinese) >= 3:
+        aliases.add(chinese[-2:])
+    if len(chinese) >= 4:
+        aliases.add(chinese[-3:])
+    return {item for item in aliases if len(item) >= 2}
+
+
+def _detect_bvp_suspicious(seg) -> tuple[bool, str]:
+    """Mark risky attribution patterns for optional review; never rewrite speakers here."""
+    try:
+        confidence = float(seg.confidence if seg.confidence is not None else 1.0)
+    except Exception:
+        confidence = 1.0
+    speaker = str(seg.speaker or "").strip()
+    if confidence < 0.85 or speaker in {"", "旁白", "未知", "UNKNOWN"}:
+        return False, ""
+    evidence = str(seg.evidence or "")
+    if "LLM复核" in evidence or "LLM确认" in evidence:
+        return False, ""
+
+    after = str(seg.context_after or "")[:140]
+    if not after:
+        return False, ""
+    current_aliases = _bvp_role_aliases(speaker)
+    if any(alias in after for alias in current_aliases):
+        return False, ""
+
+    role_pool: list[str] = []
+    for collection in (seg.candidates or [], seg.scene_characters or []):
+        for role in collection:
+            role_s = str(role or "").strip()
+            if role_s and role_s not in role_pool:
+                role_pool.append(role_s)
+    action_re = re.compile(r"(?:脸上|笑容|笑|露出|绽放|离开|走|说道|说|回答|问|开口|点头|摇头|低语|大喊|叫)")
+    for role in role_pool:
+        if role == speaker or role in {"旁白", "未知", "UNKNOWN"}:
+            continue
+        for alias in _bvp_role_aliases(role):
+            idx = after.find(alias)
+            if idx < 0:
+                continue
+            window = after[idx: idx + 36]
+            if action_re.search(window):
+                return True, f"后文出现「{alias}」动作/反应线索，建议复核 speaker"
+    return False, ""
+
+
 def _bvp_segment_to_dict(seg) -> dict[str, object]:
+    evidence = str(seg.evidence or "")
+    skip_reason = ""
+    if (
+        "content_filter" in evidence
+        or "内容过滤" in evidence
+        or "疑似内容过滤" in evidence
+        or "LLM 空正文" in evidence
+    ):
+        skip_reason = "content_filter"
+    suspicious, suspicious_reason = _detect_bvp_suspicious(seg)
+    needs_review = (
+        seg.speaker in {"未知", "UNKNOWN"}
+        or (seg.confidence is not None and seg.confidence < 0.7)
+        or suspicious
+        or "LLM复核待人工" in evidence
+    )
     return {
         "speaker": seg.speaker,
         "text": seg.text,
@@ -1949,7 +2027,7 @@ def _bvp_segment_to_dict(seg) -> dict[str, object]:
         # BookVoiceParser 扩展字段。部分字段前端不直接展示，但 LLM 复核需要。
         "quote_id": seg.quote_id,
         "confidence": seg.confidence,
-        "evidence": seg.evidence,
+        "evidence": evidence,
         "addressee": seg.addressee,
         "attribution_type": str(seg.attribution_type.value if hasattr(seg.attribution_type, "value") else seg.attribution_type or ""),
         "candidates": seg.candidates,
@@ -1959,8 +2037,12 @@ def _bvp_segment_to_dict(seg) -> dict[str, object]:
         "context_after": seg.context_after,
         # 前端 _confidence / _evidence 内部字段
         "_confidence": _confidence_label(seg.confidence),
-        "_evidence": seg.evidence or "",
-        "_needs_review": seg.speaker in {"未知", "UNKNOWN"} or (seg.confidence is not None and seg.confidence < 0.5),
+        "_evidence": evidence,
+        "_needs_review": needs_review,
+        "_llm_skipped": bool(skip_reason),
+        "_skip_reason": skip_reason,
+        "_suspicious": suspicious,
+        "_suspicious_reason": suspicious_reason,
     }
 
 
@@ -2017,7 +2099,7 @@ def parse_text_v2(req: ParseV2Request):
                 base_url=str(req.llm.base_url),
                 model=str(req.llm.model),
                 api_key=str(req.llm.api_key) if req.llm.api_key else "lm-studio",
-                max_tokens=max(int(req.batch_llm_max_tokens or 8192), 4096),
+                max_tokens=_clamp_batch_llm_max_tokens(req.batch_llm_max_tokens),
                 temperature=float(req.llm.temperature or 0.0),
                 timeout=180,
             )
@@ -2079,7 +2161,7 @@ async def parse_v2_stream(req: ParseV2Request):
             base_url=str(req.llm.base_url),
             model=str(req.llm.model),
             api_key=str(req.llm.api_key) if req.llm.api_key else "lm-studio",
-            max_tokens=max(int(req.batch_llm_max_tokens or 8192), 4096),
+            max_tokens=_clamp_batch_llm_max_tokens(req.batch_llm_max_tokens),
             temperature=float(req.llm.temperature or 0.0),
             timeout=180,
         )
@@ -2199,6 +2281,10 @@ def review_parse_v2_segment(req: ParseV2ReviewOneRequest):
         for idx, seg in enumerate(routed_segments):
             if idx != req.index and seg.confidence < req.review_threshold:
                 seg.confidence = req.review_threshold
+        routed_segments[req.index].confidence = min(
+            routed_segments[req.index].confidence,
+            max(0.0, req.review_threshold - 0.01),
+        )
 
         reviewed, llm_stats = route_to_llm(
             routed_segments,
@@ -2207,8 +2293,13 @@ def review_parse_v2_segment(req: ParseV2ReviewOneRequest):
         )
         updated = reviewed[req.index]
         failed = bool((llm_stats or {}).get("failed"))
+        if failed:
+            updated = original.model_copy()
         changed = updated.speaker != original.speaker
-        confirmed = not failed and not changed and updated.confidence > original.confidence
+        blocked = "LLM复核待人工" in str(updated.evidence or "")
+        if not failed and not blocked and not changed and original.confidence > updated.confidence:
+            updated.confidence = original.confidence
+        confirmed = not failed and not blocked and not changed and updated.confidence > original.confidence
         return {
             "ok": True,
             "index": req.index,
@@ -2219,6 +2310,7 @@ def review_parse_v2_segment(req: ParseV2ReviewOneRequest):
                 "changed": changed,
                 "confirmed": confirmed,
                 "failed": failed,
+                "blocked": blocked or bool((llm_stats or {}).get("blocked")),
                 "before": {
                     "speaker": original.speaker,
                     "confidence": original.confidence,

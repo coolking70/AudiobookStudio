@@ -152,9 +152,14 @@ def _apply_jump_detection(segments: list[SegmentEx]) -> None:
                 window.add(sp)
 
         # 如果窗口非空且当前说话人不在窗口中，视为跳变
+        # 例外：说话人已在 scene_characters 中 → 该人物本就在场，只是暂时离开对话窗口，
+        # 不应被惩罚（常见于三人以上对话轮换、或角色突然开口加入对话的场景）
         if window and seg.speaker not in window:
-            seg.confidence = _clamp(seg.confidence - JUMP_PENALTY)
-            _append_evidence(seg, f"跳变：{seg.speaker} 与前后窗口说话人 {sorted(window)} 无交集")
+            if seg.scene_characters and seg.speaker in seg.scene_characters:
+                pass  # 角色本在场景中，不算真正的跳变
+            else:
+                seg.confidence = _clamp(seg.confidence - JUMP_PENALTY)
+                _append_evidence(seg, f"跳变：{seg.speaker} 与前后窗口说话人 {sorted(window)} 无交集")
 
 
 # ── 修正 4：旁白/未知置信度下压（原有逻辑保留）────────────────────────────

@@ -8,24 +8,60 @@ TITLE_SUFFIXES = ("公子", "姑娘", "小姐", "夫人", "大人", "先生", "�
 
 
 @dataclass
+class RelationRole:
+    """无真实姓名、以关系称谓出场的角色（如「遥奈妈妈」）。
+
+    owner 在场景上下文中出现时，aliases 中的称谓（如「妈妈」）才作为候选激活。
+    这避免了「妈妈」全局映射到某个固定角色，而是根据「谁的妈妈在场」动态判断。
+
+    role_hints 中的声明格式：
+        "遥奈妈妈": {"aliases": ["妈妈", "母亲"], "owner": "甘织遥奈"}
+    """
+    canonical: str                             # 规范名，如「遥奈妈妈」
+    owner: str                                 # 关联的已命名角色，如「甘织遥奈」
+    aliases: list[str] = field(default_factory=list)  # 称谓别名，如 ["妈妈", "母亲"]
+
+
+@dataclass
 class AliasRegistry:
     alias_map: dict[str, str] = field(default_factory=dict)
+    relation_roles: list[RelationRole] = field(default_factory=list)
 
     @classmethod
-    def from_role_hints(cls, role_hints: dict[str, list[str] | str] | list[str] | None) -> "AliasRegistry":
+    def from_role_hints(cls, role_hints: dict[str, list[str] | str | dict] | list[str] | None) -> "AliasRegistry":
         registry = cls()
         if isinstance(role_hints, dict):
-            for canonical, aliases in role_hints.items():
-                registry.add(canonical, canonical)
-                if isinstance(aliases, str):
-                    registry.add(aliases, canonical)
+            for canonical, value in role_hints.items():
+                if isinstance(value, dict) and "owner" in value:
+                    # 关系角色格式：{"aliases": [...], "owner": "角色名"}
+                    owner = str(value.get("owner", "")).strip()
+                    aliases_list = [str(a).strip() for a in (value.get("aliases") or []) if a]
+                    if canonical and owner:
+                        # 只将规范名自身加入 alias_map（不加 term aliases，保持 owner 条件激活）
+                        registry.add(canonical, canonical)
+                        registry.relation_roles.append(
+                            RelationRole(canonical=canonical, owner=owner, aliases=aliases_list)
+                        )
                 else:
-                    for alias in aliases or []:
-                        registry.add(alias, canonical)
+                    # 普通角色格式：["别名1", "别名2"] 或 "别名"
+                    registry.add(canonical, canonical)
+                    if isinstance(value, str):
+                        registry.add(value, canonical)
+                    else:
+                        for alias in (value or []):
+                            registry.add(alias, canonical)
         elif isinstance(role_hints, list):
             for name in role_hints:
                 registry.add(name, name)
         return registry
+
+    def get_relation_roles(self, term: str) -> list[RelationRole]:
+        """返回以 term 为别名的所有关系角色（按 owner 区分，通常 0-2 个）。"""
+        return [rr for rr in self.relation_roles if term in rr.aliases]
+
+    def is_relation_role(self, canonical: str) -> bool:
+        """该规范名是否为关系角色（无真实姓名，由 owner 条件激活）。"""
+        return any(rr.canonical == canonical for rr in self.relation_roles)
 
     def add(self, alias: str, canonical: str) -> None:
         alias = (alias or "").strip()

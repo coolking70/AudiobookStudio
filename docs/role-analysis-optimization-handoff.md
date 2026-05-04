@@ -1,6 +1,6 @@
 # Role Analysis Optimization Handoff
 
-Last updated: 2026-04-28
+Last updated: 2026-05-04
 
 This document records the current state of the role/dialogue analysis optimization work so another AI or developer can continue without replaying the full chat history.
 
@@ -195,6 +195,127 @@ One remaining hard failure in Sample A: `「不，不是那边的邻居。」` i
 First-pass speaker reasoning in complex multi-person dialogue (tavern/group scenes). The prompt fixes reduce the most systematic errors but the model can still mis-assign a line in a fast-alternating 3-person exchange where no explicit speech tag is present.
 
 Speaker verification remains off by default. Testing showed it introduced more over-corrections than it fixed.
+
+## Recent Work (2026-05-04 session)
+
+### Three-Layer Relation Term Optimization (BookVoiceParser)
+
+The core problem: unnamed recurring family characters (e.g., "真唯's mother", "遥奈's mother") have dialogue but no real names. They appear only via relation terms (妈妈/姐姐/爸爸). Previous code either ignored them or produced false positives by globally mapping "妈妈" to a fixed character.
+
+Three layers were implemented:
+
+**Layer 1 — `candidate_gen.py`: Owner-conditional candidate activation**
+
+Added `RelationRole` support to the candidate generation pipeline. The new `role_hints` format for relation characters:
+
+```json
+{
+  "遥奈妈妈": {"aliases": ["妈妈", "母亲"], "owner": "甘织遥奈"},
+  "真唯妈妈": {"aliases": ["妈妈", "お母様"], "owner": "王冢真唯"}
+}
+```
+
+Logic in `generate_candidates()`:
+- If the relation term appears in a ±100-char short context window, check whether a `RelationRole` config exists for it.
+- If yes: check whether the `owner` (in full or short-form) appears in a ±150-char wide context window.
+  - Owner present → add canonical with source `"relation_conditional"` (strong signal).
+  - Only one possible owner but not present → add with source `"relation_mention"` (weak, shows in prompt note only).
+  - Multiple owners, none present → skip entirely (avoid noise).
+- If no `RelationRole` config: fall back to old alias map or context inference.
+
+Added `_DOWNWARD_RELATIONS = frozenset(["妹妹", "弟弟"])` to guard the `_infer_relation_character` function. Only downward-relation terms (where the nearby character IS the speaker) may attempt context inference; upward/lateral relations (妈妈/爸爸/姐姐/哥哥) return `None` immediately, because nearby named characters are the owner/child, not the speaking parent.
+
+Added `is_relation_role()` exclusion in the role_hints context-matching loop. Without this, `真唯妈妈[-2:]` = `妈妈` would match any context containing "妈妈" and wrongly activate the relation character even when 真唯 was not in the scene.
+
+Source strength summary:
+| Source tag | Meaning |
+|---|---|
+| `relation_conditional` | RelationRole configured, owner in scene — strong signal |
+| `relation_inferred` | Old-style flat alias (妹妹→甘织遥奈) or downward-relation context inference |
+| `relation_mention` | Term appears, no match possible — weak fallback, shown in prompt note only |
+
+**Layer 2 — `batch_llm_attributor.py`: Prompt separation**
+
+Candidates with only `relation_mention` (and no `relation_conditional` / `relation_inferred`) are split out of the main candidate list and shown as a separate footnote in the prompt:
+
+```
+📌关系称谓参考：「妈妈」出现在上下文中，
+请优先从候选人列表中找到对应的具体角色；
+仅当确认说话人不在候选列表时，才以称谓本身标记。
+```
+
+Candidates with `relation_conditional` or `relation_inferred` remain in the main numbered list so the LLM can select them normally.
+
+**Layer 3 — `parser.py`: Confidence cap**
+
+In the post-LLM normalization pass (block ③.5b), if the LLM returned a raw relation term as the speaker (e.g., `"妈妈"`) and no alias mapping resolves it to a canonical name, the segment's confidence is capped at ≤ 0.65 and evidence is appended with `"关系称谓待关联"`. This ensures ambiguous relation-term attributions are flagged for human review rather than silently accepted at full confidence.
+
+### New `RelationRole` Dataclass (`alias_registry.py`)
+
+```python
+@dataclass
+class RelationRole:
+    canonical: str       # e.g. "遥奈妈妈"
+    owner: str           # e.g. "甘织遥奈"
+    aliases: list[str]   # e.g. ["妈妈", "母亲"]
+```
+
+`AliasRegistry` gained:
+- `relation_roles: list[RelationRole]` field
+- `from_role_hints()` parses the new dict-with-owner format (value is `{"aliases": [...], "owner": "..."}`) in addition to the old list format
+- `get_relation_roles(term) -> list[RelationRole]` — returns all RelationRoles whose aliases contain the given term
+- `is_relation_role(canonical) -> bool` — used to skip relation roles in the general context-matching loop
+
+The relation role canonical name (e.g., `"遥奈妈妈"`) is added to `alias_map` pointing to itself, so `known_names()` includes it and `canonicalize()` works normally. But the short-form suffix matching (役 → last 2/3 chars) is skipped for these names.
+
+### Frontend: `buildRoleHintsPrompt()` Updated (`static/index.html`)
+
+The LLM prompt that extracts `role_hints` from the novel text was updated with a new Rule 5 covering relation characters. The output example now shows both the old list format and the new dict-with-owner format:
+
+```json
+{
+  "王冢真唯": ["真唯"],
+  "甘织玲奈子": ["玲奈子", "妹妹"],
+  "玲奈子妈妈": {"aliases": ["妈妈", "母亲"], "owner": "甘织玲奈子"},
+  "真唯妈妈": {"aliases": ["妈妈", "お母様"], "owner": "王冢真唯"}
+}
+```
+
+Key rules added to the extraction prompt:
+- Use dict format only for characters who appear exclusively as a relation term, have multiple lines of dialogue, and have no real name.
+- If two characters each have their own "妈妈", list them separately with their respective owners.
+- If the relation term refers to a character who also has a real name (e.g., 妹妹 = 甘织遥奈), add it as a plain alias in that character's list, not as a relation role.
+
+### Bug Fix: `runStructuredParseFlow` Not Clearing State Before API Call (`static/index.html`)
+
+**Root cause**: `runStructuredParseFlow` called `beginTask()` and then immediately launched the backend API call without clearing `segmentsState`. This meant old segment results remained in the UI throughout the duration of the API request. `runAnalysisFlow` has always done a reset before starting (lines 10700–10704), but the structured parse flow was missing this step.
+
+**Symptom**: After clicking "清空文本与缓存" (which correctly calls `clearTextAndCache()`), re-importing text, and running structured parsing, the previous analysis results remained visible while the API processed the new text. Users experienced this as "the parse immediately shows previous results."
+
+**Fix**: Added the same reset block at the start of `runStructuredParseFlow`, before `beginTask`:
+
+```javascript
+// 开始前先清空上一次的分析结果，避免 API 处理期间旧结果仍显示在界面上
+chapterChunksState = [];
+plannedChunksState = [];
+optimizedChunksState = [];
+segmentationInfoState = null;
+applySegmentsState([], { persist: false });
+```
+
+`persist: false` is used intentionally (same as `runAnalysisFlow`) so that `LAST_SEGMENTS_STORAGE_KEY` is not overwritten with an empty array mid-task — the final results from the API will persist when `applyStructuredSegments` is called.
+
+### Verified Test Cases for Relation Term Logic
+
+Four scenario types confirmed working after implementation:
+
+| Type | Setup | Expected | Result |
+|---|---|---|---|
+| B — single unnamed parent | `遥奈妈妈` with `owner: 甘織遥奈`; only 遥奈 in scene | `遥奈妈妈` with `relation_conditional` | ✅ |
+| C — two parents, both owners in scene | Both `遥奈妈妈` and `真唯妈妈` configured; both owners in scene | Both with `relation_conditional` | ✅ |
+| C′ — two parents, only one owner in scene | Same config, only 遥奈 in scene | Only `遥奈妈妈`; `真唯妈妈` absent | ✅ |
+| D — unconfigured one-off | No RelationRole config, `妈妈` in context | `妈妈` with `relation_mention` (weak) | ✅ |
+| Upward-relation inference guard | `姐姐` in context, no config | `relation_mention` only, NOT mapped to nearby named char | ✅ |
 
 ## Suggested Next Steps
 
