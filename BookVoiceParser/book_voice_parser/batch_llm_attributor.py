@@ -35,6 +35,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
+import httpx
+
 from .schema import Attribution, AttributionType, CandidateSet, QuoteSpan
 
 logger = logging.getLogger(__name__)
@@ -533,17 +535,44 @@ class BatchLLMAttributor:
         self.cfg = config
         self._client = None
 
+    def _normalize_base_url(self) -> str:
+        base = str(self.cfg.base_url or "").strip().rstrip("/")
+        if base.endswith("/v1"):
+            return base
+        return f"{base}/v1"
+
     def _get_client(self):
         if self._client is None:
             try:
                 from openai import OpenAI
             except ImportError:
-                raise ImportError("需要安装 openai 包: pip install openai")
-            self._client = OpenAI(
-                base_url=self.cfg.base_url,
-                api_key=self.cfg.api_key,
-            )
+                self._client = False
+            else:
+                self._client = OpenAI(
+                    base_url=self._normalize_base_url(),
+                    api_key=self.cfg.api_key,
+                )
         return self._client
+
+    def _call_llm_via_httpx(self, payload: dict) -> dict:
+        headers = {
+            "Authorization": f"Bearer {self.cfg.api_key or 'local'}",
+            "Content-Type": "application/json",
+        }
+        timeout = httpx.Timeout(
+            connect=min(float(self.cfg.timeout), 30.0),
+            read=float(self.cfg.timeout),
+            write=60.0,
+            pool=30.0,
+        )
+        with httpx.Client(timeout=timeout, trust_env=False) as client:
+            response = client.post(
+                f"{self._normalize_base_url()}/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+            response.raise_for_status()
+            return response.json()
 
     def _resolve_max_tokens(self, max_tokens: int | None = None) -> int:
         """Return a completion-token budget accepted by common OpenAI-compatible servers."""
@@ -575,7 +604,6 @@ class BatchLLMAttributor:
         Args:
             max_tokens: 覆盖 BatchConfig.max_tokens，用于轻量级调用（如章节叙述者检测）。
         """
-        client = self._get_client()
         resolved_max_tokens = self._resolve_max_tokens(max_tokens)
         messages: list[dict] = [
             {"role": "system", "content": system},
@@ -591,21 +619,39 @@ class BatchLLMAttributor:
             # 策略 3：Qwen3 系列常见的 no-think 指令。即使后端忽略，也不会改变任务语义。
             messages[1]["content"] = "/no_think\n" + str(messages[1]["content"])
 
-        resp = client.chat.completions.create(
-            model=self.cfg.model,
-            messages=messages,
-            max_tokens=resolved_max_tokens,
-            temperature=self.cfg.temperature,
-            timeout=self.cfg.timeout,
-            **({"extra_body": extra_body} if extra_body else {}),
-        )
-        msg = resp.choices[0].message
-        content = (msg.content or "").strip()
+        payload = {
+            "model": self.cfg.model,
+            "messages": messages,
+            "max_tokens": resolved_max_tokens,
+            "temperature": self.cfg.temperature,
+        }
+        if extra_body:
+            payload["extra_body"] = extra_body
+
+        client = self._get_client()
+        if client:
+            resp = client.chat.completions.create(
+                **payload,
+                timeout=self.cfg.timeout,
+            )
+            msg = resp.choices[0].message
+            content = (msg.content or "").strip()
+        else:
+            data = self._call_llm_via_httpx(payload)
+            msg = (data.get("choices") or [{}])[0].get("message") or {}
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                content = "".join(item.get("text", "") for item in content if isinstance(item, dict))
+            content = (content or "").strip()
+
         if not content:
             # 思考模型的 reasoning_content 回退（不标准，仅作诊断）
             try:
                 extra = getattr(msg, "model_extra", None) or {}
-                reasoning = extra.get("reasoning_content", "") or ""
+                if isinstance(msg, dict):
+                    extra = msg.get("model_extra") or msg.get("extra") or extra
+                reasoning = extra.get("reasoning_content", "") if isinstance(extra, dict) else ""
+                reasoning = reasoning or ""
                 if reasoning:
                     logger.warning(
                         "content 为空，模型仅返回 reasoning_content；可能是 thinking 预算不足、"
