@@ -560,6 +560,31 @@ class BatchLLMAttributor:
                 )
         return self._client
 
+    def _max_rate_limit_retries(self) -> int:
+        return int(getattr(self.cfg, "rate_limit_retries", 6) or 0)
+
+    @staticmethod
+    def _is_rate_limited(status_code: int | None, exc: Exception | None = None) -> bool:
+        if status_code == 429:
+            return True
+        if exc is not None:
+            text = str(exc).lower()
+            return "429" in text or "rate limit" in text
+        return False
+
+    @staticmethod
+    def _rate_limit_delay(source: Any, attempt: int) -> float:
+        # Honor Retry-After when present; else exponential backoff (5,10,20,40s) capped at 60s.
+        headers = getattr(getattr(source, "response", None), "headers", None) or getattr(source, "headers", None)
+        if headers:
+            raw = headers.get("Retry-After") or headers.get("retry-after")
+            try:
+                if raw is not None:
+                    return min(120.0, max(1.0, float(raw)))
+            except (TypeError, ValueError):
+                pass
+        return min(60.0, 5.0 * (2 ** attempt))
+
     def _call_llm_via_httpx(self, payload: dict) -> dict:
         headers = {
             "Authorization": f"Bearer {self.cfg.api_key or 'local'}",
@@ -571,18 +596,27 @@ class BatchLLMAttributor:
             write=60.0,
             pool=30.0,
         )
+        max_retries = self._max_rate_limit_retries()
+        attempt = 0
         with httpx.Client(timeout=timeout, trust_env=False) as client:
-            response = client.post(
-                f"{self._normalize_base_url()}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
-            if response.status_code == 400:
-                raise BatchLLMBadRequestError(
-                    f"HTTP 400 from LLM: {response.text[:800]}"
+            while True:
+                response = client.post(
+                    f"{self._normalize_base_url()}/chat/completions",
+                    headers=headers,
+                    json=payload,
                 )
-            response.raise_for_status()
-            return response.json()
+                if response.status_code == 400:
+                    raise BatchLLMBadRequestError(
+                        f"HTTP 400 from LLM: {response.text[:800]}"
+                    )
+                if response.status_code == 429 and attempt < max_retries:
+                    delay = self._rate_limit_delay(response, attempt)
+                    logger.warning("BatchLLM HTTP 429 限流，%.0fs 后重试（第 %d/%d 次）", delay, attempt + 1, max_retries)
+                    time.sleep(delay)
+                    attempt += 1
+                    continue
+                response.raise_for_status()
+                return response.json()
 
     def _resolve_max_tokens(self, max_tokens: int | None = None) -> int:
         """Return a completion-token budget accepted by common OpenAI-compatible servers."""
@@ -659,23 +693,33 @@ class BatchLLMAttributor:
             else:
                 payload.update(extra_body)
         if client:
-            try:
-                resp = client.chat.completions.create(
-                    **payload,
-                    timeout=self.cfg.timeout,
-                )
-            except Exception as exc:
-                status_code = getattr(exc, "status_code", None)
-                response = getattr(exc, "response", None)
-                status_code = status_code or getattr(response, "status_code", None)
-                if status_code == 400:
-                    body = ""
-                    try:
-                        body = getattr(response, "text", "") or str(exc)
-                    except Exception:
-                        body = str(exc)
-                    raise BatchLLMBadRequestError(f"HTTP 400 from LLM: {body[:800]}") from exc
-                raise
+            max_retries = self._max_rate_limit_retries()
+            attempt = 0
+            while True:
+                try:
+                    resp = client.chat.completions.create(
+                        **payload,
+                        timeout=self.cfg.timeout,
+                    )
+                    break
+                except Exception as exc:
+                    status_code = getattr(exc, "status_code", None)
+                    response = getattr(exc, "response", None)
+                    status_code = status_code or getattr(response, "status_code", None)
+                    if status_code == 400:
+                        body = ""
+                        try:
+                            body = getattr(response, "text", "") or str(exc)
+                        except Exception:
+                            body = str(exc)
+                        raise BatchLLMBadRequestError(f"HTTP 400 from LLM: {body[:800]}") from exc
+                    if self._is_rate_limited(status_code, exc) and attempt < max_retries:
+                        delay = self._rate_limit_delay(exc, attempt)
+                        logger.warning("BatchLLM HTTP 429 限流，%.0fs 后重试（第 %d/%d 次）", delay, attempt + 1, max_retries)
+                        time.sleep(delay)
+                        attempt += 1
+                        continue
+                    raise
             msg = resp.choices[0].message
             content = (msg.content or "").strip()
         else:

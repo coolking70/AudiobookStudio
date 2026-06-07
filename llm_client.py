@@ -1,4 +1,6 @@
 import json
+import logging
+import time
 from datetime import datetime
 from typing import Any
 
@@ -84,7 +86,56 @@ class OpenAICompatibleClient:
         response = getattr(exc, "response", None)
         return getattr(response, "status_code", None) == 400
 
+    @staticmethod
+    def _status_of(obj: Any) -> int | None:
+        status = getattr(obj, "status_code", None)
+        if status is None:
+            status = getattr(getattr(obj, "response", None), "status_code", None)
+        return status
+
+    def _is_rate_limited(self, exc: Exception) -> bool:
+        if self._status_of(exc) == 429:
+            return True
+        return "429" in str(exc) or "rate limit" in str(exc).lower()
+
+    @staticmethod
+    def _retry_after_seconds(obj: Any, attempt: int) -> float:
+        # Honor a Retry-After header if the provider sends one; otherwise back off
+        # exponentially (5s, 10s, 20s, 40s, ...) capped at 60s to ride out per-minute limits.
+        headers = getattr(getattr(obj, "response", None), "headers", None) or getattr(obj, "headers", None)
+        if headers:
+            raw = headers.get("Retry-After") or headers.get("retry-after")
+            try:
+                if raw is not None:
+                    return min(120.0, max(1.0, float(raw)))
+            except (TypeError, ValueError):
+                pass
+        return min(60.0, 5.0 * (2 ** attempt))
+
     def _send_chat_request(self, payload: dict[str, Any], timeout: httpx.Timeout) -> Any:
+        max_retries = int(getattr(self.config, "rate_limit_retries", 6) or 0)
+        attempt = 0
+        while True:
+            try:
+                response = self._send_chat_request_once(payload, timeout)
+            except Exception as exc:  # noqa: BLE001 - re-raised below if not a rate limit
+                if self._is_rate_limited(exc) and attempt < max_retries:
+                    delay = self._retry_after_seconds(exc, attempt)
+                    logging.warning("[llm] HTTP 429 限流，%.0fs 后重试（第 %d/%d 次）", delay, attempt + 1, max_retries)
+                    time.sleep(delay)
+                    attempt += 1
+                    continue
+                raise
+            # httpx fallback path returns a Response without raising on 429.
+            if self._status_of(response) == 429 and attempt < max_retries:
+                delay = self._retry_after_seconds(response, attempt)
+                logging.warning("[llm] HTTP 429 限流，%.0fs 后重试（第 %d/%d 次）", delay, attempt + 1, max_retries)
+                time.sleep(delay)
+                attempt += 1
+                continue
+            return response
+
+    def _send_chat_request_once(self, payload: dict[str, Any], timeout: httpx.Timeout) -> Any:
         if OpenAI is not None:
             request_payload = dict(payload)
             extra_body: dict[str, Any] = {}
