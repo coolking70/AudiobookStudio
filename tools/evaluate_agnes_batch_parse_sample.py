@@ -36,7 +36,9 @@ def extract_text(source: Path) -> str:
 
 
 def normalize_text_for_match(value: str) -> str:
-    return "".join(str(value or "").split()).replace("彷佛", "仿佛")
+    # collapse whitespace + reconcile traditional/simplified variants found in the
+    # Taiwan-edition original ("彷佛"/"仿佛", "姊姊"/"姐姐").
+    return "".join(str(value or "").split()).replace("彷佛", "仿佛").replace("姊", "姐")
 
 
 def main() -> None:

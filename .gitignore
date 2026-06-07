@@ -14,3 +14,7 @@ Thumbs.db
 
 .idea/
 .vscode/
+
+# Speaker-attribution eval scratch / reproducible outputs
+docs/samples/_*.json
+docs/samples/*_result.json
