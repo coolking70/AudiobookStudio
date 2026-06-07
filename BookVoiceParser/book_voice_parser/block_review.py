@@ -141,7 +141,8 @@ def _call_llm(base_url: str, api_key: str, model: str, prompt: str, timeout: int
     with httpx.Client(timeout=timeout, trust_env=False) as cli:
         while True:
             r = cli.post(url, headers=headers, json=payload)
-            if r.status_code == 429 and attempt < 6:
+            # 429 rate limit and transient 5xx server errors are retryable.
+            if r.status_code in (429, 500, 502, 503, 504) and attempt < 6:
                 time.sleep(min(60.0, 5.0 * (2 ** attempt)))
                 attempt += 1
                 continue
@@ -171,6 +172,7 @@ def apply_block_review(
     role_hints: list[str],
     aliases: AliasRegistry,
     quote_prefix: str = "q",
+    prompt_template: str | None = None,
 ) -> tuple[list[SegmentEx], dict[str, Any]]:
     """Run structured block-level re-attribution. Returns (segments, stats).
 
@@ -206,7 +208,7 @@ def apply_block_review(
 
         for ctx_idxs, new_idxs in _subchunks(block):
             window = _render_window(cleaned, quotes, ctx_idxs)
-            prompt = _PROMPT.format(prefix=quote_prefix, roster=roster, narrator=narrator, block=window)
+            prompt = (prompt_template or _PROMPT).format(prefix=quote_prefix, roster=roster, narrator=narrator, block=window)
             try:
                 out = _parse_json(_call_llm(base_url, api_key, model, prompt, timeout))
             except Exception as exc:  # noqa: BLE001 - failure-safe per block

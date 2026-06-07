@@ -18,3 +18,6 @@ Thumbs.db
 # Speaker-attribution eval scratch / reproducible outputs
 docs/samples/_*.json
 docs/samples/*_result.json
+
+# Derived scratch sample (seg1+seg2 concat test)
+docs/samples/muli4_concat_*
