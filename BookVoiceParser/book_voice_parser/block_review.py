@@ -48,13 +48,13 @@ _PROMPT = """下面是一段连续的小说原文（旁白与对话混排），�
 角色表（只用其中的规范名，不要用别名）：
 {roster}
 叙述者（第一人称“我”）：{narrator}
-
+{address_hints}
 请按真人阅读方式判断每句对话的说话人：
 1. 先读旁白，确定这一段【在场人物】及其【登场顺序】——留意“A与B / A和B / A、B 走了过来”这类并列引入，先出现者通常先开口。
 2. 用登场顺序【锚定第一句】说话人，定下交替基准。
 3. 逐句判断它是【与上句同一人续说】【两人交替】还是【有新人加入 / 某人退出】；没有其他线索时，默认两人按登场顺序交替。
 4. 用以下证据【校正】：
-   - 称呼：对话里出现的称呼/亲属称谓指向被称呼者，发话者通常不是被喊的那位（如有人喊“X、姊姊、哥哥”）。
+   - 称呼：对话里出现的称呼/亲属称谓指向被称呼者，发话者通常不是被喊的那位（如有人喊“X、姊姊、哥哥”）。若上方给了【称呼指纹】，可据此反推说话人（软证据）。
    - 语气/语域：不同角色说话风格不同（强势 / 怯懦 / 毒舌 / 客气 / 内心戏多）。
    - 语义邻接：提问→回答、提议→拒绝或接受、递出→接住，多为两人交替；一个人连续做一件事（如逐张点评照片）可能是续说。
 5. 第一人称“我”说出口的话归叙述者 {narrator}。
@@ -64,6 +64,25 @@ _PROMPT = """下面是一段连续的小说原文（旁白与对话混排），�
 {block}
 
 只输出一个 JSON 对象：键为本段每个编号，值为规范名。例如 {{"{prefix}0012":"角色甲","{prefix}0013":"角色乙"}}。不要任何解释。"""
+
+
+def _format_address_hints(hints: dict | None, min_score: float = 0.8, limit: int = 24) -> str:
+    """Render the learned address-term -> speaker fingerprint (from address_term_backcheck)
+    as soft-evidence hints. `hints` maps term -> {"speaker", "score", ...}."""
+    if not hints:
+        return ""
+    rows = []
+    for term, info in hints.items():
+        sp = str((info or {}).get("speaker") or "")
+        sc = float((info or {}).get("score") or 0.0)
+        if sp and term and sc >= min_score:
+            rows.append((sc, term, sp))
+    if not rows:
+        return ""
+    rows.sort(reverse=True)
+    lines = "\n".join(f"- 台词中出现「{t}」→ 多半是 {sp} 在说" for _, t, sp in rows[:limit])
+    return ("\n【称呼指纹（本文统计的软证据，可被旁白显式标记或更强语义推翻）】\n"
+            + lines + "\n")
 
 
 def _is_explicit(seg: SegmentEx) -> bool:
@@ -173,6 +192,7 @@ def apply_block_review(
     aliases: AliasRegistry,
     quote_prefix: str = "q",
     prompt_template: str | None = None,
+    address_hints: dict | None = None,
 ) -> tuple[list[SegmentEx], dict[str, Any]]:
     """Run structured block-level re-attribution. Returns (segments, stats).
 
@@ -194,6 +214,7 @@ def apply_block_review(
     narrator = (narrator or "").strip() or "叙述者"
     valid_names = set(role_hints) | {narrator}
     roster = _roster_text(role_hints, aliases)
+    hints_text = _format_address_hints(address_hints)
 
     for block in _group_blocks(quotes):
         if len(block) < MIN_BLOCK:
@@ -208,7 +229,9 @@ def apply_block_review(
 
         for ctx_idxs, new_idxs in _subchunks(block):
             window = _render_window(cleaned, quotes, ctx_idxs)
-            prompt = (prompt_template or _PROMPT).format(prefix=quote_prefix, roster=roster, narrator=narrator, block=window)
+            prompt = (prompt_template or _PROMPT).format(
+                prefix=quote_prefix, roster=roster, narrator=narrator,
+                block=window, address_hints=hints_text)
             try:
                 out = _parse_json(_call_llm(base_url, api_key, model, prompt, timeout))
             except Exception as exc:  # noqa: BLE001 - failure-safe per block

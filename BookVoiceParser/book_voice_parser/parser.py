@@ -1364,6 +1364,11 @@ def _parse_with_batch_llm(
                 narrator=narrator,
                 role_hints=role_hints_list,
                 aliases=aliases,
+                # address_hints left off by default: A/B showed feeding the learned
+                # address fingerprint slightly regresses (it covers mostly already-correct
+                # scenes, is circular vs the model's own output, and misses sparse speakers).
+                # Kept as an opt-in hook on apply_block_review for future use.
+                address_hints=None,
             )
             block_review_stats["enabled"] = True
         except Exception as exc:  # noqa: BLE001 - never let review break the main path
