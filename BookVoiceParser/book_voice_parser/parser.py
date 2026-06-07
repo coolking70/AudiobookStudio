@@ -6,7 +6,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from .alias_registry import AliasRegistry
+from .alias_registry import AliasRegistry, clean_role_hint_name
+from .address_term_backcheck import apply_address_term_backcheck
 from .candidate_gen import generate_candidates
 from .cleaner import normalize_text
 from .consistency_fixer import fix_consistency
@@ -42,7 +43,8 @@ _MSG_SEND_RE = re.compile(
 _CHAPTER_HEADING_RE = re.compile(
     r"(?m)^\s*("
     r"第[零一二三四五六七八九十百千万\d]+[章节回卷]"
-    r"|序章|终章|尾声|幕间|插话|后记|番外"
+    r"|序章|终章|尾声|幕间|插话|后记|番外|特典"
+    r"|第[零一二三四五六七八九十百千万\d]+卷\s*特典.*"
     r"|Chapter\s+\d+"
     r").*$"
 )
@@ -66,6 +68,13 @@ def _chapter_opening(cleaned: str, chapter_offset: int, next_offset: int | None 
     return cleaned[start:end]
 
 
+def _heading_has_role_narrator_pattern(heading: str, alias: str) -> bool:
+    return any(
+        f"{alias}{suffix}" in heading
+        for suffix in ("的故事", "的物語", "的音档", "的音檔", "の物語")
+    )
+
+
 def _extract_chapter_narrator(heading: str, role_hints: list[str]) -> str | None:
     """
     从「X的故事」「X的物語」章节标题中提取该章节的叙述者角色名（规范化全名）。
@@ -78,9 +87,70 @@ def _extract_chapter_narrator(heading: str, role_hints: list[str]) -> str | None
         if len(role) >= 4:
             aliases_to_check.append(role[-3:])
         for alias in aliases_to_check:
-            if f"{alias}的故事" in heading or f"{alias}的物語" in heading:
+            if _heading_has_role_narrator_pattern(heading, alias):
                 return role
     return None
+
+
+def _role_title_aliases(role: str) -> set[str]:
+    role = str(role or "").strip()
+    if not role:
+        return set()
+    aliases = {role}
+    chinese = "".join(re.findall(r"[一-龥]+", role))
+    if len(chinese) >= 2:
+        aliases.add(chinese[-2:])
+        aliases.add("小" + chinese[-2:])
+    if len(chinese) >= 3:
+        aliases.add(chinese[-3:])
+        aliases.add("小" + chinese[-3:])
+        aliases.add("小" + chinese[-3:-1])
+    return {item for item in aliases if len(item) >= 2}
+
+
+def _conservative_title_aliases(role: str) -> set[str]:
+    role = str(role or "").strip()
+    if not role:
+        return set()
+    aliases = {role}
+    chinese = "".join(re.findall(r"[一-龥]+", role))
+    if len(chinese) >= 4:
+        aliases.add(chinese[-3:])
+    if len(chinese) >= 2:
+        aliases.add("小" + chinese[-2:])
+    if len(chinese) >= 3:
+        aliases.add("小" + chinese[-3:])
+    ambiguous = {"恋人", "朋友", "同学", "小姐", "姐姐", "妹妹", "妈妈", "母亲", "主人", "宠物"}
+    return {item for item in aliases if len(item) >= 3 and item not in ambiguous}
+
+
+def _match_audio_track_narrator(heading: str, role_hints: list[str]) -> str | None:
+    heading = str(heading or "")
+    if not heading or ("的音档" not in heading and "的音檔" not in heading):
+        return None
+    for role in role_hints:
+        for alias in _role_title_aliases(role):
+            if f"{alias}的音档" in heading or f"{alias}的音檔" in heading:
+                return role
+    return None
+
+
+def _match_title_named_role(heading: str, role_hints: list[str]) -> str | None:
+    heading = str(heading or "")
+    if not heading:
+        return None
+    direct = _match_audio_track_narrator(heading, role_hints)
+    if direct:
+        return direct
+    matched: list[tuple[int, str]] = []
+    for role in role_hints:
+        for alias in _conservative_title_aliases(role):
+            if alias in heading:
+                matched.append((len(alias), role))
+                break
+    if len({role for _, role in matched}) != 1:
+        return None
+    return matched[0][1]
 
 
 def _extract_dual_chapter_roles(heading: str, role_hints: list[str]) -> list[str]:
@@ -173,7 +243,7 @@ def _is_perspective_shift_chapter(
             if len(role) >= 4:
                 aliases.append(role[-3:])
             for alias in aliases:
-                if f"{alias}的故事" in chapter_heading or f"{alias}的物語" in chapter_heading:
+                if _heading_has_role_narrator_pattern(chapter_heading, alias):
                     return True
 
     return False
@@ -205,6 +275,388 @@ def _clean_narrator_text(text: str) -> str:
     elif NARRATOR_CUE_ONLY_RE.search(cleaned):
         return ""
     return cleaned
+
+
+_AUDIO_TRACK_SOURCE = "audio_track_narrator"
+_SPECIAL_PERSPECTIVE_SOURCE = "special_perspective_chapter"
+_SCENE_ACTIVE_SOURCE = "scene_active"
+_SCENE_MENTION_SOURCE = "scene_semantic_mention"
+
+_SCENE_ENTRY_RE = re.compile(
+    r"(?:出现|走来|走进|进来|回来|来到|靠近|坐下|站在|搭话|开口|说道|说|问道|问|回答|喊|叫|挥手|看着|望着|注视|笑)"
+)
+_SCENE_EXIT_RE = re.compile(r"(?:离开|走了|走远|退场|不见|消失|回去|出门|离席)")
+_SCENE_RESET_RE = re.compile(r"(?:\*{3,}|——+|-{3,}|场景切换|时间来到|隔天|第二天|翌日)")
+
+
+def _is_audio_track_stop_text(text: str) -> bool:
+    text = str(text or "").strip()
+    return bool(text and ("用户使用感评价" in text or "使用感评价" in text))
+
+
+def _is_audio_track_meta_text(text: str) -> bool:
+    text = str(text or "").strip()
+    if not text:
+        return True
+    if re.search(r"track\s*\d+\.MP3", text, flags=re.IGNORECASE):
+        return True
+    if "的音档" in text or "的音檔" in text:
+        return True
+    return False
+
+
+def _is_parenthetical_sound_effect(text: str) -> bool:
+    stripped = str(text or "").strip()
+    if not (stripped.startswith(("（", "(")) and stripped.endswith(("）", ")"))):
+        return False
+    inner = stripped[1:-1]
+    return any(token in inner for token in ("声音", "声", "音效", "开门", "关门", "脚步", "铃声", "敲门"))
+
+
+def _is_parenthetical_inner_voice(text: str) -> bool:
+    stripped = str(text or "").strip()
+    return bool(stripped.startswith(("（", "(")) and stripped.endswith(("）", ")")) and not _is_parenthetical_sound_effect(stripped))
+
+
+def _text_has_address_to_other(text: str, speaker: str, role_hints: list[str]) -> bool:
+    text = str(text or "")
+    if not text:
+        return False
+    speaker_aliases = _role_title_aliases(speaker)
+    for role in role_hints:
+        if role == speaker:
+            continue
+        for alias in _role_title_aliases(role):
+            if alias in text and alias not in speaker_aliases:
+                return True
+    return any(suffix in text for suffix in ("亲", "小姐", "同学", "姐姐", "妹妹", "哥哥", "弟弟", "さん", "ちゃん"))
+
+
+def _is_speech_like_special_segment(seg: SegmentEx) -> bool:
+    speaker = str(seg.speaker or "").strip()
+    if speaker not in {"", "旁白", "未知", "UNKNOWN"}:
+        return True
+    return _is_parenthetical_inner_voice(seg.text)
+
+
+def _special_chapter_profile(
+    section: list[SegmentEx],
+    speaker: str,
+    role_hints: list[str],
+) -> dict[str, object]:
+    content = [
+        seg for seg in section
+        if not _is_audio_track_stop_text(seg.text)
+        and not _is_audio_track_meta_text(seg.text)
+        and not _is_parenthetical_sound_effect(seg.text)
+    ]
+    if not content:
+        return {
+            "content_count": 0,
+            "speech_like_ratio": 0.0,
+            "address_count": 0,
+            "address_ratio": 0.0,
+            "narrator_context_ratio": 0.0,
+            "is_special": False,
+        }
+    speech_like = sum(1 for seg in content if _is_speech_like_special_segment(seg))
+    address_count = sum(1 for seg in content if _text_has_address_to_other(seg.text, speaker, role_hints))
+    narrator_context = sum(
+        1 for seg in content
+        if str(seg.speaker or "").strip() == "旁白" and not _is_parenthetical_inner_voice(seg.text)
+    )
+    content_count = len(content)
+    speech_ratio = speech_like / content_count
+    address_ratio = address_count / content_count
+    narrator_ratio = narrator_context / content_count
+    is_special = (
+        content_count >= 6
+        and speech_ratio >= 0.70
+        and narrator_ratio <= 0.30
+        and (address_count >= 3 or address_ratio >= 0.35)
+    )
+    return {
+        "content_count": content_count,
+        "speech_like_ratio": round(speech_ratio, 3),
+        "address_count": address_count,
+        "address_ratio": round(address_ratio, 3),
+        "narrator_context_ratio": round(narrator_ratio, 3),
+        "is_special": is_special,
+    }
+
+
+def _lock_special_perspective_segment(seg: SegmentEx, speaker: str, profile: dict[str, object]) -> None:
+    old = str(seg.speaker or "").strip()
+    seg.speaker = speaker
+    seg.confidence = max(float(seg.confidence or 0.0), 0.95)
+    seg.attribution_type = AttributionType.IMPLICIT
+    if speaker not in (seg.candidates or []):
+        seg.candidates = [speaker, *list(seg.candidates or [])]
+    if speaker not in (seg.scene_characters or []):
+        seg.scene_characters = [speaker, *list(seg.scene_characters or [])]
+    sources = dict(seg.candidate_sources or {})
+    speaker_sources = list(sources.get(speaker) or [])
+    for source in (_SPECIAL_PERSPECTIVE_SOURCE, _AUDIO_TRACK_SOURCE):
+        if source not in speaker_sources:
+            speaker_sources.append(source)
+    sources[speaker] = speaker_sources
+    seg.candidate_sources = sources
+    note = (
+        f"特殊视角章节：标题角色 {speaker}，"
+        f"连续对白/称呼特征 content={profile.get('content_count')}, "
+        f"speech={profile.get('speech_like_ratio')}, address={profile.get('address_count')}"
+    )
+    if old and old != speaker:
+        note = f"{note}，由 {old} 修正为 {speaker}"
+    evidence = str(seg.evidence or "")
+    if note not in evidence:
+        seg.evidence = f"{evidence}；{note}" if evidence else note
+
+
+def _apply_special_perspective_chapter_overrides(
+    segments: list[SegmentEx],
+    role_hints: list[str],
+) -> tuple[list[SegmentEx], dict[str, object]]:
+    updated = [seg.model_copy() for seg in segments]
+    stats: dict[str, object] = {
+        "mode": "special_perspective_chapter",
+        "sections": 0,
+        "detected": 0,
+        "locked": 0,
+        "skipped_meta": 0,
+        "stopped": 0,
+        "rejected": 0,
+        "profiles": [],
+    }
+    if not role_hints:
+        return updated, stats
+
+    heading_indexes = [
+        idx for idx, seg in enumerate(updated)
+        if "章节标题" in str(seg.evidence or "") or "chapter_heading" in str(seg.candidate_sources or {})
+    ]
+    if not heading_indexes:
+        return updated, stats
+
+    for order, heading_index in enumerate(heading_indexes):
+        heading = updated[heading_index]
+        speaker = _match_title_named_role(heading.text, role_hints)
+        if not speaker:
+            continue
+        next_heading = heading_indexes[order + 1] if order + 1 < len(heading_indexes) else len(updated)
+        stop_index = next_heading
+        for idx in range(heading_index + 1, next_heading):
+            if _is_audio_track_stop_text(updated[idx].text):
+                stop_index = idx
+                stats["stopped"] = int(stats["stopped"]) + 1
+                break
+        section = updated[heading_index + 1: stop_index]
+        profile = _special_chapter_profile(section, speaker, role_hints)
+        profile_record = {
+            "heading": str(heading.text or "")[:80],
+            "speaker": speaker,
+            **profile,
+        }
+        stats["profiles"] = [*list(stats["profiles"]), profile_record]
+        stats["sections"] = int(stats["sections"]) + 1
+        if not profile.get("is_special"):
+            stats["rejected"] = int(stats["rejected"]) + 1
+            continue
+        stats["detected"] = int(stats["detected"]) + 1
+        for seg in section:
+            if _is_audio_track_stop_text(seg.text):
+                break
+            if _is_audio_track_meta_text(seg.text) or _is_parenthetical_sound_effect(seg.text):
+                stats["skipped_meta"] = int(stats["skipped_meta"]) + 1
+                continue
+            _lock_special_perspective_segment(seg, speaker, profile)
+            stats["locked"] = int(stats["locked"]) + 1
+
+    return updated, stats
+
+
+def _append_segment_evidence(seg: SegmentEx, note: str) -> None:
+    if not note:
+        return
+    evidence = str(seg.evidence or "")
+    if note in evidence:
+        return
+    seg.evidence = f"{evidence}；{note}" if evidence else note
+
+
+def _add_segment_candidate_source(seg: SegmentEx, speaker: str, source: str) -> None:
+    speaker = str(speaker or "").strip()
+    if not speaker or speaker in {"旁白", "未知", "UNKNOWN"}:
+        return
+    if speaker not in (seg.candidates or []):
+        seg.candidates = [speaker, *list(seg.candidates or [])]
+    if speaker not in (seg.scene_characters or []):
+        seg.scene_characters = [speaker, *list(seg.scene_characters or [])]
+    sources = dict(seg.candidate_sources or {})
+    values = list(sources.get(speaker) or [])
+    if source not in values:
+        values.append(source)
+    sources[speaker] = values
+    seg.candidate_sources = sources
+
+
+def _role_aliases_for_scene(role: str) -> set[str]:
+    aliases = _role_title_aliases(role)
+    aliases.update(_conservative_title_aliases(role))
+    aliases.discard(role[-1:] if role else "")
+    return {alias for alias in aliases if len(alias) >= 2}
+
+
+def _roles_with_action_context(text: str, role_hints: list[str], action_re: re.Pattern[str]) -> set[str]:
+    text = str(text or "")
+    found: set[str] = set()
+    if not text:
+        return found
+    for role in role_hints:
+        for alias in _role_aliases_for_scene(role):
+            start = 0
+            while True:
+                idx = text.find(alias, start)
+                if idx < 0:
+                    break
+                window = text[max(0, idx - 24): idx + len(alias) + 36]
+                if action_re.search(window):
+                    found.add(role)
+                    break
+                start = idx + len(alias)
+    return found
+
+
+def _is_scene_boundary_segment(seg: SegmentEx) -> bool:
+    evidence = str(seg.evidence or "")
+    text = str(seg.text or "")
+    return "章节标题" in evidence or "chapter_heading" in str(seg.candidate_sources or {}) or bool(_SCENE_RESET_RE.search(text))
+
+
+def _speaker_is_scene_candidate(speaker: str) -> bool:
+    return bool(speaker and speaker not in {"旁白", "未知", "UNKNOWN"})
+
+
+def _has_scene_strong_source(seg: SegmentEx, speaker: str) -> bool:
+    sources = set((seg.candidate_sources or {}).get(speaker, []) or [])
+    strong = {
+        "role_hints",
+        "title",
+        "rule_cue",
+        "group_cue",
+        "appearance_alias",
+        "hanlp_ner",
+        "relation_conditional",
+        "address_term_backcheck",
+        "address_term_local_context",
+        _SPECIAL_PERSPECTIVE_SOURCE,
+        _SCENE_ACTIVE_SOURCE,
+    }
+    return bool(sources & strong)
+
+
+def _apply_scene_state_constraints(
+    segments: list[SegmentEx],
+    role_hints: list[str],
+    narrator: str | None = None,
+    review_threshold: float = 0.7,
+    aliases: AliasRegistry | None = None,
+) -> tuple[list[SegmentEx], dict[str, object]]:
+    updated = [seg.model_copy() for seg in segments]
+    active: list[str] = []
+    recent_confirmed: list[str] = []
+    stats: dict[str, object] = {
+        "mode": "scene_state_soft_constraints",
+        "boundaries": 0,
+        "entered": 0,
+        "left": 0,
+        "active_hits": 0,
+        "scene_sources_added": 0,
+        "out_of_scene_marked": 0,
+        "confidence_boosted": 0,
+    }
+
+    def canonical_role(name: str | None) -> str:
+        value = str(name or "").strip()
+        return aliases.canonicalize(value) if aliases is not None else value
+
+    def reset_active(seed: list[str] | None = None) -> None:
+        active.clear()
+        narrator_name = canonical_role(narrator)
+        if narrator_name:
+            active.append(narrator_name)
+        for name in seed or []:
+            canonical = canonical_role(name)
+            if _speaker_is_scene_candidate(canonical) and canonical not in active:
+                active.append(canonical)
+
+    def add_active(name: str, reason: str, seg: SegmentEx | None = None) -> None:
+        name = canonical_role(name)
+        if not _speaker_is_scene_candidate(name):
+            return
+        if name not in active:
+            active.append(name)
+            stats["entered"] = int(stats["entered"]) + 1
+        if seg is not None:
+            _add_segment_candidate_source(seg, name, _SCENE_MENTION_SOURCE)
+            _append_segment_evidence(seg, f"场景状态：{name} {reason}")
+
+    def remove_active(name: str) -> None:
+        canonical = canonical_role(name)
+        if canonical in active and canonical != canonical_role(narrator):
+            active.remove(canonical)
+            stats["left"] = int(stats["left"]) + 1
+
+    reset_active()
+    for seg in updated:
+        text = str(seg.text or "")
+        speaker = canonical_role(seg.speaker)
+
+        if _is_scene_boundary_segment(seg):
+            seed: list[str] = []
+            title_role = _match_title_named_role(text, role_hints)
+            if title_role:
+                seed.append(canonical_role(title_role))
+            stats["boundaries"] = int(stats["boundaries"]) + 1
+            reset_active(seed)
+            continue
+
+        # 旁白和上下文中的明确动作/登场/离场才改变活跃集合；台词正文里的名字默认视作受话人或被提及者。
+        semantic_text = "\n".join([
+            str(seg.context_before or "")[-180:],
+            text if speaker == "旁白" else "",
+        ])
+        for role in _roles_with_action_context(semantic_text, role_hints, _SCENE_ENTRY_RE):
+            add_active(role, "由动作/登场语义加入当前场景", seg)
+        for role in _roles_with_action_context(semantic_text, role_hints, _SCENE_EXIT_RE):
+            remove_active(role)
+
+        confidence = float(seg.confidence or 0.0)
+        special_locked = _SPECIAL_PERSPECTIVE_SOURCE in set((seg.candidate_sources or {}).get(speaker, []) or [])
+
+        if _speaker_is_scene_candidate(speaker):
+            if speaker in active:
+                _add_segment_candidate_source(seg, speaker, _SCENE_ACTIVE_SOURCE)
+                stats["scene_sources_added"] = int(stats["scene_sources_added"]) + 1
+                stats["active_hits"] = int(stats["active_hits"]) + 1
+                if review_threshold <= confidence < 0.85 and "LLM复核待人工" not in str(seg.evidence or ""):
+                    seg.confidence = min(0.85, confidence + 0.06)
+                    stats["confidence_boosted"] = int(stats["confidence_boosted"]) + 1
+            elif confidence >= 0.85 or special_locked or _has_scene_strong_source(seg, speaker):
+                add_active(speaker, "由高置信说话人加入当前场景", seg)
+                _add_segment_candidate_source(seg, speaker, _SCENE_ACTIVE_SOURCE)
+                stats["scene_sources_added"] = int(stats["scene_sources_added"]) + 1
+            elif active and speaker not in recent_confirmed[-3:]:
+                seg.confidence = min(confidence, max(0.55, review_threshold - 0.01))
+                _append_segment_evidence(seg, f"场景状态：{speaker} 不在当前活跃候选 {active[:6]}，作为软约束降置信")
+                stats["out_of_scene_marked"] = int(stats["out_of_scene_marked"]) + 1
+
+            if seg.confidence >= review_threshold and speaker not in {"旁白", "未知", "UNKNOWN"}:
+                recent_confirmed.append(speaker)
+                if len(recent_confirmed) > 12:
+                    recent_confirmed[:] = recent_confirmed[-12:]
+
+    return updated, stats
 
 
 def _is_dialogue_fragment(text: str) -> bool:
@@ -311,9 +763,9 @@ def _normalize_role_hints(
     if not role_hints:
         return []
     if isinstance(role_hints, list):
-        return [str(r) for r in role_hints if r]
+        return [name for item in role_hints if (name := clean_role_hint_name(item))]
     if isinstance(role_hints, dict):
-        return list(role_hints.keys())
+        return [name for key in role_hints.keys() if (name := clean_role_hint_name(key))]
     return []
 
 
@@ -865,6 +1317,15 @@ def _parse_with_batch_llm(
         _append_narrator_gap(cursor, len(cleaned), "tail")
 
     segments = fix_consistency(segments, narrator=narrator)
+    segments, special_perspective_stats = _apply_special_perspective_chapter_overrides(segments, role_hints_list)
+    segments, scene_state_stats = _apply_scene_state_constraints(
+        segments,
+        role_hints_list,
+        narrator=narrator,
+        review_threshold=review_threshold,
+        aliases=aliases,
+    )
+    segments, address_term_stats = apply_address_term_backcheck(segments, review_threshold=review_threshold)
     result = ParseResult(
         segments=segments,
         review_items=collect_review_items(segments, threshold=review_threshold),
@@ -875,6 +1336,9 @@ def _parse_with_batch_llm(
             "llm_resolved": len(llm_attributions),
             "batch_llm_enabled": True,
             "uncertain_narrator_chapters": uncertain_chapters,
+            "special_perspective_chapter": special_perspective_stats,
+            "scene_state": scene_state_stats,
+            "address_term_backcheck": address_term_stats,
         },
     )
     return result if return_result else result.segments
@@ -1022,6 +1486,15 @@ def parse_novel(
         _append_narrator_segments(segments, cleaned[cursor:], "tail")
 
     segments = fix_consistency(segments, narrator=narrator)
+    segments, special_perspective_stats = _apply_special_perspective_chapter_overrides(segments, role_hints_list)
+    segments, scene_state_stats = _apply_scene_state_constraints(
+        segments,
+        role_hints_list,
+        narrator=narrator,
+        review_threshold=review_threshold,
+        aliases=aliases,
+    )
+    segments, address_term_stats = apply_address_term_backcheck(segments, review_threshold=review_threshold)
     result = ParseResult(
         segments=segments,
         review_items=collect_review_items(segments, threshold=review_threshold),
@@ -1031,6 +1504,9 @@ def parse_novel(
             "hanlp_enabled": ner_backend is not None,
             "inferred_aliases": inferred_aliases,
             "implicit_strategy": implicit_strategy,
+            "special_perspective_chapter": special_perspective_stats,
+            "scene_state": scene_state_stats,
+            "address_term_backcheck": address_term_stats,
         },
     )
     return result if return_result else result.segments

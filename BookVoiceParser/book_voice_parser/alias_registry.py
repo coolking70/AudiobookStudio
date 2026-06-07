@@ -4,7 +4,26 @@ from dataclasses import dataclass, field
 
 
 SKIP_NAMES = {"", "旁白", "未知", "UNKNOWN", "众人"}
+JSON_HINT_KEYS = {"roles", "role", "narrator", "aliases", "alias", "owner"}
 TITLE_SUFFIXES = ("公子", "姑娘", "小姐", "夫人", "大人", "先生", "师兄", "师姐", "师妹", "师父")
+
+
+def clean_role_hint_name(value: object) -> str:
+    """Best-effort cleanup for role hints pasted from JSON-like model output."""
+    text = str(value or "").strip().strip(",，")
+    text = text.strip("[]{}").strip()
+    text = text.rstrip(":：").strip()
+    text = text.strip("\"'“”‘’").strip()
+    text = text.rstrip(":：").strip()
+    text = text.strip("\"'“”‘’").strip()
+    if not text or text in SKIP_NAMES or text.lower() in JSON_HINT_KEYS:
+        return ""
+    if any(ch in text for ch in "{}[]"):
+        return ""
+    # Guard against whole JSON fragments being treated as a character name.
+    if len(text) > 40 or text.count(":") + text.count("：") > 0:
+        return ""
+    return text
 
 
 @dataclass
@@ -32,10 +51,14 @@ class AliasRegistry:
         registry = cls()
         if isinstance(role_hints, dict):
             for canonical, value in role_hints.items():
+                canonical = clean_role_hint_name(canonical)
+                if not canonical:
+                    continue
                 if isinstance(value, dict) and "owner" in value:
                     # 关系角色格式：{"aliases": [...], "owner": "角色名"}
-                    owner = str(value.get("owner", "")).strip()
-                    aliases_list = [str(a).strip() for a in (value.get("aliases") or []) if a]
+                    owner = clean_role_hint_name(value.get("owner", ""))
+                    aliases_list = [clean_role_hint_name(a) for a in (value.get("aliases") or [])]
+                    aliases_list = [a for a in aliases_list if a]
                     if canonical and owner:
                         # 只将规范名自身加入 alias_map（不加 term aliases，保持 owner 条件激活）
                         registry.add(canonical, canonical)
@@ -64,8 +87,8 @@ class AliasRegistry:
         return any(rr.canonical == canonical for rr in self.relation_roles)
 
     def add(self, alias: str, canonical: str) -> None:
-        alias = (alias or "").strip()
-        canonical = (canonical or "").strip()
+        alias = clean_role_hint_name(alias)
+        canonical = clean_role_hint_name(canonical)
         if alias and canonical and alias not in SKIP_NAMES:
             self.alias_map[alias] = canonical
 

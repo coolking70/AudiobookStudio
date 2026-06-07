@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 MAX_COMPLETION_TOKENS = 131072
 CHAPTER_NARRATOR_MAX_TOKENS = 4096
-MIN_REASONING_MODEL_TOKENS = 4096
+MIN_COMPLETION_TOKENS = 512
 
 @dataclass
 class BatchConfig:
@@ -54,7 +54,7 @@ class BatchConfig:
     api_key: str = "lm-studio"
     model: str = "qwen/qwen3.6-35b-a3b"
     batch_size: int = 10             # 每批台词数量（日式轻小说推荐 8-12）
-    max_tokens: int = 8192           # 批量输出需要更多 token；thinking 模型建议 ≥8192（reasoning 约占 3000-6000 tokens）
+    max_tokens: int = 2048           # 批量输出预算；本地小上下文模型可降到 512-2048
     temperature: float = 0.0
     timeout: int = 180               # 秒，批处理比单条慢
     context_chars: int = 200         # 每条台词截取的前后文字符数
@@ -74,6 +74,10 @@ class ChapterNarratorResult:
 
 class EmptyLLMContentError(RuntimeError):
     """Raised when the provider returns only reasoning/metadata and no answer text."""
+
+
+class BatchLLMBadRequestError(RuntimeError):
+    """Raised for provider 400 errors that splitting/retrying will not fix reliably."""
 
 
 # ── Prompt 构建 ────────────────────────────────────────────────────────────
@@ -537,6 +541,8 @@ class BatchLLMAttributor:
 
     def _normalize_base_url(self) -> str:
         base = str(self.cfg.base_url or "").strip().rstrip("/")
+        if base.endswith("/chat/completions"):
+            base = base[: -len("/chat/completions")].rstrip("/")
         if base.endswith("/v1"):
             return base
         return f"{base}/v1"
@@ -571,6 +577,10 @@ class BatchLLMAttributor:
                 headers=headers,
                 json=payload,
             )
+            if response.status_code == 400:
+                raise BatchLLMBadRequestError(
+                    f"HTTP 400 from LLM: {response.text[:800]}"
+                )
             response.raise_for_status()
             return response.json()
 
@@ -581,7 +591,7 @@ class BatchLLMAttributor:
             value = int(raw or 512)
         except (TypeError, ValueError):
             value = 512
-        value = max(MIN_REASONING_MODEL_TOKENS, value)
+        value = max(MIN_COMPLETION_TOKENS, value)
         if value > MAX_COMPLETION_TOKENS:
             logger.warning(
                 "BatchLLM max_tokens=%s 超过接口常见上限，已钳制为 %s",
@@ -611,13 +621,29 @@ class BatchLLMAttributor:
         ]
         extra_body: dict = {}
         if self.cfg.disable_thinking:
+            normalized_base_url = self._normalize_base_url().lower()
+            is_lm_studio = "127.0.0.1:1234" in normalized_base_url or "localhost:1234" in normalized_base_url
+            supports_reasoning_options = (
+                is_lm_studio
+                or "siliconflow" in normalized_base_url
+                or "api.siliconflow.cn" in normalized_base_url
+                or "localhost" in normalized_base_url
+                or "127.0.0.1" in normalized_base_url
+            )
             # 策略 1：通过 extra_body 通知后端禁用思考（vLLM/Ollama 有效）
-            extra_body["enable_thinking"] = False
+            if supports_reasoning_options:
+                extra_body["enable_thinking"] = False
+                # LM Studio 新版支持 reasoning_effort=none；对 Gemma/Qwen 本地模型比空 think 前缀更稳定。
+                extra_body["reasoning_effort"] = "none"
             # 策略 2：注入空思考块作为 assistant 前缀（LM Studio 上最可靠）
             # 模型看到 <think>...</think> 已闭合，认为思考已完成，直接生成答案
-            messages.append({"role": "assistant", "content": "<think>\n\n</think>\n"})
+            # 但新版 LM Studio 在支持 reasoning_effort=none 时不再需要该前缀；
+            # 少一个 assistant prefill 也能节省上下文，降低 400/context exceeded 风险。
+            if supports_reasoning_options and not is_lm_studio:
+                messages.append({"role": "assistant", "content": "<think>\n\n</think>\n"})
             # 策略 3：Qwen3 系列常见的 no-think 指令。即使后端忽略，也不会改变任务语义。
-            messages[1]["content"] = "/no_think\n" + str(messages[1]["content"])
+            if supports_reasoning_options and not is_lm_studio:
+                messages[1]["content"] = "/no_think\n" + str(messages[1]["content"])
 
         payload = {
             "model": self.cfg.model,
@@ -625,15 +651,31 @@ class BatchLLMAttributor:
             "max_tokens": resolved_max_tokens,
             "temperature": self.cfg.temperature,
         }
-        if extra_body:
-            payload["extra_body"] = extra_body
 
         client = self._get_client()
+        if extra_body:
+            if client:
+                payload["extra_body"] = extra_body
+            else:
+                payload.update(extra_body)
         if client:
-            resp = client.chat.completions.create(
-                **payload,
-                timeout=self.cfg.timeout,
-            )
+            try:
+                resp = client.chat.completions.create(
+                    **payload,
+                    timeout=self.cfg.timeout,
+                )
+            except Exception as exc:
+                status_code = getattr(exc, "status_code", None)
+                response = getattr(exc, "response", None)
+                status_code = status_code or getattr(response, "status_code", None)
+                if status_code == 400:
+                    body = ""
+                    try:
+                        body = getattr(response, "text", "") or str(exc)
+                    except Exception:
+                        body = str(exc)
+                    raise BatchLLMBadRequestError(f"HTTP 400 from LLM: {body[:800]}") from exc
+                raise
             msg = resp.choices[0].message
             content = (msg.content or "").strip()
         else:
@@ -673,6 +715,12 @@ class BatchLLMAttributor:
             evidence=evidence,
             attribution_type=AttributionType.UNKNOWN,
         )
+
+    def _unknown_attributions_for_batch(self, batch: list[tuple[QuoteSpan, CandidateSet]], evidence: str) -> list[Attribution]:
+        return [
+            self._unknown_attribution(quote, evidence=evidence)
+            for quote, _ in batch
+        ]
 
     def detect_chapter_narrator(
         self,
@@ -802,6 +850,16 @@ class BatchLLMAttributor:
                     logger.warning(f"Empty parse result, retry {attempt+1}")
                     time.sleep(1)
             except Exception as e:
+                if isinstance(e, BatchLLMBadRequestError):
+                    logger.warning(
+                        "BatchLLM 请求被 LLM 服务拒绝，已将本批 %s 条台词标记为未知待复核：%s",
+                        len(batch),
+                        e,
+                    )
+                    return self._unknown_attributions_for_batch(
+                        batch,
+                        evidence=f"LLM 400 Bad Request：{str(e)[:180]}",
+                    )
                 logger.warning(f"LLM call failed (attempt {attempt+1}): {e}")
                 if attempt < self.cfg.max_retries:
                     time.sleep(2)

@@ -32,27 +32,49 @@ class OpenAICompatibleClient:
         self.config = config
 
     def _normalize_base_url(self) -> str:
-        base = self.config.base_url.strip().rstrip("/")
+        base = (getattr(self.config, "base_url", "") or "").strip().rstrip("/")
+        if base.endswith("/chat/completions"):
+            base = base[: -len("/chat/completions")].rstrip("/")
         if base.endswith("/v1"):
             return base
         return f"{base}/v1"
 
+    def _chat_completions_url(self) -> str:
+        base = (getattr(self.config, "base_url", "") or "").strip().rstrip("/")
+        if base.endswith("/chat/completions"):
+            return base
+        return f"{self._normalize_base_url()}/chat/completions"
+
     def _resolve_model_id(self) -> str:
-        return (self.config.local_model_path or self.config.model or "").strip()
+        return (getattr(self.config, "local_model_path", None) or getattr(self.config, "model", "") or "").strip()
 
     def _use_direct_local_runtime(self) -> bool:
-        return (self.config.local_runtime or "").strip().lower() == "direct"
+        return (getattr(self.config, "local_runtime", None) or "").strip().lower() == "direct"
 
     def _should_disable_reasoning(self) -> bool:
-        base_url = (self.config.base_url or "").strip().lower()
+        base_url = (getattr(self.config, "base_url", "") or "").strip().lower()
         model = self._resolve_model_id().lower()
         is_lm_studio = "127.0.0.1:1234" in base_url or "localhost:1234" in base_url
-        is_reasoning_qwen = "qwen3.6" in model or "qwen3-6" in model
-        return is_lm_studio and is_reasoning_qwen
+        is_reasoning_model = (
+            "qwen3.6" in model
+            or "qwen3-6" in model
+            or "gemma-4" in model
+            or "gemma4" in model
+        )
+        return is_lm_studio and is_reasoning_model
+
+    def _should_disable_siliconflow_qwen_thinking(self) -> bool:
+        base_url = (getattr(self.config, "base_url", "") or "").strip().lower()
+        model = self._resolve_model_id().lower()
+        is_siliconflow = "siliconflow" in base_url or "api.siliconflow.cn" in base_url
+        is_qwen3 = "qwen/qwen3" in model or model.startswith("qwen3")
+        return is_siliconflow and is_qwen3
 
     def _apply_reasoning_options(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self._should_disable_reasoning():
             payload["reasoning_effort"] = "none"
+        if self._should_disable_siliconflow_qwen_thinking():
+            payload["enable_thinking"] = False
         return payload
 
     def _is_bad_request_error(self, exc: Exception) -> bool:
@@ -64,20 +86,28 @@ class OpenAICompatibleClient:
 
     def _send_chat_request(self, payload: dict[str, Any], timeout: httpx.Timeout) -> Any:
         if OpenAI is not None:
+            request_payload = dict(payload)
+            extra_body: dict[str, Any] = {}
+            for extra_key in ("enable_thinking", "reasoning_effort"):
+                if extra_key in request_payload:
+                    extra_body[extra_key] = request_payload.pop(extra_key)
+            if extra_body:
+                request_payload["extra_body"] = extra_body
+
             http_client = httpx.Client(timeout=timeout, trust_env=False)
             client = OpenAI(
                 base_url=self._normalize_base_url(),
-                api_key=self.config.api_key or "local",
+                api_key=getattr(self.config, "api_key", None) or "local",
                 http_client=http_client,
             )
             try:
-                return client.chat.completions.create(**payload)
+                return client.chat.completions.create(**request_payload)
             finally:
                 http_client.close()
 
-        url = f"{self._normalize_base_url()}/chat/completions"
+        url = self._chat_completions_url()
         headers = {
-            "Authorization": f"Bearer {self.config.api_key or 'local'}",
+            "Authorization": f"Bearer {getattr(self.config, 'api_key', None) or 'local'}",
             "Content-Type": "application/json",
         }
         with httpx.Client(timeout=timeout, trust_env=False) as client:
@@ -146,9 +176,9 @@ class OpenAICompatibleClient:
                 "kind": kind,
                 "finish_reason": finish_reason,
                 "model": self._resolve_model_id(),
-                "base_url": self.config.base_url,
-                "local_runtime": self.config.local_runtime,
-                "max_tokens": self.config.max_tokens,
+                "base_url": getattr(self.config, "base_url", None),
+                "local_runtime": getattr(self.config, "local_runtime", None),
+                "max_tokens": getattr(self.config, "max_tokens", None),
                 "payload": payload,
                 "content": content,
             }, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -174,23 +204,27 @@ class OpenAICompatibleClient:
         max_tokens: int | None = None,
         purpose: str = "文本分析",
     ) -> str:
-        resolved_max_tokens = max(32, int(max_tokens or self.config.max_tokens or 512))
+        resolved_max_tokens = max(32, int(max_tokens or getattr(self.config, "max_tokens", None) or 512))
         if self._use_direct_local_runtime():
             runner = get_local_llm_runner(
-                model_path=self.config.local_model_path or self.config.model,
-                engine=self.config.local_engine,
-                device=self.config.local_device,
-                ctx_tokens=self.config.local_ctx_tokens,
-                gpu_layers=self.config.local_gpu_layers,
-                threads=self.config.local_threads,
-                batch_size=self.config.local_batch_size,
+                model_path=getattr(self.config, "local_model_path", None) or getattr(self.config, "model", None),
+                engine=getattr(self.config, "local_engine", None),
+                device=getattr(self.config, "local_device", None),
+                ctx_tokens=getattr(self.config, "local_ctx_tokens", None),
+                gpu_layers=getattr(self.config, "local_gpu_layers", None),
+                threads=getattr(self.config, "local_threads", None),
+                batch_size=getattr(self.config, "local_batch_size", None),
             )
-            return runner.generate_text(messages, max_tokens=resolved_max_tokens, temperature=self.config.temperature)
+            return runner.generate_text(
+                messages,
+                max_tokens=resolved_max_tokens,
+                temperature=getattr(self.config, "temperature", 0.2),
+            )
 
         payload = {
             "model": self._resolve_model_id(),
             "messages": messages,
-            "temperature": self.config.temperature,
+            "temperature": getattr(self.config, "temperature", 0.2),
             "max_tokens": resolved_max_tokens,
         }
         self._apply_reasoning_options(payload)
@@ -228,15 +262,19 @@ class OpenAICompatibleClient:
     def chat_json(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         if self._use_direct_local_runtime():
             runner = get_local_llm_runner(
-                model_path=self.config.local_model_path or self.config.model,
-                engine=self.config.local_engine,
-                device=self.config.local_device,
-                ctx_tokens=self.config.local_ctx_tokens,
-                gpu_layers=self.config.local_gpu_layers,
-                threads=self.config.local_threads,
-                batch_size=self.config.local_batch_size,
+                model_path=getattr(self.config, "local_model_path", None) or getattr(self.config, "model", None),
+                engine=getattr(self.config, "local_engine", None),
+                device=getattr(self.config, "local_device", None),
+                ctx_tokens=getattr(self.config, "local_ctx_tokens", None),
+                gpu_layers=getattr(self.config, "local_gpu_layers", None),
+                threads=getattr(self.config, "local_threads", None),
+                batch_size=getattr(self.config, "local_batch_size", None),
             )
-            content = runner.generate_text(messages, max_tokens=self.config.max_tokens, temperature=self.config.temperature)
+            content = runner.generate_text(
+                messages,
+                max_tokens=getattr(self.config, "max_tokens", 512),
+                temperature=getattr(self.config, "temperature", 0.2),
+            )
             if not content:
                 raise RuntimeError("LLM 返回为空")
             return self._parse_json_content(content)
@@ -244,21 +282,21 @@ class OpenAICompatibleClient:
         strict_payload = {
             "model": self._resolve_model_id(),
             "messages": messages,
-            "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
+            "temperature": getattr(self.config, "temperature", 0.2),
+            "max_tokens": getattr(self.config, "max_tokens", 512),
             "response_format": {"type": "json_object"},
         }
         fallback_payload = {
             "model": self._resolve_model_id(),
             "messages": messages,
-            "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
+            "temperature": getattr(self.config, "temperature", 0.2),
+            "max_tokens": getattr(self.config, "max_tokens", 512),
         }
         self._apply_reasoning_options(strict_payload)
         self._apply_reasoning_options(fallback_payload)
 
         timeout = httpx.Timeout(connect=30.0, read=300.0, write=60.0, pool=30.0)
-        use_chat_compat = self.config.compatibility_mode == "chat_compat" or self._should_disable_reasoning()
+        use_chat_compat = getattr(self.config, "compatibility_mode", "strict_json") == "chat_compat" or self._should_disable_reasoning()
         try:
             try:
                 response = self._send_chat_request(

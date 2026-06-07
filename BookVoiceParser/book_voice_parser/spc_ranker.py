@@ -102,7 +102,11 @@ def build_spc_prompt(task: SPCTask) -> list[dict[str, str]]:
     return [
         {
             "role": "system",
-            "content": "你是中文小说引语说话人识别器，任务是做候选分类，不要生成候选外角色。",
+            "content": (
+                "You are a deterministic classifier. Do not think out loud. Do not explain. "
+                "Output the final JSON only.\n"
+                "你是中文小说引语说话人识别器，任务是做候选分类，不要生成候选外角色。"
+            ),
         },
         {"role": "user", "content": user},
     ]
@@ -112,6 +116,11 @@ def _config_value(config: Any, key: str, default: Any = None) -> Any:
     if isinstance(config, dict):
         return config.get(key, default)
     return getattr(config, key, default)
+
+
+def _is_lm_studio_base_url(base_url: str) -> bool:
+    lowered = (base_url or "").lower()
+    return "127.0.0.1:1234" in lowered or "localhost:1234" in lowered
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -141,24 +150,36 @@ class OpenAICompatibleSPCRanker:
     def __init__(self, llm_config: Any) -> None:
         self.llm_config = llm_config
 
-    def _chat(self, messages: list[dict[str, str]]) -> str:
-        base_url = str(_config_value(self.llm_config, "base_url", "")).rstrip("/")
+    def _normalize_base_url(self) -> str:
+        base_url = str(_config_value(self.llm_config, "base_url", "")).strip().rstrip("/")
         if not base_url:
             raise RuntimeError("llm_config.base_url is required for llm_spc")
+        if base_url.endswith("/chat/completions"):
+            base_url = base_url[: -len("/chat/completions")].rstrip("/")
         if not base_url.endswith("/v1"):
             base_url = f"{base_url}/v1"
+        return base_url
+
+    def _chat(self, messages: list[dict[str, str]]) -> str:
+        base_url = self._normalize_base_url()
+        is_lm_studio = _is_lm_studio_base_url(base_url)
         model = _config_value(self.llm_config, "model", None) or _config_value(self.llm_config, "local_model_path", "")
+        raw_max_tokens = int(_config_value(self.llm_config, "max_tokens", 1024) or 1024)
+        if is_lm_studio:
+            max_tokens = max(min(raw_max_tokens, 2048), 512)
+        else:
+            max_tokens = max(min(raw_max_tokens, 4096), 1024)
         payload = {
             "model": model,
             "messages": messages,
             "temperature": float(_config_value(self.llm_config, "temperature", 0.0) or 0.0),
-            # Qwen3 系列是 thinking 模型，reasoning tokens 约 700，需留足空间；
-            # 其他模型 512 足够，取两者较大值以兼容。
-            "max_tokens": max(min(int(_config_value(self.llm_config, "max_tokens", 1024) or 1024), 4096), 1024),
+            "max_tokens": max_tokens,
             # 禁用 Qwen3/DeepSeek 等模型的扩展思考模式（LM Studio 兼容参数）
-            # 注意：reasoning_effort 是 OpenAI o 系列专用字段，会导致 LM Studio 返回 422
             "enable_thinking": False,
         }
+        if is_lm_studio:
+            # LM Studio Gemma/Qwen reasoning models may otherwise return only reasoning_content.
+            payload["reasoning_effort"] = "none"
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = request.Request(
             f"{base_url}/chat/completions",
@@ -179,13 +200,19 @@ class OpenAICompatibleSPCRanker:
             except Exception:
                 pass
             raise RuntimeError(f"HTTP {exc.code} from LLM: {body_text}") from exc
-        content = data["choices"][0]["message"]["content"]
+        message = data["choices"][0]["message"]
+        content = message.get("content")
         if isinstance(content, list):
             return "".join(item.get("text", "") for item in content if isinstance(item, dict))
         # 剥离思维链（Qwen3 在禁用 thinking 失败时仍可能输出 <think>...</think>）
-        text = re.sub(r"<think>.*?</think>", "", str(content), flags=re.DOTALL)
+        text = re.sub(r"<think>.*?</think>", "", "" if content is None else str(content), flags=re.DOTALL)
         text = re.sub(r"<think>.*$", "", text, flags=re.DOTALL)
-        return text.strip()
+        text = text.strip()
+        if not text:
+            reasoning = str(message.get("reasoning_content") or "")
+            detail = f"; reasoning_content length={len(reasoning)}" if reasoning else ""
+            raise ValueError(f"LLM returned empty content{detail}")
+        return text
 
     def rank(
         self,

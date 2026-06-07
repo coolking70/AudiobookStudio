@@ -1,6 +1,26 @@
 import json
+import os
 import sys
 from pathlib import Path
+
+
+def _suppress_windows_error_dialogs() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        sem_fail_critical_errors = 0x0001
+        sem_no_gp_fault_error_box = 0x0002
+        sem_no_open_file_error_box = 0x8000
+        ctypes.windll.kernel32.SetErrorMode(
+            sem_fail_critical_errors | sem_no_gp_fault_error_box | sem_no_open_file_error_box
+        )
+    except Exception:
+        pass
+
+
+_suppress_windows_error_dialogs()
 
 from pipeline import VoxCPMPipeline
 
@@ -13,6 +33,14 @@ def _read_payload() -> dict:
 
 
 def _print_json(data: dict) -> None:
+    result_path = str(os.getenv("VOXCPM_BRIDGE_RESULT_PATH") or "").strip()
+    if result_path:
+        try:
+            target = Path(result_path).expanduser().resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
     sys.stdout.write(json.dumps(data, ensure_ascii=False))
     sys.stdout.flush()
 
@@ -21,6 +49,7 @@ def run_status(_: dict) -> dict:
     return {
         "ok": True,
         "python_executable": sys.executable,
+        "force_dtype": os.getenv("VOXCPM_FORCE_DTYPE", ""),
     }
 
 
@@ -36,6 +65,7 @@ def run_load(payload: dict) -> dict:
             "device": pipeline.device,
             "model_name": pipeline.model_name,
             "python_executable": sys.executable,
+            "force_dtype": os.getenv("VOXCPM_FORCE_DTYPE", ""),
         }
     finally:
         pipeline.unload()
@@ -63,6 +93,7 @@ def run_tts(payload: dict) -> dict:
         "device": pipeline.device,
         "model_name": pipeline.model_name,
         "python_executable": sys.executable,
+        "force_dtype": os.getenv("VOXCPM_FORCE_DTYPE", ""),
     }
 
 

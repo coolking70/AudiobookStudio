@@ -1,4 +1,4 @@
-# OmniVoice Reader Studio
+# Audio Book Studio
 
 一个面向中文小说、对白和有声书工作流的多人配音工作台。
 
@@ -30,6 +30,12 @@
 ├─ start_local.sh      # macOS / Linux 辅助启动脚本
 └─ outputs/            # 运行时输出目录
 ```
+
+## 评测与方法记录
+
+- [BookVoiceParser 方案规划](docs/book_voice_parser_plan.md)
+- [角色分析优化交接记录](docs/role-analysis-optimization-handoff.md)
+- [2026-06-07 模型评测记录](docs/model_evaluation_2026-06-07.md)
 
 ## 运行模式
 
@@ -201,7 +207,7 @@ http://127.0.0.1:8000
 ```json
 {
   "ok": true,
-  "app": "OmniVoice Reader Studio",
+  "app": "Audio Book Studio",
   "model_loaded": false,
   "loaded_devices": [],
   "default_device": "cpu",

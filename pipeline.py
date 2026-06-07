@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import gc
+import json
 import os
+import shutil
+import tempfile
 from pathlib import Path
+from contextlib import contextmanager
 from typing import Any, Iterable, Optional
 
 import soundfile as sf
@@ -46,6 +50,43 @@ MODEL_NAME = "k2-fsa/OmniVoice"
 VOXCPM_MODEL_NAME = "openbmb/VoxCPM2"
 ASR_MODEL_NAME = "openai/whisper-large-v3-turbo"
 DEFAULT_TTS_DURATION_MAX_RETRIES = 2
+
+
+@contextmanager
+def _voxcpm_model_with_dtype_override(model_name: str, dtype: str | None):
+    normalized_dtype = str(dtype or "").strip().lower()
+    if normalized_dtype not in {"float16", "fp16", "bfloat16", "bf16", "float32", "fp32"}:
+        yield model_name
+        return
+
+    model_path = Path(model_name).expanduser()
+    config_path = model_path / "config.json"
+    if not config_path.exists():
+        yield model_name
+        return
+
+    with tempfile.TemporaryDirectory(prefix="voxcpm_dtype_", dir=str(model_path.parent)) as temp_dir:
+        temp_path = Path(temp_dir)
+        for source in model_path.iterdir():
+            target = temp_path / source.name
+            if source.name == "config.json":
+                continue
+            if source.is_dir():
+                shutil.copytree(source, target)
+                continue
+            try:
+                os.link(source, target)
+            except Exception:
+                shutil.copy2(source, target)
+
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["dtype"] = "float16" if normalized_dtype == "fp16" else normalized_dtype
+        if config["dtype"] == "bf16":
+            config["dtype"] = "bfloat16"
+        if config["dtype"] == "fp32":
+            config["dtype"] = "float32"
+        (temp_path / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+        yield str(temp_path)
 
 
 def _iter_hf_cache_roots() -> list[Path]:
@@ -527,8 +568,28 @@ class OmniVoicePipeline:
                 ) from sf_exc
             waveform = torch.from_numpy(data.T.copy())
 
+        if torch is None:
+            raise RuntimeError("当前环境缺少 torch，无法构建音频识别输入。")
+
+        if hasattr(waveform, "detach"):
+            waveform = waveform.detach()
+        else:
+            waveform = torch.as_tensor(waveform, dtype=torch.float32)
+
+        if waveform.numel() == 0:
+            raise RuntimeError("音频识别输入为空，请检查参考音频文件。")
+
         if waveform.dim() == 1:
             waveform = waveform.unsqueeze(0)
+        elif waveform.dim() == 2:
+            # OmniVoice/soundfile may return [samples, channels], while
+            # torchaudio returns [channels, samples]. Normalize to torchaudio's layout.
+            if waveform.size(0) > waveform.size(1) and waveform.size(1) <= 8:
+                waveform = waveform.transpose(0, 1).contiguous()
+        else:
+            waveform = waveform.reshape(-1).unsqueeze(0)
+
+        waveform = waveform.to(dtype=torch.float32)
         if waveform.size(0) > 1:
             waveform = torch.mean(waveform, dim=0, keepdim=True)
         if sample_rate != target_sr:
@@ -536,7 +597,7 @@ class OmniVoicePipeline:
             sample_rate = target_sr
 
         return {
-            "array": waveform.squeeze(0).cpu().numpy(),
+            "array": waveform.squeeze(0).cpu().numpy().astype("float32", copy=False),
             "sampling_rate": sample_rate,
         }
 
@@ -634,10 +695,17 @@ class OmniVoicePipeline:
             raise RuntimeError("OmniVoice 没有返回有效音频")
 
         audio = audio_list[0]
-        if audio.dim() == 1:
-            audio = audio.unsqueeze(0)
+        if torch is not None and not torch.is_tensor(audio):
+            audio = torch.as_tensor(audio)
+        if torch is not None and torch.is_tensor(audio):
+            audio = audio.detach().float().cpu()
+            if audio.dim() == 1:
+                audio = audio.unsqueeze(0)
+        else:
+            sf.write(str(output_path), audio, int(getattr(model, "sampling_rate", 24000) or 24000))
+            return str(output_path)
 
-        torchaudio.save(str(output_path), audio.cpu(), 24000)
+        torchaudio.save(str(output_path), audio, int(getattr(model, "sampling_rate", 24000) or 24000))
         return str(output_path)
 
     def synthesize_segments(
@@ -721,12 +789,14 @@ class VoxCPMPipeline:
         if self.model is None:
             optimize = os.getenv("VOXCPM_OPTIMIZE", "").strip().lower() in {"1", "true", "yes", "on"}
             load_denoiser = os.getenv("VOXCPM_LOAD_DENOISER", "").strip().lower() in {"1", "true", "yes", "on"}
-            self.model = VoxCPM.from_pretrained(
-                self.model_name,
-                load_denoiser=load_denoiser,
-                optimize=optimize,
-                device=self.device,
-            )
+            force_dtype = os.getenv("VOXCPM_FORCE_DTYPE", "").strip()
+            with _voxcpm_model_with_dtype_override(self.model_name, force_dtype) as model_name:
+                self.model = VoxCPM.from_pretrained(
+                    model_name,
+                    load_denoiser=load_denoiser,
+                    optimize=optimize,
+                    device=self.device,
+                )
         return self.model
 
     def unload(self) -> None:
@@ -767,12 +837,11 @@ class VoxCPMPipeline:
         }
 
         normalized_ref_audio = str(ref_audio or "").strip()
-        normalized_ref_text = str(ref_text or "").strip()
         if normalized_ref_audio:
+            # VoxCPM2 treats prompt_wav_path + prompt_text as continuation context.
+            # For voice-library cloning we only want the reference timbre, otherwise
+            # the model can leak or continue the reference transcript before the target text.
             kwargs["reference_wav_path"] = normalized_ref_audio
-            if normalized_ref_text:
-                kwargs["prompt_wav_path"] = normalized_ref_audio
-                kwargs["prompt_text"] = normalized_ref_text
 
         wav = model.generate(**kwargs)
         sample_rate = int(getattr(model.tts_model, "sample_rate", 48000))

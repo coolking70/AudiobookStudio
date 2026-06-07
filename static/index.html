@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <title>OmniVoice Reader Studio</title>
+  <title>Audio Book Studio</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <style>
@@ -1313,6 +1313,67 @@
     .segment-grid .danger {
       justify-self: end;
     }
+    .review-workbench-card {
+      border-color: rgba(230, 126, 34, 0.24);
+      background: linear-gradient(180deg, rgba(230, 126, 34, 0.07), rgba(8, 14, 26, 0.72));
+    }
+    .review-workbench-context {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 8px 0 10px;
+    }
+    .review-context-box,
+    .review-text-box {
+      border: 1px solid rgba(125, 154, 192, 0.16);
+      border-radius: var(--radius-sm);
+      background: rgba(2, 6, 13, 0.28);
+      padding: 9px 10px;
+      color: var(--sub);
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .review-context-box strong,
+    .review-text-box strong {
+      display: block;
+      color: var(--text);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .review-text-box {
+      color: var(--text);
+      font-size: 14px;
+      background: rgba(77, 176, 247, 0.06);
+      margin-bottom: 10px;
+    }
+    .review-speaker-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) auto auto;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .review-candidate-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 6px 0 8px;
+    }
+    .review-candidate-row button {
+      padding: 4px 9px;
+      font-size: 12px;
+      border-radius: 999px;
+    }
+    .review-workbench-empty {
+      padding: 22px 18px;
+      border: 1px dashed rgba(76, 217, 100, 0.24);
+      border-radius: var(--radius-sm);
+      color: #a8e8b7;
+      background: rgba(76, 217, 100, 0.08);
+      text-align: center;
+    }
     .segment-text-label {
       font-size: 12px;
       color: var(--sub);
@@ -1348,6 +1409,10 @@
       }
       .segment-grid {
         grid-template-columns: 1fr 1fr;
+      }
+      .review-workbench-context,
+      .review-speaker-row {
+        grid-template-columns: 1fr;
       }
       .segment-grid .danger {
         justify-self: stretch;
@@ -1687,7 +1752,7 @@
 <div class="wrap">
   <div class="topbar">
     <div>
-      <h1>OmniVoice Reader Studio</h1>
+      <h1>Audio Book Studio</h1>
       <div class="hero-note">原文 LLM 角色切分 &rarr; 逐段语音合成 &rarr; 拼接输出，全流程一站完成</div>
     </div>
     <div class="hero-tag">任务面板就绪</div>
@@ -2424,9 +2489,9 @@
                 </label>
                 <div id="batchLlmOptions" hidden style="margin-left:20px;display:flex;align-items:center;gap:8px;">
                   <label style="font-size:0.85em;margin:0;">max_tokens
-                    <input id="batchLlmMaxTokens" type="number" value="8192" min="4096" max="32768" step="1024" style="width:90px;" />
+                    <input id="batchLlmMaxTokens" type="number" value="2048" min="512" max="32768" step="512" style="width:90px;" />
                   </label>
-                  <span class="mini-note" style="margin:0;">思考模型建议 8192+</span>
+                  <span class="mini-note" style="margin:0;">本地 4096 ctx 建议 1024-2048；大上下文/云端模型可调高</span>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:4px;">
                   <div class="mini-note" style="margin:0 0 2px 0;">低置信度片段复核方式（BatchLLM 完成后）：</div>
@@ -4303,6 +4368,8 @@ very high pitch, very low pitch, whisper, young adult
           voice_engine: seg.voice_engine || profile.voice_engine || null,
           voice_name: seg.voice_name || profile.voice_name || null,
           voice_locale: seg.voice_locale || profile.voice_locale || null,
+          cfg_value: parseOptionalFloatValue(seg.cfg_value || profile.cfg_value),
+          inference_timesteps: parseOptionalIntValue(seg.inference_timesteps || profile.inference_timesteps),
           output_name: outputName,
           inference_device: inferenceDevice,
           backend,
@@ -4530,9 +4597,13 @@ very high pitch, very low pitch, whisper, young adult
     };
   }
 
-  function getAvailabilitySuggestion(durationSeconds, mode, success) {
+  function getAvailabilitySuggestion(durationSeconds, mode, success, errorMessage = "") {
     const preset = getAnalysisPreset(mode);
     if (!success) {
+      const message = String(errorMessage || "");
+      if (/500 Internal Server Error|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout|服务商结构化分析接口返回 5xx|chat\/completions/i.test(message)) {
+        return "连通性已通过，但结构化分析请求触发了服务商 5xx 错误。建议关闭紧凑输出改用完整 JSON，或降低单块字符数 / max_tokens 后再试；这不是普通连通性问题。";
+      }
       return `当前模型在${preset.label}下未通过测试，建议先切到稳定模式，或进一步降低 max_tokens 后再试。`;
     }
     if (durationSeconds >= 60) {
@@ -5071,6 +5142,85 @@ very high pitch, very low pitch, whisper, young adult
       });
   }
 
+  const GENERIC_REVIEW_SPEAKERS = new Set([
+    "少女", "女孩子", "女性", "旁边的孩子", "未命名人物", "其他角色", "三位女性",
+    "姐姐", "妹妹", "哥哥", "弟弟", "妈妈", "母亲", "爸爸", "父亲",
+  ]);
+
+  const REVIEW_SPEAKER_ALIASES = {
+    "小香穗": "小柳香穗",
+    "香穗": "小柳香穗",
+    "小玲奈": "甘织玲奈子",
+    "玲奈子": "甘织玲奈子",
+    "真唯": "王冢真唯",
+    "小真唯": "王冢真唯",
+    "紫阳花": "濑名紫阳花",
+    "纱月": "琴纱月",
+    "小纱月": "琴纱月",
+    "遥奈": "甘织遥奈",
+  };
+
+  function normalizeReviewSpeakerName(name) {
+    const value = String(name || "").trim();
+    return REVIEW_SPEAKER_ALIASES[value] || value;
+  }
+
+  function extractReviewSuggestedSpeakers(seg = null) {
+    const text = String(seg?._evidence || seg?.evidence || "");
+    const names = [];
+    const regex = /建议\s+([^（(；;，,\n]+)\s*[（(]([01](?:\.\d+)?)[）)]/g;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const name = String(match[1] || "").trim();
+      const confidence = Number(match[2]);
+      if (
+        name
+        && name !== "未知"
+        && !name.includes("重建候选池")
+        && !name.includes("LLM")
+        && Number.isFinite(confidence)
+        && confidence >= 0.85
+      ) {
+        names.push(name);
+      }
+    }
+    return names;
+  }
+
+  function getReviewRoleCandidates(seg = null) {
+    const names = new Set();
+    const add = (value) => {
+      const name = normalizeReviewSpeakerName(value);
+      if (name && name !== "UNKNOWN" && name !== "未知") names.add(name);
+    };
+    (seg?.candidates || []).forEach(add);
+    (seg?.scene_characters || []).forEach(add);
+    extractReviewSuggestedSpeakers(seg).forEach(add);
+    segmentsState.forEach((item) => add(item.speaker));
+    return [...names].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+  }
+
+  function getNextMarkedSegmentIndexAfter(index) {
+    const entries = getFilteredSegmentsForView();
+    if (!entries.length) return null;
+    return (entries.find((entry) => entry.index > index) || entries[0]).index;
+  }
+
+  function selectNextReviewSegmentAfter(index) {
+    if (activeAnalysisSpecialFilter !== "review") {
+      setSelectedSegment(index, { render: false });
+      return;
+    }
+    const nextIndex = getNextMarkedSegmentIndexAfter(index);
+    if (nextIndex == null) {
+      selectedSegmentIndex = -1;
+      ensureSegmentsPagination();
+      return;
+    }
+    selectedSegmentIndex = nextIndex;
+    setSegmentsPageForIndex(nextIndex);
+  }
+
   function getTotalSegmentsPages(entries = getFilteredSegmentsForView()) {
     const total = entries.length;
     if (!total) return 1;
@@ -5298,6 +5448,30 @@ very high pitch, very low pitch, whisper, young adult
     saveLastSegments(segmentsState);
     setStatus(`已将第 ${index + 1} 段内容过滤片段手动设为角色“${nextSpeaker}”。`);
     showToast(`已补充角色：${nextSpeaker}`, "success", 1800);
+  }
+
+  function applyReviewSegmentSpeaker(index, explicitSpeaker = null) {
+    if (taskBusy) return;
+    const input = document.getElementById(`reviewSpeaker_${index}`);
+    const nextSpeaker = normalizeReviewSpeakerName(explicitSpeaker != null ? explicitSpeaker : (input?.value || ""));
+    if (!nextSpeaker) {
+      showToast("请先填写角色名", "warn", 1800);
+      input?.focus();
+      return;
+    }
+    segmentsState[index] = resolveSegmentManualReview(segmentsState[index] || {}, nextSpeaker);
+    ensureRoleProfile(nextSpeaker);
+    renderRoles();
+    renderRoleAssignments();
+    renderSpeakerMergeList();
+    updateAnalysisFilterState();
+    updateSegmentsMeta();
+    renderContentFilterReviewPanel();
+    selectNextReviewSegmentAfter(index);
+    renderSegments(true);
+    saveLastSegments(segmentsState);
+    setStatus(`已确认第 ${index + 1} 段角色为“${nextSpeaker}”，并移出待复核列表。`);
+    showToast(`已确认：${nextSpeaker}`, "success", 1400);
   }
 
   function focusSegmentByIndex(index) {
@@ -5972,13 +6146,31 @@ very high pitch, very low pitch, whisper, young adult
 
   function isMarkedSegment(seg) {
     if (!seg) return false;
+    if (seg._manual_reviewed && !seg._needs_review && !seg._llm_skipped && !seg._skip_reason) {
+      return false;
+    }
     const speaker = String(seg.speaker || "").trim();
     const confidence = Number(seg.confidence);
+    const evidence = String(seg.evidence || seg._evidence || "");
+    const lowConfidence = Number.isFinite(confidence) && confidence < 0.7;
+    const unresolvedAddressConflict = (
+      ((evidence.includes("称呼反推") && evidence.includes("冲突")) || evidence.includes("称呼负权重"))
+      && (evidence.includes("待人工") || evidence.includes("LLM复核待人工"))
+      && !evidence.includes("特殊视角章节")
+      && !evidence.includes("LLM确认")
+    );
+    const effectiveNeedsReview = !!seg._needs_review && (
+      lowConfidence
+      || unresolvedAddressConflict
+      || evidence.includes("LLM复核待人工")
+      || speaker === "UNKNOWN"
+      || speaker === "未知"
+    );
     return !!seg._llm_skipped
       || !!seg._skip_reason
-      || !!seg._needs_review
-      || isSuspiciousSegment(seg)
-      || (Number.isFinite(confidence) && confidence < 0.7)
+      || effectiveNeedsReview
+      || unresolvedAddressConflict
+      || lowConfidence
       || speaker === "UNKNOWN"
       || speaker === "未知";
   }
@@ -6002,6 +6194,15 @@ very high pitch, very low pitch, whisper, young adult
     if (!Number.isFinite(confidence) || confidence < 0.85) return "";
     if (!speaker || speaker === "旁白" || speaker === "未知" || speaker === "UNKNOWN") return "";
     const evidence = String(seg.evidence || seg._evidence || "");
+    const unresolvedAddressConflict = (
+      ((evidence.includes("称呼反推") && evidence.includes("冲突")) || evidence.includes("称呼负权重"))
+      && (evidence.includes("待人工") || evidence.includes("LLM复核待人工"))
+      && !evidence.includes("特殊视角章节")
+      && !evidence.includes("LLM确认")
+    );
+    if (unresolvedAddressConflict) {
+      return "称呼反推与当前 speaker 冲突，建议人工确认";
+    }
     if (evidence.includes("LLM复核") || evidence.includes("LLM确认")) return "";
     const after = String(seg.context_after || "").slice(0, 140);
     if (!after) return "";
@@ -6086,7 +6287,7 @@ very high pitch, very low pitch, whisper, young adult
     beginTask(
       "parse",
       `准备分析 ${initialMarked.length} 个标记片段`,
-      `将只把标记为 UNKNOWN / 待补充的片段逐条发送给 LLM，成功后自动替换回当前分析结果。${reviewModelNote}`
+      `将把标记为 UNKNOWN / 待补充的片段按上下文批量发送给 LLM，成功后自动替换回当前分析结果。${reviewModelNote}`
     );
 
     let completed = 0;
@@ -6094,6 +6295,88 @@ very high pitch, very low pitch, whisper, young adult
     let failed = 0;
     const total = initialMarked.length;
     try {
+      if (parseMode === "structured") {
+        setProgress({
+          stage: "analyze",
+          summary: `批量复核标记片段 0 / ${total}`,
+          detail: `正在提交 ${total} 个标记片段；模型会按相邻上下文批量判断说话人。`,
+          percent: 8,
+          total,
+          done: 0,
+          indeterminate: true,
+        }, { log: `开始批量复核 ${total} 个标记片段` });
+
+        const data = await withLlmRequestProgress(
+          () => fetchJson("/api/parse_v2/review-batch", {
+            segments: segmentsState,
+            review_indices: initialMarked,
+            llm,
+            review_threshold: 0.7,
+            batch_size: 8,
+            narrator: (document.getElementById("narratorInput")?.value || "").trim() || null,
+          }),
+          {
+            stage: "analyze",
+            summary: `批量复核标记片段 0 / ${total}`,
+            detail: "批量复核进行中：正在利用上下文、候选角色和称呼冲突证据重新判断。",
+            hint: "高置信且通过安全门控的结果会自动应用；有风险的建议会写入证据并继续保留待人工。",
+            slowMessage: "当前批量复核仍在生成；如果使用本地模型，请观察终端 token 输出。",
+            basePercent: 8,
+            ceilingPercent: 92,
+            total,
+            done: 0,
+            intervalMs: 2500,
+            slowAfterSeconds: 10,
+          }
+        );
+        if (!data.ok) throw new Error(data.error || "批量标记片段复核失败");
+        if (!Array.isArray(data.segments)) throw new Error("批量复核接口未返回 segments");
+        const oldSegments = segmentsState;
+        segmentsState = data.segments;
+        const stats = (data.stats && data.stats.llm_review) || {};
+        replaced = Number(stats.corrected || 0) + Number(stats.confirmed || 0);
+        failed = Number(stats.failed || 0);
+        completed = total;
+        applySegmentsState(segmentsState);
+        const changedSamples = initialMarked
+          .filter((index) => oldSegments[index] && segmentsState[index] && oldSegments[index].speaker !== segmentsState[index].speaker)
+          .slice(0, 5)
+          .map((index) => `${oldSegments[index].speaker || "未知"}→${segmentsState[index].speaker || "未知"}`)
+          .join("，");
+        pushLog(
+          `标记片段批量复核完成：目标 ${stats.targets ?? total}，已复核 ${stats.reviewed ?? 0}，修正 ${stats.corrected ?? 0}，确认 ${stats.confirmed ?? 0}，待人工 ${stats.blocked ?? 0}，失败 ${stats.failed ?? 0}`
+          + (changedSamples ? `；示例 ${changedSamples}` : "")
+        );
+        renderProgress();
+        saveAnalysisFlowSnapshot(
+          document.getElementById("sourceText")?.value || "",
+          llm,
+          llm.analysis_combo || getAnalysisComboValue(),
+          "segments",
+          0,
+          { segments: segmentsState }
+        );
+        setProgress({
+          stage: "complete",
+          summary: `批量复核标记片段完成：${completed} / ${total}`,
+          detail: `修正 ${stats.corrected ?? 0} 段，确认 ${stats.confirmed ?? 0} 段，待人工 ${stats.blocked ?? 0} 段，失败 ${stats.failed ?? 0} 段。`,
+          percent: 100,
+          total,
+          done: completed,
+          indeterminate: false,
+        }, { log: "标记片段批量复核完成" });
+        const remaining = getMarkedSegmentIndices().length;
+        finishTask(
+          "标记片段批量复核完成",
+          `修正 ${stats.corrected ?? 0} 段，确认 ${stats.confirmed ?? 0} 段，待人工 ${stats.blocked ?? 0} 段，失败 ${stats.failed ?? 0} 段；当前还剩 ${remaining} 个标记片段。`,
+          { total, done: completed }
+        );
+        setStatus(`标记片段批量复核完成：修正 ${stats.corrected ?? 0} 段，确认 ${stats.confirmed ?? 0} 段，待人工 ${stats.blocked ?? 0} 段，剩余 ${remaining}。`);
+        showToast("批量复核完成", "success", 2600);
+        updateAnalysisResultActions();
+        return;
+      }
+
       for (let cursor = 0; cursor < segmentsState.length; cursor += 1) {
         if (taskCancelled) throw new Error("任务已取消");
         const original = segmentsState[cursor];
@@ -6121,18 +6404,23 @@ very high pitch, very low pitch, whisper, young adult
           let updatedSegment = null;
           if (parseMode === "structured") {
             // BookVoiceParser 复核模式：调用 /api/parse_v2/review-one 逐条复核说话人归因
+            const currentSpeaker = String(original.speaker || "").trim();
+            const reviewMode = GENERIC_REVIEW_SPEAKERS.has(currentSpeaker) ? "generic_relation" : "spc";
             const data = await withLlmRequestProgress(
               () => fetchJson("/api/parse_v2/review-one", {
                 segments: segmentsState,
                 index: cursor,
                 llm,
                 review_threshold: 0.7,
+                review_mode: reviewMode,
               }),
               {
                 stage: "analyze",
-                summary: `复核标记片段 ${completed} / ${total}`,
+                summary: `${reviewMode === "generic_relation" ? "泛称/关系称谓复核" : "复核标记片段"} ${completed} / ${total}`,
                 detail: `正在复核：${title}`,
-                hint: "成功后会直接更新当前片段的说话人归因；失败则保留原片段并继续下一段。",
+                hint: reviewMode === "generic_relation"
+                  ? "将尝试把少女/母亲/姐姐等泛称映射为具体角色；无法确定时会继续保留待人工。"
+                  : "成功后会直接更新当前片段的说话人归因；失败则保留原片段并继续下一段。",
                 slowMessage: "当前片段仍在生成；如果使用本地模型，请观察终端 token 输出。",
                 basePercent: Math.round((completed - 1) / Math.max(total, 1) * 90),
                 ceilingPercent: Math.round(completed / Math.max(total, 1) * 90),
@@ -6148,9 +6436,17 @@ very high pitch, very low pitch, whisper, young adult
             const reviewFailed = !!(data.stats && data.stats.failed);
             const updatedSpeaker = String(updatedSegment.speaker || "").trim();
             const updatedConfidence = Number(updatedSegment.confidence);
+            const updatedEvidence = String(updatedSegment.evidence || updatedSegment._evidence || "");
+            const unresolvedAddressConflict = (
+              ((updatedEvidence.includes("称呼反推") && updatedEvidence.includes("冲突")) || updatedEvidence.includes("称呼负权重"))
+              && (updatedEvidence.includes("待人工") || updatedEvidence.includes("LLM复核待人工"))
+              && !updatedEvidence.includes("特殊视角章节")
+              && !updatedEvidence.includes("LLM确认")
+            );
             const stillNeedsReview = reviewFailed
               || updatedSpeaker === "UNKNOWN"
               || updatedSpeaker === "未知"
+              || unresolvedAddressConflict
               || (Number.isFinite(updatedConfidence) && updatedConfidence < 0.7);
             updatedSegment._needs_review = stillNeedsReview;
             updatedSegment._llm_skipped = reviewFailed ? !!original._llm_skipped : false;
@@ -6196,7 +6492,23 @@ very high pitch, very low pitch, whisper, young adult
             segmentsState[cursor] = updatedSegment;
             replaced += 1;
             applySegmentsState(segmentsState);
-            pushLog(`标记片段复核完成：${clipTextForLog(text, 24)} -> ${updatedSegment.speaker || "旁白"}`);
+            const updatedEvidence = String(updatedSegment.evidence || updatedSegment._evidence || "");
+            const updatedConfidence = Number(updatedSegment.confidence);
+            const unresolvedAddressConflict = (
+              ((updatedEvidence.includes("称呼反推") && updatedEvidence.includes("冲突")) || updatedEvidence.includes("称呼负权重"))
+              && (updatedEvidence.includes("待人工") || updatedEvidence.includes("LLM复核待人工"))
+              && !updatedEvidence.includes("特殊视角章节")
+              && !updatedEvidence.includes("LLM确认")
+            );
+            const stillNeedsReview = !!updatedSegment._needs_review
+              || updatedEvidence.includes("LLM复核待人工")
+              || unresolvedAddressConflict
+              || (Number.isFinite(updatedConfidence) && updatedConfidence < 0.7);
+            pushLog(
+              stillNeedsReview
+                ? `标记片段仍需人工确认：${clipTextForLog(text, 24)} -> ${updatedSegment.speaker || "旁白"}`
+                : `标记片段复核完成：${clipTextForLog(text, 24)} -> ${updatedSegment.speaker || "旁白"}`
+            );
           }
           renderProgress();
           saveAnalysisFlowSnapshot(
@@ -6636,7 +6948,12 @@ very high pitch, very low pitch, whisper, young adult
     selectedSpeakers.forEach((speaker) => {
       const profile = roleProfilesState[speaker] || {};
       if (profile.style) {
-        merged.style = mergeStyleTags(merged.style || "", profile.style);
+        const profileEngine = normalizeVoiceEngineValue(profile.voice_engine || merged.voice_engine || "");
+        if (isVoxCPMVoiceEngine(profileEngine) || isMimoVoiceEngine(profileEngine)) {
+          merged.style = merged.style || profile.style;
+        } else {
+          merged.style = mergeStyleTags(merged.style || "", profile.style);
+        }
       }
       if (!merged.ref_audio && profile.ref_audio) merged.ref_audio = profile.ref_audio;
       if (!merged.ref_text && profile.ref_text) merged.ref_text = profile.ref_text;
@@ -8913,11 +9230,14 @@ very high pitch, very low pitch, whisper, young adult
         return;
       }
 
-      const effectiveEngine = normalizeVoiceEngineValue(segment.voice_engine || profile.voice_engine || "");
+      const effectiveEngine = getEffectiveVoiceEngineForSegment(segment);
       const backend = isBrowserPreviewVoice(profile)
         ? validateAudioBackendConfig()
         : (isVoxCPMVoiceEngine(effectiveEngine) ? validateAudioBackendConfig() : await ensureAudioBackendReady());
-      if (!backend) return;
+      if (!backend) {
+        failTask(`角色“${speaker}”试听已取消`, "当前音频后端尚未配置完成。");
+        return;
+      }
       const outputName = `preview_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`;
       const inferenceDevice = backend.inference_device || getInferenceDevice();
       const resp = await fetchJson("/api/tts", {
@@ -9299,6 +9619,42 @@ very high pitch, very low pitch, whisper, young adult
     }, { log: "用户手动清空了文本和所有缓存" });
   }
 
+  function renderReviewSegmentCard(seg, idx, displayIndex, totalCount, totalPages) {
+    const suspiciousReason = inferSuspiciousReason(seg);
+    const candidates = getReviewRoleCandidates(seg);
+    const speakerValue = seg.speaker && seg.speaker !== "UNKNOWN" && seg.speaker !== "未知" ? seg.speaker : "";
+    const before = String(seg.context_before || "").slice(-520).trim();
+    const after = String(seg.context_after || "").slice(0, 520).trim();
+    const evidence = String(seg._evidence || seg.evidence || "").trim();
+    const candidateButtons = candidates.slice(0, 14).map((name) => `
+      <button type="button" class="secondary" onclick="applyReviewSegmentSpeaker(${idx}, '${escapeJs(name)}')">${escapeHtml(name)}</button>
+    `).join("");
+    return `
+      <div class="segment-index-badge">
+        <span>待复核 ${displayIndex} / ${totalCount}</span>
+        <span class="section-meta">原序号 #${idx + 1} · 第 ${segmentsCurrentPage} / ${totalPages} 页</span>
+        ${seg.confidence != null ? `<span class="seg-flag seg-flag-bvp" title="BookVoiceParser 置信度">${(seg.confidence * 100).toFixed(0)}%</span>` : ""}
+        ${seg._llm_skipped ? `<span class="seg-flag seg-flag-skipped">待补充</span>` : ""}
+        ${isSuspiciousSegment(seg) ? `<span class="seg-flag seg-flag-suspicious" title="${escapeHtml(suspiciousReason || "speaker 归因存在风险，请核实")}">待核查</span>` : ""}
+      </div>
+      <div class="review-workbench-context">
+        <div class="review-context-box"><strong>上文</strong>${escapeHtml(before || "（无）")}</div>
+        <div class="review-context-box"><strong>下文</strong>${escapeHtml(after || "（无）")}</div>
+      </div>
+      <div class="review-text-box"><strong>当前文本</strong>${escapeHtml(seg.text || "")}</div>
+      <div class="review-speaker-row">
+        <input id="reviewSpeaker_${idx}" list="reviewRoleCandidates_${idx}" value="${escapeHtml(speakerValue)}" placeholder="输入或选择角色名，回车保存" onkeydown="if(event.key==='Enter'){event.preventDefault(); applyReviewSegmentSpeaker(${idx});}" />
+        <button type="button" class="primary" ${taskBusy ? "disabled" : ""} onclick="applyReviewSegmentSpeaker(${idx})">保存并下一条</button>
+        <button type="button" class="secondary" ${taskBusy ? "disabled" : ""} onclick="applyReviewSegmentSpeaker(${idx}, '${escapeJs(speakerValue || "旁白")}')">确认当前角色</button>
+        <datalist id="reviewRoleCandidates_${idx}">
+          ${candidates.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("")}
+        </datalist>
+      </div>
+      ${candidateButtons ? `<div class="review-candidate-row">${candidateButtons}</div>` : ""}
+      ${evidence ? `<details class="seg-evidence"><summary>归属依据 / 复核记录</summary><span>${escapeHtml(evidence)}</span>${seg.attribution_type ? `<span class="seg-attr-type">${escapeHtml(seg.attribution_type)}</span>` : ""}</details>` : ""}
+    `;
+  }
+
   function renderSegments(force = false) {
     syncRoleProfilesFromSegments();
     if (!segmentsPanelExpanded && !force) {
@@ -9316,7 +9672,9 @@ very high pitch, very low pitch, whisper, young adult
     const visibleSegments = getFilteredSegmentsForView();
     const totalPages = ensureSegmentsPagination(visibleSegments);
     if (!visibleSegments.length) {
-      container.innerHTML = `<div class="analysis-empty">当前筛选角色下没有可展示的分析结果。</div>`;
+      container.innerHTML = activeAnalysisSpecialFilter === "review"
+        ? `<div class="review-workbench-empty">当前没有待复核条目。手动确认过的低置信段不会再显示在这里。</div>`
+        : `<div class="analysis-empty">当前筛选角色下没有可展示的分析结果。</div>`;
       syncSegmentsPagerUI(visibleSegments);
       return;
     }
@@ -9339,6 +9697,7 @@ very high pitch, very low pitch, whisper, young adult
       const displayIndex = pageStart + pageOffset + 1;
       const isSelected = idx === selectedSegmentIndex;
       div.className = "segment"
+        + (activeAnalysisSpecialFilter === "review" ? " review-workbench-card" : "")
         + (isSuspicious ? " segment-suspicious" : "")
         + (isSkipped ? " segment-skipped" : "")
         + (needsReview ? " segment-unknown" : "")
@@ -9350,6 +9709,11 @@ very high pitch, very low pitch, whisper, young adult
         if (event.target.closest("input, textarea, select, button, summary, details, label")) return;
         setSelectedSegment(idx);
       };
+      if (activeAnalysisSpecialFilter === "review") {
+        div.innerHTML = renderReviewSegmentCard(seg, idx, displayIndex, visibleSegments.length, totalPages);
+        fragment.appendChild(div);
+        return;
+      }
       div.innerHTML = `
         <div class="segment-index-badge">
           <span>第 ${displayIndex} / ${visibleSegments.length} 条</span>
@@ -9965,7 +10329,7 @@ very high pitch, very low pitch, whisper, young adult
   function getEffectiveVoiceEngineForSegment(segment) {
     const speaker = segment.speaker || "旁白";
     const profile = roleProfilesState[speaker] || {};
-    return normalizeVoiceEngineValue(segment.voice_engine || profile.voice_engine || "");
+    return normalizeVoiceEngineValue(segment.voice_engine || profile.voice_engine || getCurrentAudioBackendVoiceEngine() || "");
   }
 
   function segmentUsesVoxCPMVoice(segment) {
@@ -10025,6 +10389,14 @@ very high pitch, very low pitch, whisper, young adult
     }
 
     const status = await refreshModelRuntimeStatus(true);
+    if (backend.mode === "local" && isVoxCPMVoiceEngine(backend.local_audio_engine)) {
+      const audio = status.audio || {};
+      if (audio.voxcpm_runtime?.ready || audio.voxcpm_bridge?.available) {
+        return backend;
+      }
+      redirectToModelsWithToast("当前 VoxCPM 运行时不可用，请确认主环境已安装 VoxCPM，或专用环境 I:\\conda_envs\\voxcpm\\python.exe 可用。");
+      return null;
+    }
     const loadedDevices = status.audio?.loaded_devices || [];
     const requestedDevice = backend.inference_device || "";
     const expectedDevice = !requestedDevice || requestedDevice === "auto"
@@ -10388,10 +10760,12 @@ very high pitch, very low pitch, whisper, young adult
       low: 0,
       unknown: 0,
       belowThreshold: 0,
+      reviewMarked: 0,
     };
     for (const seg of segments) {
       const confidence = Number(seg.confidence);
-      if (seg.speaker === "未知" || seg.speaker === "UNKNOWN" || seg._needs_review) summary.unknown += 1;
+      if (seg.speaker === "未知" || seg.speaker === "UNKNOWN") summary.unknown += 1;
+      if (isMarkedSegment(seg)) summary.reviewMarked += 1;
       if (!Number.isFinite(confidence)) continue;
       if (confidence >= 0.85) summary.high += 1;
       else if (confidence >= 0.7) summary.medium += 1;
@@ -10404,6 +10778,12 @@ very high pitch, very low pitch, whisper, young adult
   function formatBvpSummary(summary, stats = {}) {
     const quoteCount = stats.quote_count ?? summary.total;
     const inferredAliases = stats.inferred_aliases ? Object.keys(stats.inferred_aliases).length : 0;
+    const addressStats = stats.address_term_backcheck || {};
+    const addressCorrected = Number(addressStats.corrected || 0);
+    const addressBlocked = Number(addressStats.blocked || 0);
+    const addressCandidates = Number(addressStats.candidates_added || 0);
+    const iterativeCorrected = Number(addressStats.iterative_corrected || 0);
+    const iterativeBlocks = Number(addressStats.iterative_blocks_scanned || 0);
     const parts = [
       `抽取台词 ${quoteCount} 条`,
       `生成分段 ${summary.total} 段`,
@@ -10411,7 +10791,14 @@ very high pitch, very low pitch, whisper, young adult
       `低于复核阈值 ${summary.belowThreshold} 段`,
     ];
     if (summary.unknown) parts.push(`未知归属 ${summary.unknown} 段`);
+    if (summary.reviewMarked) parts.push(`待复核 ${summary.reviewMarked} 段`);
     if (inferredAliases) parts.push(`推断别名 ${inferredAliases} 个`);
+    if (addressCorrected || addressBlocked || addressCandidates) {
+      parts.push(`称呼反推 修正 ${addressCorrected} / 候选 ${addressCandidates} / 阻断 ${addressBlocked}`);
+    }
+    if (iterativeCorrected || iterativeBlocks) {
+      parts.push(`对白块迭代 修正 ${iterativeCorrected} / 扫描 ${iterativeBlocks} 块`);
+    }
     return parts.join("；");
   }
 
@@ -10426,7 +10813,22 @@ very high pitch, very low pitch, whisper, young adult
     const indices = [];
     segments.forEach((seg, index) => {
       const confidence = Number(seg.confidence);
-      if (Number.isFinite(confidence) && confidence < reviewThreshold) {
+      const speaker = String(seg.speaker || "").trim();
+      const evidence = String(seg.evidence || seg._evidence || "");
+      const unresolvedAddressConflict = (
+        ((evidence.includes("称呼反推") && evidence.includes("冲突")) || evidence.includes("称呼负权重"))
+        && (evidence.includes("待人工") || evidence.includes("LLM复核待人工"))
+        && !evidence.includes("特殊视角章节")
+        && !evidence.includes("LLM确认")
+      );
+      if (
+        (Number.isFinite(confidence) && confidence < reviewThreshold)
+        || speaker === "未知"
+        || speaker === "UNKNOWN"
+        || GENERIC_REVIEW_SPEAKERS.has(speaker)
+        || unresolvedAddressConflict
+        || evidence.includes("LLM复核待人工")
+      ) {
         indices.push(index);
       }
     });
@@ -10545,7 +10947,8 @@ very high pitch, very low pitch, whisper, young adult
     const roleHintsRaw = (document.getElementById("roleHintsInput")?.value || "").trim();
     let roleHints = null;
     if (roleHintsRaw) {
-      if (roleHintsRaw.trimStart().startsWith("{")) {
+      const roleHintsTrimmed = roleHintsRaw.trimStart();
+      if (roleHintsTrimmed.startsWith("{") || roleHintsTrimmed.startsWith("[")) {
         try { roleHints = JSON.parse(roleHintsRaw); } catch { roleHints = null; }
       }
       if (!roleHints) {
@@ -10556,8 +10959,8 @@ very high pitch, very low pitch, whisper, young adult
     const useBatchLlm = document.getElementById("useBatchLlm")?.checked || false;
     const narratorRaw = (document.getElementById("narratorInput")?.value || "").trim();
     const narrator = narratorRaw || null;
-    const batchLlmMaxTokensRaw = parseInt(document.getElementById("batchLlmMaxTokens")?.value || "8192", 10);
-    const batchLlmMaxTokens = Math.min(Math.max(Number.isFinite(batchLlmMaxTokensRaw) ? batchLlmMaxTokensRaw : 8192, 4096), 131072);
+    const batchLlmMaxTokensRaw = parseInt(document.getElementById("batchLlmMaxTokens")?.value || "2048", 10);
+    const batchLlmMaxTokens = Math.min(Math.max(Number.isFinite(batchLlmMaxTokensRaw) ? batchLlmMaxTokensRaw : 2048, 512), 32768);
 
     let llm = null;
     if (useLlmReview || useBatchLlm) {
@@ -10633,113 +11036,96 @@ very high pitch, very low pitch, whisper, young adult
       let segments = resp.segments || [];
       const stats = resp.stats || {};
       let summary = summarizeBvpSegments(segments, reviewThreshold);
+      let autoReviewIndices = useLlmReview ? getBvpReviewIndices(segments, reviewThreshold) : [];
       const ruleSummaryText = formatBvpSummary(summary, stats);
       applyStructuredSegments(segments);
-      setStructuredParseStatus(`规则解析完成：${ruleSummaryText}。${useLlmReview && summary.belowThreshold > 0 ? "准备进入 LLM 复核。" : "正在刷新界面。"}`);
+      setStructuredParseStatus(`规则解析完成：${ruleSummaryText}。${useLlmReview && autoReviewIndices.length > 0 ? "准备进入 BatchLLM 批量复核。" : "正在刷新界面。"}`);
       setProgress({
         stage: "analyze",
         summary: "规则解析完成",
         detail: ruleSummaryText,
-        percent: useLlmReview && summary.belowThreshold > 0 ? 58 : 90,
+        percent: useLlmReview && autoReviewIndices.length > 0 ? 58 : 90,
         total: useLlmReview ? 4 : 3,
         done: 2,
         indeterminate: false,
       }, { log: `规则解析返回 ${segments.length} 段，低于复核阈值 ${summary.belowThreshold} 段` });
 
-      if (useLlmReview && summary.belowThreshold > 0) {
-        const reviewIndices = getBvpReviewIndices(segments, reviewThreshold);
+      if (useLlmReview && autoReviewIndices.length > 0) {
+        const reviewIndices = autoReviewIndices;
         const reviewTotal = reviewIndices.length;
-        const reviewResult = { corrected: 0, confirmed: 0, failed: 0, skipped: 0 };
-        for (let reviewPos = 0; reviewPos < reviewIndices.length; reviewPos += 1) {
-          if (taskCancelled) throw new Error("任务已取消");
-          const segmentIndex = reviewIndices[reviewPos];
-          const seg = segments[segmentIndex];
-          const quoteLabel = seg.quote_id || `第 ${segmentIndex + 1} 段`;
-          const beforeSpeaker = seg.speaker || "未知";
-          const beforeConfidence = Number(seg.confidence);
-          const beforeConfidenceText = Number.isFinite(beforeConfidence) ? `${(beforeConfidence * 100).toFixed(0)}%` : "未知";
-          const doneCount = reviewPos;
-          const percent = Math.round(60 + (doneCount / reviewTotal) * 34);
-          setStructuredParseStatus(`LLM 复核中：${reviewPos + 1}/${reviewTotal}，当前 ${quoteLabel}，speaker=${beforeSpeaker}，置信度=${beforeConfidenceText}。`);
-          setProgress({
-            stage: "analyze",
-            summary: `LLM 复核低置信度台词 ${doneCount} / ${reviewTotal}`,
-            detail: `正在复核 ${quoteLabel}：${seg.text || ""} 候选：${(seg.candidates || []).join(" / ") || "无候选"}`,
-            percent,
-            total: reviewTotal,
-            done: doneCount,
-            indeterminate: false,
-          }, { log: `开始复核 ${quoteLabel} (${reviewPos + 1}/${reviewTotal})` });
+        const reviewResult = { corrected: 0, confirmed: 0, failed: 0, skipped: 0, blocked: 0 };
+        setStructuredParseStatus(`BatchLLM 批量复核准备中：共 ${reviewTotal} 个低置信/未知/高风险片段。`);
+        setProgress({
+          stage: "analyze",
+          summary: `BatchLLM 批量复核 0 / ${reviewTotal}`,
+          detail: "正在批量复核低置信、未知、泛称和称呼冲突片段。",
+          percent: 60,
+          total: reviewTotal,
+          done: 0,
+          indeterminate: true,
+        }, { log: `开始 BatchLLM 批量复核 ${reviewTotal} 个片段` });
 
-          try {
-            const oneResp = await fetchJson("/api/parse_v2/review-one", {
+        try {
+          const batchResp = await withLlmRequestProgress(
+            () => fetchJson("/api/parse_v2/review-batch", {
               segments,
-              index: segmentIndex,
-              llm: reviewLlm,   // 使用独立复核模型（如未配置则等于主 LLM）
+              review_indices: reviewIndices,
+              llm: reviewLlm,
               review_threshold: reviewThreshold,
-            });
-            if (!oneResp.ok) throw new Error(oneResp.error || "parse_v2/review-one 失败");
-            const updated = oneResp.segment || seg;
-            segments[segmentIndex] = updated;
-            const oneStats = oneResp.stats || {};
-            const changed = !!oneStats.changed;
-            const confirmed = !!oneStats.confirmed;
-            const failed = !!oneStats.failed;
-            if (failed) {
-              updated._needs_review = true;
-              updated.evidence = `${updated.evidence || ""}；LLM复核失败，请人工核查`;
-              updated._evidence = updated.evidence;
-            }
-            if (changed) reviewResult.corrected += 1;
-            else if (confirmed) reviewResult.confirmed += 1;
-            else if (failed) reviewResult.failed += 1;
-            else reviewResult.skipped += 1;
-            applyStructuredSegments(segments);
-            const afterConfidence = Number(updated.confidence);
-            const afterConfidenceText = Number.isFinite(afterConfidence) ? `${(afterConfidence * 100).toFixed(0)}%` : "未知";
-            setStructuredParseStatus(`${failed ? "LLM 复核失败" : "LLM 复核完成"} ${reviewPos + 1}/${reviewTotal}：${quoteLabel}，${beforeSpeaker} -> ${updated.speaker || "未知"}，置信度 ${beforeConfidenceText} -> ${afterConfidenceText}。`);
-            setProgress({
+              batch_size: 8,
+              narrator,
+            }),
+            {
               stage: "analyze",
-              summary: `LLM 复核低置信度台词 ${reviewPos + 1} / ${reviewTotal}`,
-              detail: `已完成 ${quoteLabel}。修正 ${reviewResult.corrected} 段，确认 ${reviewResult.confirmed} 段，失败 ${reviewResult.failed} 段。`,
-              percent: Math.round(60 + ((reviewPos + 1) / reviewTotal) * 34),
+              summary: `BatchLLM 批量复核 0 / ${reviewTotal}`,
+              detail: "模型正在按上下文窗口批量判断；安全门控会阻止低证据覆盖。",
+              hint: "高置信建议会自动应用；冲突或证据不足的建议会保留为待人工证据。",
+              slowMessage: "批量复核仍在运行；如果使用本地模型，请观察终端 token 输出。",
+              basePercent: 60,
+              ceilingPercent: 94,
               total: reviewTotal,
-              done: reviewPos + 1,
-              indeterminate: false,
-            }, { log: `${quoteLabel} ${failed ? "复核失败" : "复核完成"}${changed ? "，已修正 speaker" : confirmed ? "，已确认原归属" : ""}` });
-          } catch (reviewErr) {
-            if (isTaskCancelledError(reviewErr)) throw reviewErr;
-            reviewResult.failed += 1;
+              done: 0,
+              intervalMs: 2500,
+              slowAfterSeconds: 10,
+            }
+          );
+          if (!batchResp.ok) throw new Error(batchResp.error || "parse_v2/review-batch 失败");
+          if (!Array.isArray(batchResp.segments)) throw new Error("批量复核接口未返回 segments");
+          segments = batchResp.segments;
+          const stats = (batchResp.stats && batchResp.stats.llm_review) || {};
+          reviewResult.corrected = Number(stats.corrected || 0);
+          reviewResult.confirmed = Number(stats.confirmed || 0);
+          reviewResult.failed = Number(stats.failed || 0);
+          reviewResult.blocked = Number(stats.blocked || 0);
+          reviewResult.skipped = Number(stats.skipped || 0);
+          applyStructuredSegments(segments);
+        } catch (reviewErr) {
+          if (isTaskCancelledError(reviewErr)) throw reviewErr;
+          reviewResult.failed = reviewTotal;
+          reviewIndices.forEach((segmentIndex) => {
+            const seg = segments[segmentIndex];
+            if (!seg) return;
             segments[segmentIndex] = {
               ...seg,
               _needs_review: true,
-              evidence: `${seg.evidence || ""}；LLM复核失败: ${reviewErr.message || String(reviewErr)}`,
-              _evidence: `${seg._evidence || seg.evidence || ""}；LLM复核失败: ${reviewErr.message || String(reviewErr)}`,
+              evidence: `${seg.evidence || ""}；BatchLLM批量复核失败: ${reviewErr.message || String(reviewErr)}`,
+              _evidence: `${seg._evidence || seg.evidence || ""}；BatchLLM批量复核失败: ${reviewErr.message || String(reviewErr)}`,
             };
-            applyStructuredSegments(segments);
-            setStructuredParseStatus(`LLM 复核失败 ${reviewPos + 1}/${reviewTotal}：${quoteLabel}。已保留原归属并标记证据，继续复核下一段。`);
-            setProgress({
-              stage: "analyze",
-              summary: `LLM 复核低置信度台词 ${reviewPos + 1} / ${reviewTotal}`,
-              detail: `${quoteLabel} 复核失败：${reviewErr.message || String(reviewErr)}。已继续后续片段。`,
-              percent: Math.round(60 + ((reviewPos + 1) / reviewTotal) * 34),
-              total: reviewTotal,
-              done: reviewPos + 1,
-              indeterminate: false,
-            }, { log: `${quoteLabel} 复核失败` });
-          }
+          });
+          applyStructuredSegments(segments);
+          setStructuredParseStatus(`BatchLLM 批量复核失败：已保留原归属并标记 ${reviewTotal} 个片段。`);
         }
         summary = summarizeBvpSegments(segments, reviewThreshold);
-        setStructuredParseStatus(`LLM 逐条复核完成：${summary.belowThreshold} 段仍低于阈值；修正 ${reviewResult.corrected} 段，确认 ${reviewResult.confirmed} 段，失败 ${reviewResult.failed} 段。`);
+        setStructuredParseStatus(`BatchLLM 批量复核完成：${summary.belowThreshold} 段仍低于阈值；修正 ${reviewResult.corrected} 段，确认 ${reviewResult.confirmed} 段，待人工 ${reviewResult.blocked} 段，失败 ${reviewResult.failed} 段。`);
         setProgress({
           stage: "analyze",
-          summary: `LLM 逐条复核完成 ${reviewTotal} / ${reviewTotal}`,
-          detail: `修正 ${reviewResult.corrected} 段，确认 ${reviewResult.confirmed} 段，失败 ${reviewResult.failed} 段。${formatBvpSummary(summary, stats)}`,
+          summary: `BatchLLM 批量复核完成 ${reviewTotal} / ${reviewTotal}`,
+          detail: `修正 ${reviewResult.corrected} 段，确认 ${reviewResult.confirmed} 段，待人工 ${reviewResult.blocked} 段，失败 ${reviewResult.failed} 段。${formatBvpSummary(summary, stats)}`,
           percent: 94,
           total: reviewTotal,
           done: reviewTotal,
           indeterminate: false,
-        }, { log: `LLM 逐条复核完成：修正 ${reviewResult.corrected}，确认 ${reviewResult.confirmed}，失败 ${reviewResult.failed}` });
+        }, { log: `BatchLLM 批量复核完成：修正 ${reviewResult.corrected}，确认 ${reviewResult.confirmed}，待人工 ${reviewResult.blocked}，失败 ${reviewResult.failed}` });
       } else if (useLlmReview) {
         setStructuredParseStatus(`规则解析完成：${ruleSummaryText}。没有低于阈值的片段，已跳过 LLM 复核。`);
         setProgress({
@@ -11766,7 +12152,7 @@ very high pitch, very low pitch, whisper, young adult
       if (isTaskCancelledError(err)) return;
       const duration = (performance.now() - startedAt) / 1000;
       const durationSec = duration.toFixed(1);
-      const suggestion = getAvailabilitySuggestion(duration, llm.analysis_mode, false);
+      const suggestion = getAvailabilitySuggestion(duration, llm.analysis_mode, false, err && err.message ? err.message : "");
       updateActiveLlmStatusBox(`可用性测试失败：耗时约 ${durationSec} 秒。${suggestion}${err.message ? ` ${err.message}` : ""}`);
       setStatus("可用性测试失败，请查看上方任务面板中的详细错误。");
       failTask(
@@ -11805,13 +12191,19 @@ very high pitch, very low pitch, whisper, young adult
       const useSequentialSynthesis = backend.mode === "local" || backend.mode === "mimo" || segmentsContainMicrosoftVoices(segments);
       if (segmentsRequirePreloadedAudioModel(segments)) {
         const readyBackend = await ensureAudioBackendReady();
-        if (!readyBackend) return;
+        if (!readyBackend) {
+          failTask("自动合成已取消", "当前音频后端尚未就绪。");
+          return;
+        }
         Object.assign(backend, readyBackend);
       }
       if (mixedPreviewMode) {
         const previewEntries = await prepareMixedPreviewEntries(segments, baseName, inferenceDevice, backend);
         const completed = await startMixedPreviewPlayback(previewEntries, buildMixedPreviewSummary(segments));
-        if (!completed) return;
+        if (!completed) {
+          failTask("自动合成已取消", "浏览器混合试听已停止。");
+          return;
+        }
         finishTask(`浏览器混合试听完成，共 ${segments.length} 段`, "包含浏览器本地语音的项目已切换为在线试听模式；当前不导出完整音频。", {
           total: segments.length,
           done: segments.length,
@@ -11870,13 +12262,19 @@ very high pitch, very low pitch, whisper, young adult
       const useSequentialSynthesis = backend.mode === "local" || backend.mode === "mimo" || segmentsContainMicrosoftVoices(segmentsState);
       if (segmentsRequirePreloadedAudioModel(segmentsState)) {
         const readyBackend = await ensureAudioBackendReady();
-        if (!readyBackend) return;
+        if (!readyBackend) {
+          failTask("分段合成已取消", "当前音频后端尚未就绪。");
+          return;
+        }
         Object.assign(backend, readyBackend);
       }
       if (mixedPreviewMode) {
         const previewEntries = await prepareMixedPreviewEntries(segmentsState, baseName, inferenceDevice, backend);
         const completed = await startMixedPreviewPlayback(previewEntries, buildMixedPreviewSummary(segmentsState));
-        if (!completed) return;
+        if (!completed) {
+          failTask("分段合成已取消", "浏览器混合试听已停止。");
+          return;
+        }
         finishTask(`浏览器混合试听完成，共 ${segmentsState.length} 段`, "包含浏览器本地语音的项目已切换为在线试听模式；当前不导出完整音频。", {
           total: segmentsState.length,
           done: segmentsState.length,

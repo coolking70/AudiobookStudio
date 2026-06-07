@@ -830,6 +830,32 @@ def _is_transient_llm_error(exc: Exception) -> bool:
     return any(token in message for token in transient_tokens)
 
 
+def _is_provider_server_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    return any(
+        token in message
+        for token in (
+            "500 internal server error",
+            "502 bad gateway",
+            "503 service unavailable",
+            "504 gateway timeout",
+            "server error '500",
+            "server error '502",
+            "server error '503",
+            "server error '504",
+        )
+    )
+
+
+def _format_provider_server_error(exc: Exception) -> str:
+    return (
+        "LLM 服务商结构化分析接口返回 5xx 服务端错误。"
+        "连通性可能正常，但该模型/服务在当前 compact 分析请求上不稳定；"
+        "建议关闭紧凑输出改用 verbose，或进一步降低单块字符数 / max_tokens 后重试。"
+        f"原始错误：{exc}"
+    )
+
+
 def _extract_detection_sample(text: str, limit: int = SAMPLE_DETECT_MAX_CHARS) -> str:
     normalized = str(text or "").strip()
     if len(normalized) <= limit:
@@ -2280,6 +2306,8 @@ def _analyze_chunk_with_context(
                         merged_segments.extend(sub_segments)
                     return merged_segments, current_context or AnalysisContext()
             _dump_compact_debug("compact_analyze_error", chunk["title"], messages, response_text=compact_text, error=str(exc))
+            if _is_provider_server_error(exc):
+                raise RuntimeError(_format_provider_server_error(exc)) from exc
             if _is_length_cutoff_error(exc):
                 split_max_chars = 320
                 split_max_lines = 6

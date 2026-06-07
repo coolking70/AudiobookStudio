@@ -14,9 +14,21 @@ DEFAULT_TTS_MAX_DURATION_RATIO = 2.8
 DEFAULT_TTS_MIN_ABSOLUTE_SECONDS = 0.45
 DEFAULT_TTS_MAX_ABSOLUTE_SECONDS = 4.0
 DEFAULT_TTS_MIN_UNITS_TO_VALIDATE = 2
+DEFAULT_EDGE_ANALYSIS_SECONDS = 0.25
+DEFAULT_EDGE_NOISE_WINDOW_SECONDS = 0.02
+DEFAULT_EDGE_SPIKE_PEAK = 0.995
+DEFAULT_EDGE_SPIKE_JUMP = 0.85
+DEFAULT_EDGE_NOISE_ZCR = 0.45
+DEFAULT_EDGE_NOISE_RMS_RATIO = 2.4
 
 
 class AudioDurationValidationError(RuntimeError):
+    def __init__(self, message: str, details: dict[str, float | int | str | bool]):
+        super().__init__(message)
+        self.details = details
+
+
+class AudioSignalQualityError(RuntimeError):
     def __init__(self, message: str, details: dict[str, float | int | str | bool]):
         super().__init__(message)
         self.details = details
@@ -105,6 +117,121 @@ def validate_audio_duration_for_text(
         if raise_on_invalid:
             raise AudioDurationValidationError(message, result)
     return result
+
+
+def validate_audio_signal_quality(
+    wav_path: str | Path,
+    *,
+    min_peak: float = 0.005,
+    min_rms: float = 0.001,
+    raise_on_invalid: bool = True,
+) -> dict[str, float | int | str | bool]:
+    path = Path(wav_path)
+    data, sample_rate = sf.read(str(path), always_2d=False, dtype="float32")
+    if data.size == 0:
+        peak = 0.0
+        rms = 0.0
+        frames = 0
+    else:
+        mono = data.mean(axis=1) if getattr(data, "ndim", 1) > 1 else data
+        peak = float(np.max(np.abs(mono)))
+        rms = float(np.sqrt(np.mean(np.square(mono))))
+        frames = int(mono.shape[0])
+    duration = float(frames) / float(sample_rate) if sample_rate else 0.0
+    edge_quality = _inspect_audio_edges(mono if data.size else np.array([], dtype=np.float32), sample_rate, rms)
+    edge_valid = bool(edge_quality["valid"])
+    result = {
+        "path": str(path),
+        "valid": peak >= min_peak and rms >= min_rms and edge_valid,
+        "failure_type": None,
+        "peak": round(peak, 6),
+        "rms": round(rms, 6),
+        "sample_rate": int(sample_rate or 0),
+        "frames": frames,
+        "duration_seconds": round(duration, 3),
+        "min_peak": min_peak,
+        "min_rms": min_rms,
+        "edge_quality": edge_quality,
+    }
+    if not result["valid"] and raise_on_invalid:
+        if peak >= min_peak and rms >= min_rms and not edge_valid:
+            result["failure_type"] = "edge_noise"
+            raise AudioSignalQualityError(
+                "生成音频开头或结尾疑似存在爆音/短促噪声，已丢弃并准备重试："
+                f"{edge_quality.get('reason', 'edge_noise')}。",
+                result,
+            )
+        result["failure_type"] = "near_silence"
+        raise AudioSignalQualityError(
+            "生成音频接近静音，已丢弃并准备重试："
+            f"peak={peak:.6f}（阈值 {min_peak:.6f}），rms={rms:.6f}（阈值 {min_rms:.6f}）。",
+            result,
+        )
+    return result
+
+
+def _inspect_audio_edges(mono: np.ndarray, sample_rate: int, global_rms: float) -> dict[str, object]:
+    if sample_rate <= 0 or mono.size == 0:
+        return {"valid": True, "reason": "empty_audio"}
+
+    edge_frames = min(int(sample_rate * DEFAULT_EDGE_ANALYSIS_SECONDS), mono.size // 2)
+    window_frames = max(1, int(sample_rate * DEFAULT_EDGE_NOISE_WINDOW_SECONDS))
+    if edge_frames < window_frames:
+        return {"valid": True, "reason": "audio_too_short"}
+
+    details: dict[str, object] = {
+        "valid": True,
+        "analysis_seconds": round(edge_frames / sample_rate, 3),
+        "window_seconds": DEFAULT_EDGE_NOISE_WINDOW_SECONDS,
+    }
+    for label, segment in (("head", mono[:edge_frames]), ("tail", mono[-edge_frames:])):
+        metrics = _inspect_audio_edge_segment(segment, window_frames, global_rms)
+        details[label] = metrics
+        if metrics["peak"] >= DEFAULT_EDGE_SPIKE_PEAK:
+            details["valid"] = False
+            details["reason"] = f"{label} peak {metrics['peak']:.3f} >= {DEFAULT_EDGE_SPIKE_PEAK:.3f}"
+            return details
+        if metrics["max_jump"] >= DEFAULT_EDGE_SPIKE_JUMP:
+            details["valid"] = False
+            details["reason"] = f"{label} jump {metrics['max_jump']:.3f} >= {DEFAULT_EDGE_SPIKE_JUMP:.3f}"
+            return details
+        if (
+            metrics["max_window_zcr"] >= DEFAULT_EDGE_NOISE_ZCR
+            and metrics["max_window_rms"] >= max(min(global_rms * DEFAULT_EDGE_NOISE_RMS_RATIO, 0.24), 0.06)
+        ):
+            details["valid"] = False
+            details["reason"] = (
+                f"{label} short noise zcr {metrics['max_window_zcr']:.3f}, "
+                f"rms {metrics['max_window_rms']:.3f}"
+            )
+            return details
+    return details
+
+
+def _inspect_audio_edge_segment(segment: np.ndarray, window_frames: int, global_rms: float) -> dict[str, float]:
+    abs_segment = np.abs(segment)
+    peak = float(np.max(abs_segment)) if segment.size else 0.0
+    max_jump = float(np.max(np.abs(np.diff(segment)))) if segment.size > 1 else 0.0
+    max_window_rms = 0.0
+    max_window_zcr = 0.0
+    for start in range(0, max(segment.size - window_frames + 1, 1), window_frames):
+        window = segment[start : start + window_frames]
+        if window.size == 0:
+            continue
+        window_rms = float(np.sqrt(np.mean(np.square(window))))
+        if window.size > 1:
+            zcr = float(np.mean(np.diff(np.signbit(window)) != 0))
+        else:
+            zcr = 0.0
+        max_window_rms = max(max_window_rms, window_rms)
+        max_window_zcr = max(max_window_zcr, zcr)
+    return {
+        "peak": round(peak, 6),
+        "max_jump": round(max_jump, 6),
+        "max_window_rms": round(max_window_rms, 6),
+        "max_window_zcr": round(max_window_zcr, 6),
+        "global_rms": round(float(global_rms), 6),
+    }
 
 
 def _format_lrc_timestamp(seconds: float) -> str:

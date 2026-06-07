@@ -248,6 +248,9 @@ class ParseV2ReviewRequest(BaseModel):
     segments: List[Dict[str, Any]]
     llm: LLMConfig
     review_threshold: float = 0.7
+    review_indices: Optional[List[int]] = None
+    batch_size: int = 8
+    narrator: Optional[str] = None
 
 
 class ParseV2ReviewOneRequest(BaseModel):
@@ -256,6 +259,7 @@ class ParseV2ReviewOneRequest(BaseModel):
     index: int
     llm: LLMConfig
     review_threshold: float = 0.7
+    review_mode: str = "spc"
 
 
 TTSRequest.model_rebuild()

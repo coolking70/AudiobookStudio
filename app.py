@@ -41,7 +41,15 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from audio_utils import AudioDurationValidationError, build_lrc, join_wavs_auto, validate_audio_duration_for_text
+from audio_utils import (
+    AudioDurationValidationError,
+    AudioSignalQualityError,
+    build_lrc,
+    count_tts_text_units,
+    join_wavs_auto,
+    validate_audio_duration_for_text,
+    validate_audio_signal_quality,
+)
 from llm_client import OpenAICompatibleClient
 from local_llm import get_local_llm_runner, get_local_llm_status, unload_all_local_llm_runners
 from output_layout import (
@@ -101,7 +109,7 @@ from schemas import (
 )
 
 
-app = FastAPI(title="OmniVoice Reader Studio")
+app = FastAPI(title="Audio Book Studio")
 pipeline_cache: dict[tuple[str, str, str], OmniVoicePipeline] = {}
 voxcpm_pipeline_cache: dict[tuple[str, str], VoxCPMPipeline] = {}
 
@@ -144,14 +152,53 @@ MIMO_TTS_BUILTIN_VOICES = {"mimo_default", "冰糖", "茉莉", "苏打", "白桦
 DEFAULT_TTS_DURATION_MAX_RETRIES = 2
 VOXCPM_BRIDGE_SCRIPT = Path(__file__).resolve().parent / "voxcpm_bridge.py"
 MAX_BATCH_LLM_COMPLETION_TOKENS = 131072
+MIN_BATCH_LLM_COMPLETION_TOKENS = 512
 
 
-def _clamp_batch_llm_max_tokens(value: object, default: int = 8192) -> int:
+class VoxCPMBridgeError(RuntimeError):
+    def __init__(self, message: str, *, returncode: int | None = None, stderr: str = ""):
+        super().__init__(message)
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+def _clamp_batch_llm_max_tokens(value: object, default: int = 2048) -> int:
     try:
         resolved = int(value or default)
     except (TypeError, ValueError):
         resolved = default
-    return min(max(resolved, 4096), MAX_BATCH_LLM_COMPLETION_TOKENS)
+    return min(max(resolved, MIN_BATCH_LLM_COMPLETION_TOKENS), MAX_BATCH_LLM_COMPLETION_TOKENS)
+
+
+def _is_lm_studio_llm_config(llm) -> bool:
+    base_url = str(getattr(llm, "base_url", "") or "").lower()
+    return "127.0.0.1:1234" in base_url or "localhost:1234" in base_url
+
+
+def _build_batch_llm_config(req: ParseV2Request, BatchConfig):
+    max_tokens = _clamp_batch_llm_max_tokens(req.batch_llm_max_tokens)
+    if req.llm and _is_lm_studio_llm_config(req.llm):
+        # LM Studio commonly runs these GGUF models with n_ctx=4096. Large
+        # batches plus a 4k completion budget trigger HTTP 400/context exceeded,
+        # then recursive split retries can flood the terminal. Keep local
+        # batches intentionally small; cloud/large-context providers keep the
+        # broader defaults.
+        max_tokens = min(max_tokens, 2048)
+        batch_size = 3
+        context_chars = 80
+    else:
+        batch_size = 10
+        context_chars = 200
+    return BatchConfig(
+        base_url=str(req.llm.base_url),
+        model=str(req.llm.model),
+        api_key=str(req.llm.api_key) if req.llm.api_key else "lm-studio",
+        batch_size=batch_size,
+        max_tokens=max_tokens,
+        temperature=float(req.llm.temperature or 0.0),
+        timeout=180,
+        context_chars=context_chars,
+    )
 
 
 def get_tts_duration_max_retries() -> int:
@@ -173,21 +220,63 @@ def remove_invalid_audio(path: str | Path) -> None:
 
 def synthesize_with_duration_retry(text: str, output_path: Path, synthesize_once) -> tuple[object, dict]:
     max_retries = get_tts_duration_max_retries()
-    last_error: AudioDurationValidationError | None = None
+    last_error: AudioDurationValidationError | AudioSignalQualityError | None = None
     for attempt in range(1, max_retries + 2):
         result = synthesize_once()
+        validation: dict | None = None
         try:
             validation = validate_audio_duration_for_text(output_path, text)
+            signal_validation = validate_audio_signal_quality(output_path)
+            validation["signal_quality"] = signal_validation
             return result, validation
-        except AudioDurationValidationError as exc:
+        except (AudioDurationValidationError, AudioSignalQualityError) as exc:
             last_error = exc
-            remove_invalid_audio(output_path)
             if attempt > max_retries:
+                if isinstance(exc, AudioSignalQualityError) and exc.details.get("failure_type") == "edge_noise":
+                    accepted_validation = validation or validate_audio_duration_for_text(output_path, text)
+                    signal_quality = dict(exc.details)
+                    signal_quality["accepted_after_retries"] = True
+                    signal_quality["warning"] = str(exc)
+                    accepted_validation["signal_quality"] = signal_quality
+                    print(
+                        "[tts-quality-check] 边缘噪声检测在重试后仍触发，"
+                        f"为避免中断已保留最后一次音频：{exc}"
+                    )
+                    return result, accepted_validation
+                remove_invalid_audio(output_path)
                 raise
-            print(f"[tts-duration-check] 第 {attempt} 次生成时长异常，正在重试：{exc}")
+            remove_invalid_audio(output_path)
+            print(f"[tts-quality-check] 第 {attempt} 次生成音频质量异常，正在重试：{exc}")
     if last_error:
         raise last_error
     raise RuntimeError("音频时长校验失败。")
+
+
+def split_tts_text_for_rescue(text: str, max_units: int = 120) -> list[str]:
+    normalized = re.sub(r"\s+", " ", str(text or "").strip())
+    if not normalized:
+        return []
+    parts = [part.strip() for part in re.split(r"(?<=[。！？!?；;])\s*", normalized) if part.strip()]
+    if not parts:
+        parts = [normalized]
+
+    chunks: list[str] = []
+    current = ""
+    for part in parts:
+        candidate = f"{current}{part}" if current else part
+        if current and count_tts_text_units(candidate)["units"] > max_units:
+            chunks.append(current)
+            current = part
+        else:
+            current = candidate
+
+        while count_tts_text_units(current)["units"] > max_units:
+            hard_cut = max_units
+            chunks.append(current[:hard_cut])
+            current = current[hard_cut:].strip()
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def augment_process_path_from_python_env() -> None:
@@ -292,6 +381,7 @@ def get_voxcpm_bridge_python_candidates() -> list[Path]:
         candidates.append(Path(explicit).expanduser())
     candidates.extend(
         [
+            Path(r"I:\conda_envs\voxcpm-clean\python.exe"),
             Path(r"I:\conda_envs\voxcpm\python.exe"),
             Path(r"I:\ProgramData\miniconda3\envs\voxcpm\python.exe"),
             Path(sys.executable).resolve(),
@@ -324,39 +414,246 @@ def get_voxcpm_bridge_status() -> dict[str, object]:
     }
 
 
+def _path_is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _looks_like_foreign_conda_env_path(path: Path, bridge_env_root: Path) -> bool:
+    if _path_is_relative_to(path, bridge_env_root):
+        return False
+
+    normalized = str(path).replace("/", "\\").lower()
+    current_env_root = Path(sys.executable).resolve()
+    current_env_root = (
+        current_env_root.parent.parent
+        if current_env_root.parent.name.lower() in {"scripts", "bin"}
+        else current_env_root.parent
+    )
+    if current_env_root != bridge_env_root and _path_is_relative_to(path, current_env_root):
+        return True
+
+    # Windows DLL lookup is PATH-sensitive. Keeping another conda env's Library\bin
+    # ahead of VoxCPM can make ffmpeg load incompatible GTK/gettext DLLs.
+    return (
+        "\\conda_envs\\" in normalized
+        or "\\miniconda3\\envs\\" in normalized
+        or "\\anaconda3\\envs\\" in normalized
+    )
+
+
+def build_voxcpm_bridge_env(python_exe: str | Path) -> dict[str, str]:
+    env = os.environ.copy()
+    python_path = Path(python_exe).resolve()
+    bridge_env_root = (
+        python_path.parent.parent if python_path.parent.name.lower() in {"scripts", "bin"} else python_path.parent
+    )
+    preferred = [
+        bridge_env_root,
+        bridge_env_root / "Scripts",
+        bridge_env_root / "bin",
+        bridge_env_root / "Library" / "bin",
+        bridge_env_root / "DLLs",
+    ]
+
+    path_parts: list[str] = []
+    seen: set[str] = set()
+    for candidate in preferred:
+        if candidate.exists():
+            candidate_str = str(candidate)
+            seen.add(candidate_str.lower())
+            path_parts.append(candidate_str)
+
+    for raw_part in env.get("PATH", "").split(os.pathsep):
+        if not raw_part:
+            continue
+        part = Path(raw_part)
+        normalized = str(part).lower()
+        if normalized in seen or _looks_like_foreign_conda_env_path(part, bridge_env_root):
+            continue
+        seen.add(normalized)
+        path_parts.append(raw_part)
+
+    env["PATH"] = os.pathsep.join(path_parts)
+    env["CONDA_PREFIX"] = str(bridge_env_root)
+    env["CONDA_DEFAULT_ENV"] = bridge_env_root.name
+    env["PYTHONNOUSERSITE"] = "1"
+    env["PYTHONFAULTHANDLER"] = "1"
+    env["PYTHONUNBUFFERED"] = "1"
+    bridge_temp_dir = Path(r"I:\tmp\voxcpm_bridge")
+    try:
+        bridge_temp_dir.mkdir(parents=True, exist_ok=True)
+        env["TMP"] = str(bridge_temp_dir)
+        env["TEMP"] = str(bridge_temp_dir)
+        env["PIP_CACHE_DIR"] = r"I:\pip_cache"
+    except Exception:
+        pass
+    env.pop("PYTHONHOME", None)
+    env.pop("PYTHONPATH", None)
+    return env
+
+
+def _load_voxcpm_bridge_result(path: Path) -> dict[str, object] | None:
+    if not path.exists() or path.stat().st_size <= 0:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _normalize_voxcpm_dtype(value: object) -> str:
+    dtype = str(value or "").strip().lower()
+    aliases = {
+        "fp16": "float16",
+        "half": "float16",
+        "bf16": "bfloat16",
+        "fp32": "float32",
+    }
+    return aliases.get(dtype, dtype)
+
+
+def resolve_voxcpm_bridge_force_dtype(payload: dict[str, object]) -> str:
+    explicit = _normalize_voxcpm_dtype(payload.get("force_dtype"))
+    if explicit:
+        return explicit
+
+    device = normalize_inference_device(str(payload.get("device") or "auto"))
+    if device != "cuda":
+        return ""
+
+    # VoxCPM2's upstream config currently defaults CUDA loads to bfloat16. On this
+    # Windows CUDA stack it can terminate the subprocess with 0xC0000409, so use
+    # float16 unless the user explicitly opts into another dtype.
+    configured = _normalize_voxcpm_dtype(os.getenv("VOXCPM_CUDA_DTYPE", "float16"))
+    if configured in {"", "auto", "default", "none"}:
+        return ""
+    return configured
+
+
 def run_voxcpm_bridge(action: str, payload: dict[str, object] | None = None) -> dict[str, object]:
     status = get_voxcpm_bridge_status()
     python_exe = status.get("python_executable")
     if not status.get("available") or not python_exe:
         raise RuntimeError(
             "当前主服务环境未安装 VoxCPM，且未找到可用的 VoxCPM 专用 Python 环境。"
-            " 请确认 I:\\conda_envs\\voxcpm\\python.exe 存在，或设置环境变量 VOXCPM_PYTHON_EXE。"
+            " 请确认 I:\\conda_envs\\voxcpm-clean\\python.exe 存在，或设置环境变量 VOXCPM_PYTHON_EXE。"
         )
 
+    bridge_payload = dict(payload or {})
+    force_dtype = resolve_voxcpm_bridge_force_dtype(bridge_payload)
+    if force_dtype and not str(bridge_payload.get("force_dtype") or "").strip():
+        bridge_payload["force_dtype"] = force_dtype
+    bridge_result_path = build_temp_archive_path(f"voxcpm_bridge_{uuid4().hex[:10]}.json", category="voxcpm_bridge")
+    bridge_env = build_voxcpm_bridge_env(python_exe)
+    bridge_env["VOXCPM_BRIDGE_RESULT_PATH"] = str(bridge_result_path)
+    if force_dtype:
+        bridge_env["VOXCPM_FORCE_DTYPE"] = force_dtype
     completed = subprocess.run(
         [str(python_exe), str(VOXCPM_BRIDGE_SCRIPT), action],
-        input=json.dumps(payload or {}, ensure_ascii=False),
+        input=json.dumps(bridge_payload, ensure_ascii=False),
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
         cwd=str(Path(__file__).resolve().parent),
+        env=bridge_env,
         check=False,
     )
     stdout = str(completed.stdout or "").strip()
     stderr = str(completed.stderr or "").strip()
-    if not stdout:
-        raise RuntimeError(f"VoxCPM 专用环境未返回结果。{stderr or '请检查专用环境日志。'}")
-
-    try:
-        data = json.loads(stdout)
-    except Exception as exc:
-        raise RuntimeError(f"VoxCPM 专用环境返回了无法解析的内容：{stdout[:400]}") from exc
+    data = _load_voxcpm_bridge_result(bridge_result_path)
+    if data is None:
+        if stdout:
+            try:
+                data = json.loads(stdout)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"VoxCPM 专用环境返回了无法解析的内容：{stdout[:400]}"
+                    f" stderr={stderr[-800:] if stderr else '无'}"
+                ) from exc
+        else:
+            output_path = Path(str(bridge_payload.get("output_path") or "")).expanduser()
+            if action == "tts" and output_path.exists() and output_path.stat().st_size > 0:
+                return {
+                    "ok": True,
+                    "file": str(output_path),
+                    "device": bridge_payload.get("device"),
+                    "model_name": bridge_payload.get("model_name"),
+                    "python_executable": str(python_exe),
+                    "bridge_warning": (
+                        f"VoxCPM 专用环境未返回 JSON，但输出文件已生成。"
+                        f"returncode={completed.returncode}; stderr={stderr[-800:] if stderr else '无'}"
+                    ),
+                }
+            raise VoxCPMBridgeError(
+                "VoxCPM 专用环境未返回结果。"
+                f"returncode={completed.returncode}; "
+                f"result_path={bridge_result_path}; "
+                f"stderr={stderr[-1200:] if stderr else '请检查专用环境日志。'}",
+                returncode=completed.returncode,
+                stderr=stderr,
+            )
 
     if completed.returncode != 0 or not data.get("ok"):
         error = data.get("error") or stderr or "未知错误"
-        raise RuntimeError(f"VoxCPM 专用环境执行失败：{error}")
+        raise VoxCPMBridgeError(
+            f"VoxCPM 专用环境执行失败：{error}; "
+            f"returncode={completed.returncode}; "
+            f"stderr={stderr[-1200:] if stderr else '无'}",
+            returncode=completed.returncode,
+            stderr=stderr,
+        )
+    data.setdefault("python_executable", str(python_exe))
     return data
+
+
+def _looks_like_voxcpm_native_crash(exc: Exception) -> bool:
+    return isinstance(exc, VoxCPMBridgeError) and exc.returncode not in {None, 0, 1, 2}
+
+
+def run_voxcpm_bridge_tts_with_fallback(payload: dict[str, object]) -> dict[str, object]:
+    requested_device = normalize_inference_device(str(payload.get("device") or "auto"))
+    payload = {**payload, "device": requested_device}
+    initial_dtype = resolve_voxcpm_bridge_force_dtype(payload) or "model-default"
+    try:
+        return run_voxcpm_bridge("tts", payload)
+    except Exception as exc:
+        if requested_device != "cuda" or not _looks_like_voxcpm_native_crash(exc):
+            raise
+        if _normalize_voxcpm_dtype(initial_dtype) != "float16":
+            print(
+                f"[voxcpm-bridge] CUDA/{initial_dtype} 专用环境发生原生崩溃，"
+                f"自动改用 CUDA/float16 重试：{exc}"
+            )
+            fp16_payload = {**payload, "device": "cuda", "force_dtype": "float16"}
+            try:
+                result = run_voxcpm_bridge("tts", fp16_payload)
+                result["fallback_device"] = "cuda"
+                result["original_device"] = requested_device
+                result["bridge_warning"] = (
+                    f"VoxCPM CUDA/{initial_dtype} 专用环境发生原生崩溃，"
+                    "已自动改用 CUDA/float16 生成。"
+                )
+                return result
+            except Exception as fp16_exc:
+                if not _looks_like_voxcpm_native_crash(fp16_exc):
+                    raise
+                print(f"[voxcpm-bridge] CUDA/float16 仍发生原生崩溃，自动回退 CPU 重试：{fp16_exc}")
+        else:
+            print(f"[voxcpm-bridge] CUDA/float16 专用环境发生原生崩溃，自动回退 CPU 重试：{exc}")
+        cpu_payload = {**payload, "device": "cpu"}
+        result = run_voxcpm_bridge("tts", cpu_payload)
+        result["fallback_device"] = "cpu"
+        result["original_device"] = requested_device
+        result["bridge_warning"] = (
+            f"VoxCPM CUDA/{initial_dtype} 专用环境发生原生崩溃，已自动回退到 CPU 生成。"
+        )
+        return result
 
 
 def get_microsoft_tts_catalog() -> dict[str, object]:
@@ -723,6 +1020,8 @@ def normalize_openai_compat_base_url(base_url: str | None) -> str:
     normalized = str(base_url or "").strip().rstrip("/")
     if not normalized:
         raise ValueError("Base URL 不能为空")
+    if normalized.endswith("/chat/completions"):
+        normalized = normalized[: -len("/chat/completions")].rstrip("/")
     if normalized.endswith("/v1"):
         return normalized
     return f"{normalized}/v1"
@@ -978,9 +1277,46 @@ def resolve_audio_backend(req_backend, fallback_device: str | None = None) -> tu
     return mode, remote_base_url, remote_api_key, inference_device
 
 
+def _infer_audio_model_family(model_ref: str | None) -> str | None:
+    value = str(model_ref or "").strip()
+    if not value:
+        return None
+
+    lowered = value.replace("\\", "/").lower()
+    if "voxcpm" in lowered:
+        return "voxcpm"
+    if "omnivoice" in lowered:
+        return "omnivoice"
+
+    path = Path(value).expanduser()
+    config_path = path / "config.json" if path.is_dir() else path.parent / "config.json"
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+            architectures = " ".join(str(item) for item in (data.get("architectures") or []))
+            blob = json.dumps(data, ensure_ascii=False)
+            lowered_blob = f"{architectures} {blob}".lower()
+            if "voxcpm" in lowered_blob:
+                return "voxcpm"
+            if "omnivoice" in lowered_blob:
+                return "omnivoice"
+        except Exception:
+            pass
+    return None
+
+
 def resolve_local_audio_model_path(req_backend) -> str | None:
     backend = req_backend or {}
     value = str(backend.get("local_audio_model_path") or "").strip()
+    if not value:
+        return None
+    engine = resolve_local_audio_engine(backend)
+    family = _infer_audio_model_family(value)
+    if family and family != engine:
+        print(
+            f"[audio-model-resolver] 已忽略与当前引擎不匹配的模型路径: engine={engine} path={value} family={family}"
+        )
+        return None
     return value or None
 
 
@@ -992,6 +1328,16 @@ def resolve_local_audio_engine(req_backend) -> str:
     if value == "voxcpm":
         return "voxcpm"
     raise ValueError(f"不支持的本地语音引擎: {backend.get('local_audio_engine')}")
+
+
+def resolve_tts_voice_engine(req_voice_engine: str | None, req_backend) -> str:
+    value = str(req_voice_engine or "").strip().lower()
+    if value:
+        return value
+    backend = req_backend or {}
+    if str(backend.get("mode") or "local").strip().lower() == "local":
+        return resolve_local_audio_engine(backend)
+    return ""
 
 
 def resolve_local_asr_model_path(req_backend) -> str | None:
@@ -1418,6 +1764,135 @@ def synthesize_local_voxcpm_tts_with_fallback(
         return {"device": "cpu", "fallback_device": "cpu", "original_device": resolved_device}
 
 
+def synthesize_voxcpm_tts_request(
+    *,
+    text: str,
+    output_path: Path,
+    backend_data: dict | None,
+    inference_device: str | None,
+    instruct: str | None = None,
+    ref_audio: str | None = None,
+    ref_text: str | None = None,
+    cfg_value: float | None = None,
+    inference_timesteps: int | None = None,
+) -> tuple[dict, dict]:
+    if get_voxcpm_runtime_dependency_status().get("ready"):
+        return synthesize_with_duration_retry(
+            text,
+            output_path,
+            lambda: synthesize_local_voxcpm_tts_with_fallback(
+                inference_device=inference_device,
+                model_name=resolve_local_audio_model_path(backend_data),
+                text=text,
+                output_path=output_path,
+                instruct=instruct,
+                ref_audio=ref_audio,
+                ref_text=ref_text,
+                cfg_value=cfg_value,
+                inference_timesteps=inference_timesteps,
+            ),
+        )
+
+    bridge_result, duration_validation = synthesize_with_duration_retry(
+        text,
+        output_path,
+        lambda: run_voxcpm_bridge_tts_with_fallback(
+            {
+                "device": normalize_inference_device(inference_device),
+                "model_name": resolve_local_audio_model_path(backend_data) or VOXCPM_MODEL_NAME,
+                "text": text,
+                "output_path": str(output_path.resolve()),
+                "instruct": instruct,
+                "ref_audio": ref_audio,
+                "ref_text": ref_text,
+                "cfg_value": cfg_value,
+                "inference_timesteps": inference_timesteps,
+            }
+        ),
+    )
+    result = {
+        "device": bridge_result.get("device"),
+        "fallback_device": bridge_result.get("fallback_device"),
+        "original_device": bridge_result.get("original_device"),
+        "bridge_python_executable": bridge_result.get("python_executable"),
+        "bridge_warning": bridge_result.get("bridge_warning"),
+    }
+    return result, duration_validation
+
+
+def synthesize_voxcpm_tts_with_split_rescue(
+    *,
+    text: str,
+    output_path: Path,
+    backend_data: dict | None,
+    inference_device: str | None,
+    instruct: str | None = None,
+    ref_audio: str | None = None,
+    ref_text: str | None = None,
+    cfg_value: float | None = None,
+    inference_timesteps: int | None = None,
+) -> tuple[dict, dict]:
+    duration_error: AudioDurationValidationError | None = None
+    try:
+        return synthesize_voxcpm_tts_request(
+            text=text,
+            output_path=output_path,
+            backend_data=backend_data,
+            inference_device=inference_device,
+            instruct=instruct,
+            ref_audio=ref_audio,
+            ref_text=ref_text,
+            cfg_value=cfg_value,
+            inference_timesteps=inference_timesteps,
+        )
+    except AudioDurationValidationError as exc:
+        details = getattr(exc, "details", {}) or {}
+        units = int(details.get("units") or count_tts_text_units(text)["units"])
+        actual_duration = float(details.get("duration_seconds") or 0.0)
+        min_duration = float(details.get("min_seconds") or 0.0)
+        if units < 180 or actual_duration >= min_duration:
+            raise
+        duration_error = exc
+
+    chunks = split_tts_text_for_rescue(text)
+    if len(chunks) <= 1:
+        raise duration_error or RuntimeError("VoxCPM 长文本拆分失败。")
+    print(
+        f"[voxcpm-split-rescue] 单段 VoxCPM 输出过短，自动拆分为 {len(chunks)} 个子段后重新生成："
+        f"units={count_tts_text_units(text)['units']} output={output_path}"
+    )
+    segment_paths: list[str] = []
+    merged_result: dict = {}
+    last_result: dict = {}
+    for idx, chunk in enumerate(chunks, start=1):
+        chunk_path = build_temp_archive_path(f"{output_path.stem}_split_{idx:03d}.wav", category="voxcpm_split")
+        result, _validation = synthesize_voxcpm_tts_request(
+            text=chunk,
+            output_path=chunk_path,
+            backend_data=backend_data,
+            inference_device=inference_device,
+            instruct=instruct,
+            ref_audio=ref_audio,
+            ref_text=ref_text,
+            cfg_value=cfg_value,
+            inference_timesteps=inference_timesteps,
+        )
+        last_result.update({k: v for k, v in result.items() if v})
+        segment_paths.append(str(chunk_path))
+
+    merged_result = join_wavs_auto(segment_paths, output_path, silence_ms=120)
+    validation = validate_audio_duration_for_text(output_path, text)
+    validation["signal_quality"] = validate_audio_signal_quality(output_path)
+    validation["split_rescue"] = {
+        "enabled": True,
+        "chunks": len(chunks),
+        "segment_paths": segment_paths,
+        "merge_result": merged_result,
+    }
+    last_result["split_rescue"] = validation["split_rescue"]
+    return last_result, validation
+
+
 def synthesize_local_narration_with_fallback(
     *,
     inference_device: str | None,
@@ -1455,6 +1930,95 @@ def synthesize_local_narration_with_fallback(
             "fallback_device": "cpu",
             "original_device": resolved_device,
         }
+
+
+def synthesize_voxcpm_narration(
+    *,
+    inference_device: str | None,
+    model_name: str | None,
+    segments: list[dict],
+    output_name: str,
+    silence_ms: int,
+    role_profiles: dict,
+) -> dict:
+    resolved_device = normalize_inference_device(inference_device)
+    wav_paths: list[str] = []
+    bridge_python_executable = None
+    fallback_device = None
+    original_device = None
+    bridge_warning = None
+
+    for idx, seg in enumerate(segments, start=1):
+        speaker = seg.get("speaker", "旁白")
+        text = str(seg.get("text") or "").strip()
+        if not text:
+            continue
+
+        profile = role_profiles.get(speaker) or {}
+        output_path = build_segment_output_path(output_name, idx)
+        cfg_value = seg.get("cfg_value") if seg.get("cfg_value") is not None else profile.get("cfg_value")
+        inference_timesteps = (
+            seg.get("inference_timesteps")
+            if seg.get("inference_timesteps") is not None
+            else profile.get("inference_timesteps")
+        )
+
+        if get_voxcpm_runtime_dependency_status().get("ready"):
+            synthesize_with_duration_retry(
+                text,
+                output_path,
+                lambda: synthesize_local_voxcpm_tts_with_fallback(
+                    inference_device=resolved_device,
+                    model_name=model_name,
+                    text=text,
+                    output_path=output_path,
+                    instruct=seg.get("style") or profile.get("style"),
+                    ref_audio=seg.get("ref_audio") or profile.get("ref_audio"),
+                    ref_text=seg.get("ref_text") or profile.get("ref_text"),
+                    cfg_value=cfg_value,
+                    inference_timesteps=inference_timesteps,
+                ),
+            )
+        else:
+            bridge_result, _duration_validation = synthesize_with_duration_retry(
+                text,
+                output_path,
+                lambda: run_voxcpm_bridge_tts_with_fallback(
+                    {
+                        "device": resolved_device,
+                        "model_name": model_name or VOXCPM_MODEL_NAME,
+                        "text": text,
+                        "output_path": str(output_path.resolve()),
+                        "instruct": seg.get("style") or profile.get("style"),
+                        "ref_audio": seg.get("ref_audio") or profile.get("ref_audio"),
+                        "ref_text": seg.get("ref_text") or profile.get("ref_text"),
+                        "cfg_value": cfg_value,
+                        "inference_timesteps": inference_timesteps,
+                    }
+                ),
+            )
+            bridge_python_executable = bridge_result.get("python_executable") or bridge_python_executable
+            fallback_device = bridge_result.get("fallback_device") or fallback_device
+            original_device = bridge_result.get("original_device") or original_device
+            bridge_warning = bridge_result.get("bridge_warning") or bridge_warning
+
+        wav_paths.append(str(output_path))
+
+    if not wav_paths:
+        raise RuntimeError("没有可用于 VoxCPM 合成的有效分段。")
+
+    final_path = resolve_named_output_path(output_name, ".wav", temp_category="preview_merge")
+    merge_result = join_wavs_auto(wav_paths, final_path, silence_ms=silence_ms)
+    merge_result["wav_paths"] = wav_paths
+    return {
+        "merge_result": merge_result,
+        "engine": "voxcpm",
+        "device": fallback_device or resolved_device,
+        "fallback_device": fallback_device,
+        "original_device": original_device,
+        "bridge_python_executable": bridge_python_executable,
+        "bridge_warning": bridge_warning,
+    }
 
 
 def synthesize_mimo_narration(
@@ -1733,8 +2297,8 @@ def favicon():
 def tts(req: TTSRequest):
     try:
         output_name = sanitize_output_name(req.output_name, "tts_result")
-        voice_engine = str(req.voice_engine or "").strip().lower()
-        if voice_engine == "microsoft":
+        requested_voice_engine = str(req.voice_engine or "").strip().lower()
+        if requested_voice_engine == "microsoft":
             output_path = resolve_named_output_path(output_name, ".wav", temp_category="preview")
             file_path, duration_validation = synthesize_with_duration_retry(
                 req.text,
@@ -1761,6 +2325,7 @@ def tts(req: TTSRequest):
             backend_data,
             req.inference_device,
         )
+        voice_engine = resolve_tts_voice_engine(req.voice_engine, backend_data)
 
         if mode == "remote":
             remote_resp = remote_post_json(
@@ -1807,47 +2372,17 @@ def tts(req: TTSRequest):
 
         output_path = resolve_named_output_path(output_name, ".wav", temp_category="preview")
         if voice_engine == "voxcpm":
-            if get_voxcpm_runtime_dependency_status().get("ready"):
-                result, duration_validation = synthesize_with_duration_retry(
-                    req.text,
-                    output_path,
-                    lambda: synthesize_local_voxcpm_tts_with_fallback(
-                        inference_device=inference_device,
-                        model_name=resolve_local_audio_model_path(backend_data),
-                        text=req.text,
-                        output_path=output_path,
-                        instruct=req.instruct,
-                        ref_audio=req.ref_audio,
-                        ref_text=req.ref_text,
-                        cfg_value=req.cfg_value,
-                        inference_timesteps=req.inference_timesteps,
-                    ),
-                )
-            else:
-                bridge_result, duration_validation = synthesize_with_duration_retry(
-                    req.text,
-                    output_path,
-                    lambda: run_voxcpm_bridge(
-                        "tts",
-                        {
-                            "device": normalize_inference_device(inference_device),
-                            "model_name": resolve_local_audio_model_path(backend_data) or VOXCPM_MODEL_NAME,
-                            "text": req.text,
-                            "output_path": str(output_path.resolve()),
-                            "instruct": req.instruct,
-                            "ref_audio": req.ref_audio,
-                            "ref_text": req.ref_text,
-                            "cfg_value": req.cfg_value,
-                            "inference_timesteps": req.inference_timesteps,
-                        },
-                    ),
-                )
-                result = {
-                    "device": bridge_result.get("device"),
-                    "fallback_device": None,
-                    "original_device": None,
-                    "bridge_python_executable": bridge_result.get("python_executable"),
-                }
+            result, duration_validation = synthesize_voxcpm_tts_with_split_rescue(
+                text=req.text,
+                output_path=output_path,
+                backend_data=backend_data,
+                inference_device=inference_device,
+                instruct=req.instruct,
+                ref_audio=req.ref_audio,
+                ref_text=req.ref_text,
+                cfg_value=req.cfg_value,
+                inference_timesteps=req.inference_timesteps,
+            )
             return {
                 "ok": True,
                 "file": str(output_path),
@@ -1857,6 +2392,7 @@ def tts(req: TTSRequest):
                 "fallback_device": result.get("fallback_device"),
                 "original_device": result.get("original_device"),
                 "bridge_python_executable": result.get("bridge_python_executable"),
+                "bridge_warning": result.get("bridge_warning"),
                 "duration_validation": duration_validation,
             }
 
@@ -1955,6 +2491,74 @@ def _bvp_role_aliases(name: str) -> set[str]:
     return {item for item in aliases if len(item) >= 2}
 
 
+GENERIC_BVP_REVIEW_SPEAKERS = {
+    "少女",
+    "女孩子",
+    "女性",
+    "旁边的孩子",
+    "未命名人物",
+    "其他角色",
+    "三位女性",
+    "姐姐",
+    "妹妹",
+    "哥哥",
+    "弟弟",
+    "妈妈",
+    "母亲",
+    "爸爸",
+    "父亲",
+}
+
+
+REVIEW_SPEAKER_ALIAS_MAP = {
+    "小香穗": "小柳香穗",
+    "香穗": "小柳香穗",
+    "小玲奈": "甘织玲奈子",
+    "玲奈子": "甘织玲奈子",
+    "真唯": "王冢真唯",
+    "小真唯": "王冢真唯",
+    "紫阳花": "濑名紫阳花",
+    "纱月": "琴纱月",
+    "小纱月": "琴纱月",
+    "遥奈": "甘织遥奈",
+}
+
+
+def _normalize_review_speaker_name(name: object) -> str:
+    value = str(name or "").strip()
+    return REVIEW_SPEAKER_ALIAS_MAP.get(value, value)
+
+
+def _extract_review_suggestions(evidence: str) -> list[str]:
+    suggestions: list[str] = []
+    for chunk in str(evidence or "").split("建议")[1:]:
+        head = chunk.strip().lstrip(":：,， ")
+        name = re.split(r"[（(；;，,\n]", head, maxsplit=1)[0].strip()
+        if name and name != "未知" and "重建候选池" not in name and "LLM" not in name:
+            normalized = _normalize_review_speaker_name(name)
+            if normalized and normalized not in suggestions:
+                suggestions.append(normalized)
+    return suggestions
+
+
+def _speaker_looks_like_addressee_in_text(speaker: str, text: str) -> bool:
+    """Avoid auto-applying a role that is only addressed inside the quote."""
+    speaker = _normalize_review_speaker_name(speaker)
+    text = str(text or "")
+    if not speaker or not text:
+        return False
+    aliases = {speaker}
+    for alias, normalized in REVIEW_SPEAKER_ALIAS_MAP.items():
+        if normalized == speaker:
+            aliases.add(alias)
+    if speaker.endswith("子") and len(speaker) >= 3:
+        aliases.add(speaker[-3:-1])
+    for alias in aliases:
+        if re.search(rf"{re.escape(alias)}(?:亲|桑|酱|小姐|同学|妈妈|姐姐|妹妹|哥|姐|さん|ちゃん)", text):
+            return True
+    return False
+
+
 def _detect_bvp_suspicious(seg) -> tuple[bool, str]:
     """Mark risky attribution patterns for optional review; never rewrite speakers here."""
     try:
@@ -1962,9 +2566,19 @@ def _detect_bvp_suspicious(seg) -> tuple[bool, str]:
     except Exception:
         confidence = 1.0
     speaker = str(seg.speaker or "").strip()
+    evidence = str(seg.evidence or "")
+    unresolved_address_conflict = (
+        (("称呼反推" in evidence and "冲突" in evidence) or "称呼负权重" in evidence)
+        and ("待人工" in evidence or "LLM复核待人工" in evidence)
+        and "特殊视角章节" not in evidence
+        and "LLM确认" not in evidence
+    )
+    if unresolved_address_conflict:
+        return True, "称呼反推与当前 speaker 冲突，建议人工确认"
+    if speaker in GENERIC_BVP_REVIEW_SPEAKERS and confidence < 0.7:
+        return True, "说话人是泛称/关系称谓，建议确认是否应映射到具体角色"
     if confidence < 0.85 or speaker in {"", "旁白", "未知", "UNKNOWN"}:
         return False, ""
-    evidence = str(seg.evidence or "")
     if "LLM复核" in evidence or "LLM确认" in evidence:
         return False, ""
 
@@ -2006,11 +2620,17 @@ def _bvp_segment_to_dict(seg) -> dict[str, object]:
     ):
         skip_reason = "content_filter"
     suspicious, suspicious_reason = _detect_bvp_suspicious(seg)
+    unresolved_address_conflict = (
+        (("称呼反推" in evidence and "冲突" in evidence) or "称呼负权重" in evidence)
+        and ("待人工" in evidence or "LLM复核待人工" in evidence)
+        and "特殊视角章节" not in evidence
+        and "LLM确认" not in evidence
+    )
     needs_review = (
         seg.speaker in {"未知", "UNKNOWN"}
         or (seg.confidence is not None and seg.confidence < 0.7)
-        or suspicious
         or "LLM复核待人工" in evidence
+        or unresolved_address_conflict
     )
     return {
         "speaker": seg.speaker,
@@ -2083,6 +2703,123 @@ def _dict_to_bvp_segment(data: dict[str, object]):
     )
 
 
+def _build_generic_relation_candidates(segments, index: int) -> list[str]:
+    target = segments[index]
+    names: list[str] = []
+
+    def add(value) -> None:
+        name = _normalize_review_speaker_name(value)
+        if not name or name in {"旁白", "未知", "UNKNOWN"}:
+            return
+        if name not in names:
+            names.append(name)
+
+    for item in target.candidates or []:
+        add(item)
+    for item in target.scene_characters or []:
+        add(item)
+    for item in _extract_review_suggestions(str(target.evidence or "")):
+        add(item)
+    for offset in range(max(0, index - 8), min(len(segments), index + 9)):
+        add(segments[offset].speaker)
+    for seg in segments:
+        speaker = str(seg.speaker or "")
+        if speaker and speaker not in GENERIC_BVP_REVIEW_SPEAKERS:
+            add(speaker)
+    add(target.speaker)
+    return names[:24]
+
+
+def _extract_json_object_from_text(text: str) -> dict[str, object]:
+    raw = str(text or "").strip()
+    try:
+        return json.loads(raw)
+    except Exception:
+        match = re.search(r"\{.*\}", raw, flags=re.S)
+        if not match:
+            raise ValueError(f"LLM 未返回 JSON：{raw[:120]}")
+        return json.loads(match.group(0))
+
+
+def _call_generic_relation_review_llm(llm_config, segment, candidates: list[str]) -> tuple[str, float, str]:
+    client = OpenAICompatibleClient(llm_config)
+    options = "\n".join(f"- {name}" for name in candidates)
+    prompt = (
+        "你正在复核中文小说有声书的说话人。当前 speaker 可能是“少女/女孩子/母亲/妈妈/姐姐/妹妹/其他角色”等泛称或关系称谓。\n"
+        "请判断它是否应映射为候选中的具体角色；如果上下文确实只表示未命名临时人物或关系称谓，也可以保留原泛称。\n"
+        "不要输出候选外名字。重点参考：谁正在动作/回答、上下文中的家庭关系、最近说话人。\n"
+        "重要：台词中被称呼的人通常是受话人，不是说话人。例如“玲奈亲”“小玲奈”“真唯”出现在台词里时，不能仅凭称呼把 speaker 判成这个人。\n\n"
+        f"当前原 speaker：{segment.speaker}\n"
+        f"候选：\n{options}\n\n"
+        f"上文：\n{str(segment.context_before or '')[-700:] or '（无）'}\n\n"
+        f"当前文本：\n「{segment.text}」\n\n"
+        f"下文：\n{str(segment.context_after or '')[:700] or '（无）'}\n\n"
+        f"原归属依据：\n{segment.evidence or '（无）'}\n\n"
+        "只返回一行 JSON：{\"speaker\":\"候选中的名字\",\"confidence\":0.0到1.0,\"evidence\":\"20字以内理由\"}"
+    )
+    content = client.chat_text([
+        {
+            "role": "system",
+            "content": (
+                "You are a deterministic classifier. Do not think out loud. Do not explain. "
+                "Output the final JSON only.\n"
+                "你是小说角色称谓复核器，只做候选内 speaker 映射。"
+            ),
+        },
+        {"role": "user", "content": prompt},
+    ], max_tokens=512, purpose="泛称/关系称谓复核")
+    parsed = _extract_json_object_from_text(content)
+    speaker = _normalize_review_speaker_name(parsed.get("speaker"))
+    if speaker not in candidates:
+        speaker = str(segment.speaker or "")
+    confidence = float(parsed.get("confidence") or 0.5)
+    evidence = str(parsed.get("evidence") or "泛称/关系称谓复核")
+    return speaker, max(0.0, min(1.0, confidence)), evidence
+
+
+def _review_generic_relation_segment(segments, index: int, llm_config):
+    original = segments[index].model_copy()
+    candidates = _build_generic_relation_candidates(segments, index)
+    speaker, confidence, evidence = _call_generic_relation_review_llm(llm_config, original, candidates)
+    updated = original.model_copy()
+    updated.speaker = speaker or original.speaker
+    updated.confidence = confidence
+    updated.evidence = f"{original.evidence or ''}；泛称复核: {evidence}".strip("；")
+    addressee_blocked = (
+        updated.speaker != original.speaker
+        and updated.speaker not in GENERIC_BVP_REVIEW_SPEAKERS
+        and _speaker_looks_like_addressee_in_text(updated.speaker, original.text)
+    )
+    same_generic_confirmed = (
+        updated.speaker == original.speaker
+        and updated.speaker in GENERIC_BVP_REVIEW_SPEAKERS
+        and confidence >= 0.90
+    )
+    blocked = (
+        updated.speaker == original.speaker
+        and updated.speaker in GENERIC_BVP_REVIEW_SPEAKERS
+        and not same_generic_confirmed
+    ) or addressee_blocked
+    if blocked:
+        updated.confidence = min(confidence, 0.69)
+        if addressee_blocked:
+            updated.speaker = original.speaker
+            updated.evidence = f"{updated.evidence}；建议角色疑似当前台词受话人，保留待人工确认"
+        else:
+            updated.evidence = f"{updated.evidence}；泛称仍未具体化，建议人工确认"
+    return updated, {
+        "total_reviewed": 1,
+        "corrected": int(updated.speaker != original.speaker),
+        "confirmed": int(updated.speaker == original.speaker and updated.confidence >= 0.7),
+        "failed": 0,
+        "skipped": 0,
+        "blocked": int(blocked),
+        "threshold": 0.7,
+        "mode": "generic_relation",
+        "candidates": candidates,
+    }
+
+
 @app.post("/api/parse_v2")
 def parse_text_v2(req: ParseV2Request):
     """
@@ -2095,14 +2832,7 @@ def parse_text_v2(req: ParseV2Request):
         # 构建 BatchConfig（BatchLLM 主管线）
         batch_llm_config = None
         if req.use_batch_llm and req.llm:
-            batch_llm_config = BatchConfig(
-                base_url=str(req.llm.base_url),
-                model=str(req.llm.model),
-                api_key=str(req.llm.api_key) if req.llm.api_key else "lm-studio",
-                max_tokens=_clamp_batch_llm_max_tokens(req.batch_llm_max_tokens),
-                temperature=float(req.llm.temperature or 0.0),
-                timeout=180,
-            )
+            batch_llm_config = _build_batch_llm_config(req, BatchConfig)
 
         # 构建 SPC ranker（旧式逐条 LLM 内联推断，batch_llm 优先）
         implicit_ranker = None
@@ -2157,14 +2887,7 @@ async def parse_v2_stream(req: ParseV2Request):
 
     batch_llm_config = None
     if req.use_batch_llm and req.llm:
-        batch_llm_config = BatchConfig(
-            base_url=str(req.llm.base_url),
-            model=str(req.llm.model),
-            api_key=str(req.llm.api_key) if req.llm.api_key else "lm-studio",
-            max_tokens=_clamp_batch_llm_max_tokens(req.batch_llm_max_tokens),
-            temperature=float(req.llm.temperature or 0.0),
-            timeout=180,
-        )
+        batch_llm_config = _build_batch_llm_config(req, BatchConfig)
 
     implicit_ranker = None
     if req.implicit_strategy == "llm_spc" and req.llm and not batch_llm_config:
@@ -2244,12 +2967,16 @@ async def parse_v2_stream(req: ParseV2Request):
 def review_parse_v2_segments(req: ParseV2ReviewRequest):
     """对 BookVoiceParser 低置信度片段执行独立 LLM 复核。"""
     try:
-        _, route_to_llm, _, _, _, _, _ = _load_book_voice_parser()
+        _load_book_voice_parser()
+        from book_voice_parser import route_to_batch_llm
         segments = [_dict_to_bvp_segment(item) for item in req.segments]
-        reviewed, llm_stats = route_to_llm(
+        reviewed, llm_stats = route_to_batch_llm(
             segments,
             _build_bvp_llm_config(req.llm),
             threshold=req.review_threshold,
+            review_indices=req.review_indices,
+            batch_size=req.batch_size,
+            narrator=req.narrator,
         )
         return {
             "ok": True,
@@ -2263,6 +2990,12 @@ def review_parse_v2_segments(req: ParseV2ReviewRequest):
         raise_api_error(exc)
 
 
+@app.post("/api/parse_v2/review-batch")
+def review_parse_v2_segments_batch(req: ParseV2ReviewRequest):
+    """对 BookVoiceParser 标记片段执行批量上下文 LLM 复核。"""
+    return review_parse_v2_segments(req)
+
+
 @app.post("/api/parse_v2/review-one")
 def review_parse_v2_segment(req: ParseV2ReviewOneRequest):
     """逐条复核 BookVoiceParser 低置信度片段，便于前端展示真实进度和断点状态。"""
@@ -2273,6 +3006,28 @@ def review_parse_v2_segment(req: ParseV2ReviewOneRequest):
         _, route_to_llm, _, _, _, _, _ = _load_book_voice_parser()
         segments = [_dict_to_bvp_segment(item) for item in req.segments]
         original = segments[req.index].model_copy()
+        if str(getattr(req, "review_mode", "") or "").lower() == "generic_relation":
+            updated, llm_stats = _review_generic_relation_segment(
+                segments,
+                req.index,
+                _build_bvp_llm_config(req.llm),
+            )
+            changed = updated.speaker != original.speaker
+            blocked = bool((llm_stats or {}).get("blocked"))
+            confirmed = not changed and not blocked and updated.confidence > original.confidence
+            return {
+                "ok": True,
+                "index": req.index,
+                "quote_id": updated.quote_id,
+                "segment": _bvp_segment_to_dict(updated),
+                "stats": {
+                    "llm_review": llm_stats,
+                    "changed": changed,
+                    "confirmed": confirmed,
+                    "failed": False,
+                    "blocked": blocked,
+                },
+            }
 
         # route_to_llm 会遍历列表并复核所有低于阈值的片段。这里把非目标片段
         # 临时抬到阈值以上，使每次 HTTP 请求只复核一个目标片段，同时保留目标
@@ -2496,6 +3251,32 @@ def narrate(req: NarrateRequest):
             remote_resp["lrc_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("lrc_url"))
             return remote_resp
 
+        if mode == "local" and resolve_local_audio_engine(backend_data) == "voxcpm":
+            result = synthesize_voxcpm_narration(
+                inference_device=inference_device,
+                model_name=resolve_local_audio_model_path(backend_data),
+                segments=segments,
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+                role_profiles=role_profiles,
+            )
+            merge_result = result["merge_result"]
+            wav_paths = [Path(path) for path in merge_result.get("wav_paths", build_segment_wav_paths(output_name, len(segments)))]
+            response = build_merge_response_payload(
+                merge_result=merge_result,
+                wav_paths=wav_paths,
+                lyric_lines=build_lyric_lines(segments),
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+            )
+            response["engine"] = "voxcpm"
+            response["device"] = result.get("device")
+            response["fallback_device"] = result.get("fallback_device")
+            response["original_device"] = result.get("original_device")
+            response["bridge_python_executable"] = result.get("bridge_python_executable")
+            response["bridge_warning"] = result.get("bridge_warning")
+            return response
+
         if mode == "mimo":
             result = synthesize_mimo_narration(
                 backend=backend_data,
@@ -2571,6 +3352,33 @@ def auto_narrate(req: AutoNarrateRequest):
             remote_resp["audio_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("audio_url"))
             remote_resp["lrc_url"] = absolutize_remote_file_url(remote_base_url, remote_resp.get("lrc_url"))
             return remote_resp
+
+        if mode == "local" and resolve_local_audio_engine(backend_data) == "voxcpm":
+            result = synthesize_voxcpm_narration(
+                inference_device=inference_device,
+                model_name=resolve_local_audio_model_path(backend_data),
+                segments=segments,
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+                role_profiles=role_profiles,
+            )
+            merge_result = result["merge_result"]
+            wav_paths = [Path(path) for path in merge_result.get("wav_paths", build_segment_wav_paths(output_name, len(segments)))]
+            response = build_merge_response_payload(
+                merge_result=merge_result,
+                wav_paths=wav_paths,
+                lyric_lines=build_lyric_lines(segments),
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+            )
+            response["segments"] = segments
+            response["engine"] = "voxcpm"
+            response["device"] = result.get("device")
+            response["fallback_device"] = result.get("fallback_device")
+            response["original_device"] = result.get("original_device")
+            response["bridge_python_executable"] = result.get("bridge_python_executable")
+            response["bridge_warning"] = result.get("bridge_warning")
+            return response
 
         if mode == "mimo":
             result = synthesize_mimo_narration(
