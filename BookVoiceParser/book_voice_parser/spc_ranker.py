@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib import error, request
@@ -190,16 +192,34 @@ class OpenAICompatibleSPCRanker:
             },
             method="POST",
         )
-        try:
-            with request.urlopen(req, timeout=180) as response:
-                data = json.loads(response.read().decode("utf-8"))
-        except error.HTTPError as exc:
-            body_text = ""
+        max_retries = int(_config_value(self.llm_config, "rate_limit_retries", 6) or 0)
+        attempt = 0
+        while True:
             try:
-                body_text = exc.read().decode("utf-8", errors="replace")[:300]
-            except Exception:
-                pass
-            raise RuntimeError(f"HTTP {exc.code} from LLM: {body_text}") from exc
+                with request.urlopen(req, timeout=180) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                break
+            except error.HTTPError as exc:
+                if exc.code == 429 and attempt < max_retries:
+                    retry_after = None
+                    try:
+                        retry_after = exc.headers.get("Retry-After")
+                    except Exception:
+                        retry_after = None
+                    try:
+                        delay = min(120.0, max(1.0, float(retry_after))) if retry_after else min(60.0, 5.0 * (2 ** attempt))
+                    except (TypeError, ValueError):
+                        delay = min(60.0, 5.0 * (2 ** attempt))
+                    logging.warning("[spc] HTTP 429 限流，%.0fs 后重试（第 %d/%d 次）", delay, attempt + 1, max_retries)
+                    time.sleep(delay)
+                    attempt += 1
+                    continue
+                body_text = ""
+                try:
+                    body_text = exc.read().decode("utf-8", errors="replace")[:300]
+                except Exception:
+                    pass
+                raise RuntimeError(f"HTTP {exc.code} from LLM: {body_text}") from exc
         message = data["choices"][0]["message"]
         content = message.get("content")
         if isinstance(content, list):

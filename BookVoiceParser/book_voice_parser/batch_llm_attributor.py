@@ -560,6 +560,31 @@ class BatchLLMAttributor:
                 )
         return self._client
 
+    def _max_rate_limit_retries(self) -> int:
+        return int(getattr(self.cfg, "rate_limit_retries", 6) or 0)
+
+    @staticmethod
+    def _is_rate_limited(status_code: int | None, exc: Exception | None = None) -> bool:
+        if status_code == 429:
+            return True
+        if exc is not None:
+            text = str(exc).lower()
+            return "429" in text or "rate limit" in text
+        return False
+
+    @staticmethod
+    def _rate_limit_delay(source: Any, attempt: int) -> float:
+        # Honor Retry-After when present; else exponential backoff (5,10,20,40s) capped at 60s.
+        headers = getattr(getattr(source, "response", None), "headers", None) or getattr(source, "headers", None)
+        if headers:
+            raw = headers.get("Retry-After") or headers.get("retry-after")
+            try:
+                if raw is not None:
+                    return min(120.0, max(1.0, float(raw)))
+            except (TypeError, ValueError):
+                pass
+        return min(60.0, 5.0 * (2 ** attempt))
+
     def _call_llm_via_httpx(self, payload: dict) -> dict:
         headers = {
             "Authorization": f"Bearer {self.cfg.api_key or 'local'}",
@@ -571,18 +596,27 @@ class BatchLLMAttributor:
             write=60.0,
             pool=30.0,
         )
+        max_retries = self._max_rate_limit_retries()
+        attempt = 0
         with httpx.Client(timeout=timeout, trust_env=False) as client:
-            response = client.post(
-                f"{self._normalize_base_url()}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
-            if response.status_code == 400:
-                raise BatchLLMBadRequestError(
-                    f"HTTP 400 from LLM: {response.text[:800]}"
+            while True:
+                response = client.post(
+                    f"{self._normalize_base_url()}/chat/completions",
+                    headers=headers,
+                    json=payload,
                 )
-            response.raise_for_status()
-            return response.json()
+                if response.status_code == 400:
+                    raise BatchLLMBadRequestError(
+                        f"HTTP 400 from LLM: {response.text[:800]}"
+                    )
+                if response.status_code == 429 and attempt < max_retries:
+                    delay = self._rate_limit_delay(response, attempt)
+                    logger.warning("BatchLLM HTTP 429 限流，%.0fs 后重试（第 %d/%d 次）", delay, attempt + 1, max_retries)
+                    time.sleep(delay)
+                    attempt += 1
+                    continue
+                response.raise_for_status()
+                return response.json()
 
     def _resolve_max_tokens(self, max_tokens: int | None = None) -> int:
         """Return a completion-token budget accepted by common OpenAI-compatible servers."""
@@ -659,23 +693,33 @@ class BatchLLMAttributor:
             else:
                 payload.update(extra_body)
         if client:
-            try:
-                resp = client.chat.completions.create(
-                    **payload,
-                    timeout=self.cfg.timeout,
-                )
-            except Exception as exc:
-                status_code = getattr(exc, "status_code", None)
-                response = getattr(exc, "response", None)
-                status_code = status_code or getattr(response, "status_code", None)
-                if status_code == 400:
-                    body = ""
-                    try:
-                        body = getattr(response, "text", "") or str(exc)
-                    except Exception:
-                        body = str(exc)
-                    raise BatchLLMBadRequestError(f"HTTP 400 from LLM: {body[:800]}") from exc
-                raise
+            max_retries = self._max_rate_limit_retries()
+            attempt = 0
+            while True:
+                try:
+                    resp = client.chat.completions.create(
+                        **payload,
+                        timeout=self.cfg.timeout,
+                    )
+                    break
+                except Exception as exc:
+                    status_code = getattr(exc, "status_code", None)
+                    response = getattr(exc, "response", None)
+                    status_code = status_code or getattr(response, "status_code", None)
+                    if status_code == 400:
+                        body = ""
+                        try:
+                            body = getattr(response, "text", "") or str(exc)
+                        except Exception:
+                            body = str(exc)
+                        raise BatchLLMBadRequestError(f"HTTP 400 from LLM: {body[:800]}") from exc
+                    if self._is_rate_limited(status_code, exc) and attempt < max_retries:
+                        delay = self._rate_limit_delay(exc, attempt)
+                        logger.warning("BatchLLM HTTP 429 限流，%.0fs 后重试（第 %d/%d 次）", delay, attempt + 1, max_retries)
+                        time.sleep(delay)
+                        attempt += 1
+                        continue
+                    raise
             msg = resp.choices[0].message
             content = (msg.content or "").strip()
         else:
@@ -1012,6 +1056,24 @@ _AFTER_NAME_VERB = _re.compile(
 )
 
 
+# 受话介词：其后的角色名是受话对象而非说话人（"我对着小香穗说道"→香穗是受话人）。
+_ADDRESSEE_PREP = _re.compile(r"(?:对着?|朝着?|冲|向|望着?|看向|注视着?|盯着?|看着)")
+
+
+def _role_is_addressee(clause: str, role: str) -> bool:
+    """该角色名在子句中是否为受话对象——其最近出现位置之前存在受话介词。
+    用于让保守显性归因在受话人陷阱时放弃（交给 LLM/叙述者锚点），不做高置信误判。"""
+    aliases = [role]
+    if len(role) >= 4:
+        aliases.append(role[-3:])
+    if len(role) >= 3:
+        aliases.append(role[-2:])
+    rpos = max((clause.rfind(a) for a in aliases), default=-1)
+    if rpos < 0:
+        return False
+    return any(m.end() <= rpos for m in _ADDRESSEE_PREP.finditer(clause[:rpos + 1]))
+
+
 def _find_role_in_clause(clause: str, role_hints: list[str]) -> str | None:
     """
     在文本片段中查找最靠近末尾的 role_hint（或其简称）出现位置。
@@ -1074,7 +1136,7 @@ def attribute_explicit_conservative(
         tight_parts = _re.split(r"[，、]", cb_clause)
         tight_clause = tight_parts[-1].strip() if tight_parts else cb_clause
         role = _find_role_in_clause(tight_clause, role_hints)
-        if role:
+        if role and not _role_is_addressee(tight_clause, role):
             evidence_text = cb_clause[-40:].strip()
             return Attribution(
                 quote_id=quote.quote_id,

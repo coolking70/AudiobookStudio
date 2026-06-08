@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 from .alias_registry import AliasRegistry, clean_role_hint_name
 from .address_term_backcheck import apply_address_term_backcheck
+from .block_review import apply_block_review
 from .candidate_gen import generate_candidates
 from .cleaner import normalize_text
 from .consistency_fixer import fix_consistency
@@ -500,11 +501,34 @@ def _add_segment_candidate_source(seg: SegmentEx, speaker: str, source: str) -> 
     seg.candidate_sources = sources
 
 
+# 通用称谓/头衔本身不指向具体角色，不能作为"某角色登场"的线索。
+# 否则 "平野同学" 会生成裸别名 "同学"，匹配文中所有 "X同学" 而被误判为在场。
+_GENERIC_TITLE_TERMS = {
+    "同学", "老师", "前辈", "学长", "学姐", "学妹", "学弟", "同志",
+    "小姐", "先生", "女士", "大人", "殿下", "陛下",
+    "恋人", "朋友", "主人", "宠物", "队长", "老板", "经理",
+    "姐姐", "妹妹", "哥哥", "弟弟", "妈妈", "母亲", "爸爸", "父亲",
+    "阿姨", "叔叔", "大叔", "大姐", "大哥",
+}
+
+
+def _is_generic_scene_alias(alias: str) -> bool:
+    """裸通用称谓，或 '单字 + 通用称谓' 这类过宽的派生别名（如 同学/小同学/野同学）。"""
+    if alias in _GENERIC_TITLE_TERMS:
+        return True
+    return len(alias) <= 3 and any(
+        alias != term and alias.endswith(term) for term in _GENERIC_TITLE_TERMS
+    )
+
+
 def _role_aliases_for_scene(role: str) -> set[str]:
     aliases = _role_title_aliases(role)
     aliases.update(_conservative_title_aliases(role))
     aliases.discard(role[-1:] if role else "")
-    return {alias for alias in aliases if len(alias) >= 2}
+    return {
+        alias for alias in aliases
+        if len(alias) >= 2 and not _is_generic_scene_alias(alias)
+    }
 
 
 def _roles_with_action_context(text: str, role_hints: list[str], action_re: re.Pattern[str]) -> set[str]:
@@ -924,6 +948,47 @@ def _build_dialogue_blocks(quotes: list[QuoteSpan]) -> dict[str, str]:
     return result
 
 
+# ── 密集多人场景复核路由 ──────────────────────────────────────────────────────
+_CROWD_PREFIXES = ("群众·", "厕所女生")
+_CROWD_OR_NARRATION = {"", "旁白", "未知", "UNKNOWN", "未知临时人物", "其他", "众人", "大家", "二人", "三人", "所有人"}
+
+
+def _is_crowd_or_narration(speaker: str | None) -> bool:
+    sp = str(speaker or "")
+    return sp in _CROWD_OR_NARRATION or any(sp.startswith(p) for p in _CROWD_PREFIXES)
+
+
+def _apply_dense_scene_review_routing(
+    segments: list[SegmentEx],
+    review_threshold: float,
+    min_scene_size: int = 3,
+    window: int = 4,
+) -> tuple[list[SegmentEx], dict[str, Any]]:
+    """把局部同时在场 >= min_scene_size 个具名说话人的对话句路由到人工复核。
+
+    依据：评测显示密集多人场景（≥3 人同框寒暄/问候）错误率约为普通双人对话的 5 倍，
+    且模型常以高置信给出错误归属。这里把这类句子的置信度压到复核阈值以下（保留说话人，
+    只是进入复核队列），让产品行为体现"密集多人场景默认转人工复核"。
+    """
+    stats: dict[str, Any] = {
+        "mode": "dense_scene_review_routing",
+        "min_scene_size": min_scene_size,
+        "window": window,
+        "routed": 0,
+    }
+    n = len(segments)
+    names = ["" if _is_crowd_or_narration(s.speaker) else str(s.speaker) for s in segments]
+    for i, seg in enumerate(segments):
+        if _is_crowd_or_narration(seg.speaker):
+            continue
+        local = {names[j] for j in range(max(0, i - window), min(n, i + window + 1)) if names[j]}
+        if len(local) >= min_scene_size and float(seg.confidence or 0.0) >= review_threshold:
+            seg.confidence = max(0.1, review_threshold - 0.05)
+            seg.evidence = f"{seg.evidence or ''}；密集多人场景({len(local)}人同框)，自动转人工复核"
+            stats["routed"] = int(stats["routed"]) + 1
+    return segments, stats
+
+
 # ── P0：批量 LLM 归因路径 ────────────────────────────────────────────────────
 
 def _parse_with_batch_llm(
@@ -939,6 +1004,8 @@ def _parse_with_batch_llm(
     include_narration: bool,
     initial_recent_speakers: list[str] | None = None,
     on_progress: Any | None = None,
+    enable_block_review: bool = True,
+    dense_scene_review_size: int = 3,
 ) -> list[SegmentEx] | ParseResult:
     """
     使用 BatchLLMAttributor 的完整归因路径。
@@ -1326,6 +1393,37 @@ def _parse_with_batch_llm(
         aliases=aliases,
     )
     segments, address_term_stats = apply_address_term_backcheck(segments, review_threshold=review_threshold)
+
+    # ── 对话块级结构化复核（最后一趟，失败安全）────────────────────────────────
+    block_review_stats: dict[str, Any] = {"mode": "block_review", "enabled": False}
+    if enable_block_review:
+        try:
+            segments, block_review_stats = apply_block_review(
+                segments,
+                quotes,
+                cleaned,
+                batch_llm_config,
+                narrator=narrator,
+                role_hints=role_hints_list,
+                aliases=aliases,
+                # address_hints left off by default: A/B showed feeding the learned
+                # address fingerprint slightly regresses (it covers mostly already-correct
+                # scenes, is circular vs the model's own output, and misses sparse speakers).
+                # Kept as an opt-in hook on apply_block_review for future use.
+                address_hints=None,
+            )
+            block_review_stats["enabled"] = True
+        except Exception as exc:  # noqa: BLE001 - never let review break the main path
+            logger.warning(f"[parser] block_review skipped due to error: {exc}")
+            block_review_stats = {"mode": "block_review", "enabled": False, "error": repr(exc)}
+
+    # ── 密集多人场景 → 人工复核路由（最后一步）────────────────────────────────
+    dense_scene_stats: dict[str, Any] = {"mode": "dense_scene_review_routing", "enabled": False}
+    if dense_scene_review_size and int(dense_scene_review_size) >= 2:
+        segments, dense_scene_stats = _apply_dense_scene_review_routing(
+            segments, review_threshold, min_scene_size=int(dense_scene_review_size))
+        dense_scene_stats["enabled"] = True
+
     result = ParseResult(
         segments=segments,
         review_items=collect_review_items(segments, threshold=review_threshold),
@@ -1339,6 +1437,8 @@ def _parse_with_batch_llm(
             "special_perspective_chapter": special_perspective_stats,
             "scene_state": scene_state_stats,
             "address_term_backcheck": address_term_stats,
+            "block_review": block_review_stats,
+            "dense_scene_review_routing": dense_scene_stats,
         },
     )
     return result if return_result else result.segments
@@ -1363,6 +1463,8 @@ def parse_novel(
     include_narration: bool = False,
     initial_recent_speakers: list[str] | None = None,
     on_progress: Any | None = None,
+    enable_block_review: bool = True,
+    dense_scene_review_size: int = 3,
 ) -> list[SegmentEx] | ParseResult:
     """Parse Chinese novel text into speaker-attributed TTS segments.
 
@@ -1411,6 +1513,8 @@ def parse_novel(
             include_narration=include_narration,
             initial_recent_speakers=initial_recent_speakers,
             on_progress=on_progress,
+            enable_block_review=enable_block_review,
+            dense_scene_review_size=dense_scene_review_size,
         )
 
     # ── 经典逐条路径（兼容旧接口）──────────────────────────────────────────────
