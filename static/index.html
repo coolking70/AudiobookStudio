@@ -1965,23 +1965,21 @@
                       <option value="chapter_then_analyze">章节直析：章节识别 -> 角色分析（跳过智能分段和语音适配优化）</option>
                     </select>
 
-                    <label>上下文感知模式</label>
-                    <select id="contextMode">
+                    <!-- 上下文感知模式（role_analyzer 组合流程专用）已弃用并从界面隐藏。保留 DOM 以兼容配置持久化。 -->
+                    <label hidden>上下文感知模式</label>
+                    <select id="contextMode" hidden>
                       <option value="chapter" selected>章节内串行（推荐）</option>
                       <option value="full">全文串行（最高质量）</option>
                       <option value="off">关闭（纯并发，向后兼容）</option>
                     </select>
-                    <div class="mini-note">
-                      "章节内串行"在章节边界内按顺序传递上下文（已知角色、上一块摘要、活跃说话人），章节间仍并行；能大幅提升跨句 speaker 判断准确性，速度适中。
-                      "全文串行"质量最高但最慢；"关闭"恢复原始并发逻辑。
-                    </div>
 
                     <div style="display:flex; gap:16px; align-items:center; margin-top:6px; flex-wrap:wrap;">
                       <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px;">
                         <input type="checkbox" id="enableCharacterAliasMerge" checked />
                         角色别名自动归并
                       </label>
-                      <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px;">
+                      <!-- 二轮 speaker 复核（role_analyzer 流程专用）已弃用并隐藏；BatchLLM 用低置信复核替代。 -->
+                      <label hidden style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer; font-size:13px;">
                         <input type="checkbox" id="enableSpeakerVerification" />
                         二轮 speaker 复核（较慢）
                       </label>
@@ -1990,14 +1988,15 @@
                         紧凑输出模式（节省 token）
                       </label>
                     </div>
-                    <div class="mini-note">别名归并：自动检测"米拉"和"琉德米拉"等同一角色的多种叫法并统一。二轮复核：额外一次 LLM 遍历，专门核查 speaker 归属，会显著增加时间和 token 消耗。</div>
+                    <div class="mini-note">别名归并：自动检测"米拉"和"琉德米拉"等同一角色的多种叫法并统一。</div>
 
-                    <label>智能分段目标长度（字）</label>
-                    <div style="display:flex; gap:8px; align-items:stretch;">
+                    <!-- 智能分段目标长度（role_analyzer 分段流程专用）已弃用并隐藏。保留 DOM 以兼容配置持久化。 -->
+                    <label hidden>智能分段目标长度（字）</label>
+                    <div hidden style="display:flex; gap:8px; align-items:stretch;">
                       <input id="segmentTargetChars" style="flex:1;" type="number" min="800" max="6000" step="100" value="3200" />
                       <button type="button" class="secondary" style="white-space:nowrap;" onclick="autoTuneSegmentTargetChars()">自动估算</button>
                     </div>
-                    <div id="segmentTargetHint" class="mini-note">会结合当前 Max Tokens 和最长组合提示词长度估算一个较稳妥的单段长度。</div>
+                    <div id="segmentTargetHint" class="mini-note" hidden>会结合当前 Max Tokens 和最长组合提示词长度估算一个较稳妥的单段长度。</div>
 
                     <div class="prompt-section">
                       <div class="prompt-header" style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
