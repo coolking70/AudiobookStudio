@@ -310,3 +310,28 @@ seg1 全量真值上的 24 个具名错误溯源（按 evidence + attribution_ty
 （多数被路由句其实是对的——这是按场景类型路由的固有代价）。注意它**只覆盖密集场景**，2 人场景
 的块复核错翻（属另一类）不在其捕获范围，需保守模式处理。
 
+## 十四、强模型重测密集场景 + MCP 复核服务器
+
+**用更强模型（无记忆 subagent）+ 同一套结构化方法重判 180 句密集场景：**
+
+| 模型 | 密集场景准确率 |
+|---|---:|
+| agnes-2.0-flash（管线）| 82.2% |
+| claude-haiku | **91.1%** |
+| claude-sonnet | 89.4% |
+| claude-opus | 90.0% |
+
+**结论：密集场景"天花板"是 agnes-2.0-flash 的能力上限，不是任务本身。** 换更强脑子、同样方法，
+82% → ~90%（+8）。且**档位几乎无差异**（haiku≈sonnet≈opus，86% 互相一致）——结构化方法做了大部分
+工作，只要模型够用即可，不必上 opus。三模型共同判错仅 5/180（2.8%），且无旁白/其他约定分歧，
+均为真歧义（可互换配角、"没带笔记"那句）。
+
+**落地（无需暴露强模型 API）：MCP 复核服务器** `tools/mcp_review_server.py`。把"密集场景复核"
+做成 MCP 工具，由连接的智能体（Claude Desktop/Code，自带强模型）执行——强模型由连接方提供，
+不暴露任何 API key；真值留服务器端仅用于打分、不外泄。工具：`list_dense_scenes(sample)`（返回带标记
+的待复核片段+方法，无答案）、`submit_attributions(sample, {tag:speaker})`（写回+对密集句打分）、
+`list_samples()`。端到端验证：以 opus subagent 实际输出回灌，seg1 密集场景 94.6%、修复 agnes 20 处
+错误。接入示例：`claude mcp add audiobook-review -- /path/.venv/bin/python /path/tools/mcp_review_server.py`。
+
+**产品形态**：管线标出密集场景（路由）→ 进 MCP 复核队列 → 强模型智能体重判回写（~90%）→ 仍存疑的才进人工。
+

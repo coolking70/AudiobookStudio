@@ -23,3 +23,6 @@ imageio-ffmpeg
 # mlx
 # mlx-lm
 # llama-cpp-python
+
+# Optional: MCP server for agent-driven dense-scene review (tools/mcp_review_server.py)
+mcp[cli]>=1.0

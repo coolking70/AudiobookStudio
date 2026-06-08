@@ -5,6 +5,7 @@ import mimetypes
 import os
 import platform
 import re
+import socket
 import subprocess
 import sys
 import traceback
@@ -3923,6 +3924,85 @@ def health():
         "audio_runtime": get_runtime_dependency_status(),
         "outputs_dir": str(OUTPUT_DIR.resolve()),
     }
+
+
+# ── MCP 复核服务器：密集多人场景由强模型智能体经 MCP（SSE 本地端口）重判 ──────────
+_MCP_SCRIPT = Path(__file__).resolve().parent / "tools" / "mcp_review_server.py"
+_MCP_STATE: dict = {"proc": None, "port": None, "task_file": None}
+
+
+def _mcp_free_port(start: int = 8970) -> int:
+    for p in range(start, start + 40):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(("127.0.0.1", p)) != 0:
+                return p
+    return start
+
+
+def _mcp_running() -> bool:
+    proc = _MCP_STATE.get("proc")
+    return proc is not None and proc.poll() is None
+
+
+@app.post("/api/mcp/start")
+async def mcp_start(request: Request):
+    """以 SSE 传输在本地端口启动 MCP 复核服务器，针对【当前分析任务】。
+    请求体: {sourceText, segments}。返回客户端可连接的 SSE URL。"""
+    if _mcp_running():
+        port = _MCP_STATE["port"]
+        return {"running": True, "url": f"http://127.0.0.1:{port}/sse", "port": port, "already": True}
+    body = await request.json()
+    segments = body.get("segments") or []
+    source_text = body.get("sourceText") or body.get("source_text") or ""
+    if not segments:
+        raise HTTPException(status_code=400, detail="当前没有可复核的分析结果（segments 为空）")
+    task_dir = OUTPUT_DIR / "_mcp"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    task_file = task_dir / "task_current.json"
+    task_file.write_text(json.dumps({"sourceText": source_text, "segments": segments}, ensure_ascii=False),
+                         encoding="utf-8")
+    port = _mcp_free_port(8970)
+    proc = subprocess.Popen([sys.executable, str(_MCP_SCRIPT), "--transport", "sse",
+                             "--host", "127.0.0.1", "--port", str(port), "--task-file", str(task_file)])
+    _MCP_STATE.update({"proc": proc, "port": port, "task_file": str(task_file)})
+    return {"running": True, "url": f"http://127.0.0.1:{port}/sse", "port": port}
+
+
+@app.post("/api/mcp/stop")
+def mcp_stop():
+    proc = _MCP_STATE.get("proc")
+    if proc is not None and proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            proc.kill()
+    _MCP_STATE.update({"proc": None, "port": None})
+    return {"running": False}
+
+
+@app.get("/api/mcp/status")
+def mcp_status():
+    running = _mcp_running()
+    port = _MCP_STATE.get("port") if running else None
+    return {"running": running, "port": port,
+            "url": f"http://127.0.0.1:{port}/sse" if running else None}
+
+
+@app.get("/api/mcp/corrections")
+def mcp_corrections():
+    """读取 MCP 智能体写回的复核结果（按 segment 索引）。"""
+    tf = _MCP_STATE.get("task_file")
+    if not tf:
+        return {"corrections": {}}
+    cpath = Path(tf).with_suffix(".corrections.json")
+    if not cpath.exists():
+        return {"corrections": {}}
+    try:
+        data = json.loads(cpath.read_text(encoding="utf-8"))
+    except Exception:
+        return {"corrections": {}}
+    return {"corrections": data.get("corrections", {})}
 
 
 @app.get("/file/{name:path}")
