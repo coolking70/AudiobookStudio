@@ -25,8 +25,9 @@ sys.path.insert(0, str(REPO / "tools"))
 DEFAULT_PARSE = SAMP / "muli4_seg2_parse.json"
 DEFAULT_RAW = SAMP / "muli4_seg2_sample.txt"
 DEFAULT_OUT = SAMP / "muli4_seg2_review.json"
-# Segments I (assistant) flagged for the human to double-check.
-FLAGGED = {0, 1, 2, 3, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 237}
+# Extra always-flag indices (sample-specific overrides). Empty by default; the align()
+# heuristic auto-flags low-confidence / block-review-changed / uncertain-speaker segments.
+FLAGGED: set[int] = set()
 
 
 def load_roster() -> list[str]:
@@ -51,6 +52,19 @@ def align(raw: str, segments: list[dict]) -> list[dict]:
         start, end = (p, p + len(t)) if p >= 0 else (-1, -1)
         if p >= 0:
             cursor = end
+        evidence = str(s.get("evidence") or "")
+        try:
+            conf = float(s.get("confidence") or 1.0)
+        except (TypeError, ValueError):
+            conf = 1.0
+        # Auto-flag the worth-checking ones: low confidence, changed by block review,
+        # or assigned to a rare/uncertain speaker. (Generic across samples.)
+        flagged = (
+            (i in FLAGGED)
+            or conf < 0.85
+            or "块级结构化复核" in evidence
+            or s.get("speaker", "") in {"未知临时人物", "未知", "其他"}
+        )
         out.append({
             "i": i,
             "speaker": s.get("speaker", ""),
@@ -58,10 +72,10 @@ def align(raw: str, segments: list[dict]) -> list[dict]:
             "text": t,
             "confidence": s.get("confidence"),
             "attribution_type": s.get("attribution_type"),
-            "evidence": (s.get("evidence") or "")[:120],
+            "evidence": evidence[:120],
             "start": start,
             "end": end,
-            "flagged": i in FLAGGED,
+            "flagged": flagged,
         })
     return out
 
@@ -69,10 +83,17 @@ def align(raw: str, segments: list[dict]) -> list[dict]:
 class State:
     def __init__(self, parse_path: Path, raw_path: Path, out_path: Path):
         self.out_path = out_path
+        self.parse_name = parse_path.name
         self.raw = raw_path.read_text(encoding="utf-8")
         segs = json.loads(parse_path.read_text(encoding="utf-8"))["segments"]
         self.segments = align(self.raw, segs)
-        self.roster = load_roster()
+        # roster = known role hints + any speakers the parse actually produced (new chars)
+        roster = list(load_roster())
+        for seg in self.segments:
+            sp = seg.get("speaker", "")
+            if sp and sp not in roster and sp not in {"旁白", "未知", "其他"}:
+                roster.append(sp)
+        self.roster = roster
         self.corrections: dict[str, str] = {}
         if out_path.exists():
             try:
@@ -93,7 +114,7 @@ class State:
             self.corrections[str(i)] = speaker
         self.segments[i]["speaker"] = speaker
         self.out_path.write_text(json.dumps({
-            "source_parse": str(DEFAULT_PARSE.name),
+            "source_parse": self.parse_name,
             "updated": datetime.now().isoformat(timespec="seconds"),
             "corrections": self.corrections,
         }, ensure_ascii=False, indent=2), encoding="utf-8")
