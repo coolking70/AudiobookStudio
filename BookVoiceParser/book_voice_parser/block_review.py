@@ -66,6 +66,32 @@ _PROMPT = """下面是一段连续的小说原文（旁白与对话混排），�
 只输出一个 JSON 对象：键为本段每个编号，值为规范名。例如 {{"{prefix}0012":"角色甲","{prefix}0013":"角色乙"}}。不要任何解释。"""
 
 
+# Conservative variant: each quote is annotated with its CURRENT attribution; the model
+# is told to keep it unless it has positive evidence to override — to avoid gratuitous
+# "flip just because it's the other side's turn" errors in 2-person scenes.
+_PROMPT_CONSERVATIVE = """下面是一段连续的小说原文（旁白与对话混排），每句对话前有【{prefix}NNNN|当前:某角色】标记，其中“当前”是已有的说话人判断。
+
+角色表（只用其中的规范名，不要用别名）：
+{roster}
+叙述者（第一人称“我”）：{narrator}
+{address_hints}
+你的任务是【审核并仅在必要时纠正】每句的说话人，而不是从零重猜：
+
+1. 默认【保留】每句的“当前”判断。
+2. 只有当你找到【明确的正向证据】证明当前判断错了，才改判。正向证据包括：
+   - 旁白里的显式标记（“X说道/X笑着/X问”）；
+   - 口癖/语尾等高度专属的说话特征（某角色固定的语气词、口头禅）；
+   - 称呼风格（某角色惯用的称呼别人的方式）；
+   - 明确的语义邻接（被点名/被提问者接话；提议→拒绝；递→接）。
+3. ⚠️ 不要仅凭“对话该轮到对方了/两人应交替”就改判——交替只是默认倾向，证据不足时请保留当前判断。
+4. 第一人称“我”说出口的话归 {narrator}；『』内心独白归发出者；无名路人归“其他”；非台词归“旁白”。
+
+【本段原文】：
+{block}
+
+只输出一个 JSON 对象：键为本段每个编号，值为规范名（保留或改判后的）。例如 {{"{prefix}0012":"角色甲"}}。不要任何解释。"""
+
+
 def _format_address_hints(hints: dict | None, min_score: float = 0.8, limit: int = 24) -> str:
     """Render the learned address-term -> speaker fingerprint (from address_term_backcheck)
     as soft-evidence hints. `hints` maps term -> {"speaker", "score", ...}."""
@@ -119,15 +145,21 @@ def _subchunks(idxs: list[int]):
         i += SUB_PER
 
 
-def _render_window(cleaned: str, quotes: list[QuoteSpan], ctx_idxs: list[int]) -> str:
+def _render_window(cleaned: str, quotes: list[QuoteSpan], ctx_idxs: list[int],
+                   current: list[str] | None = None) -> str:
+    """Render the window text with inline 【qid】 tags. If `current` (per-quote-index
+    speaker list) is given, annotate as 【qid|当前:speaker】 so the decoder sees and can
+    keep the existing attribution."""
     i0, i1 = ctx_idxs[0], ctx_idxs[-1]
     ws = max(0, quotes[i0].start - LEADIN)
     we = min(len(cleaned), quotes[i1].end + TRAIL)
     win = cleaned[ws:we]
-    for pos, qid in sorted(((quotes[k].start, quotes[k].quote_id) for k in ctx_idxs), reverse=True):
+    for pos, k in sorted(((quotes[k].start, k) for k in ctx_idxs), reverse=True):
         rel = pos - ws
         if 0 <= rel <= len(win):
-            win = win[:rel] + f"【{qid}】" + win[rel:]
+            qid = quotes[k].quote_id
+            tag = f"【{qid}|当前:{current[k]}】" if current and k < len(current) and current[k] else f"【{qid}】"
+            win = win[:rel] + tag + win[rel:]
     return win
 
 
@@ -193,6 +225,7 @@ def apply_block_review(
     quote_prefix: str = "q",
     prompt_template: str | None = None,
     address_hints: dict | None = None,
+    conservative: bool = False,
 ) -> tuple[list[SegmentEx], dict[str, Any]]:
     """Run structured block-level re-attribution. Returns (segments, stats).
 
@@ -215,6 +248,8 @@ def apply_block_review(
     valid_names = set(role_hints) | {narrator}
     roster = _roster_text(role_hints, aliases)
     hints_text = _format_address_hints(address_hints)
+    current_speakers = [str(s.speaker or "") for s in segments] if conservative else None
+    default_prompt = _PROMPT_CONSERVATIVE if conservative else _PROMPT
 
     for block in _group_blocks(quotes):
         if len(block) < MIN_BLOCK:
@@ -228,8 +263,8 @@ def apply_block_review(
         protect_explicit = len(distinct) >= PROTECT_SCENE_SPEAKERS
 
         for ctx_idxs, new_idxs in _subchunks(block):
-            window = _render_window(cleaned, quotes, ctx_idxs)
-            prompt = (prompt_template or _PROMPT).format(
+            window = _render_window(cleaned, quotes, ctx_idxs, current=current_speakers)
+            prompt = (prompt_template or default_prompt).format(
                 prefix=quote_prefix, roster=roster, narrator=narrator,
                 block=window, address_hints=hints_text)
             try:
