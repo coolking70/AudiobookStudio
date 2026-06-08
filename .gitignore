@@ -21,3 +21,6 @@ docs/samples/*_result.json
 
 # Derived scratch sample (seg1+seg2 concat test)
 docs/samples/muli4_concat_*
+
+# MCP review scratch output
+docs/samples/*_mcp_review.json
