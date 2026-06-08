@@ -38,20 +38,40 @@ def load_roster() -> list[str]:
         return []
 
 
+_MATCH_STRIP = set("「」『』") | set(" \t\r\n　")
+
+
+def _norm_key(t: str) -> str:
+    # ignore whitespace and quote-bracket VARIANTS (「」/『』) so nested-quote and
+    # bracket-normalized segments (e.g. 「会」 vs 『会』) still locate in the raw text
+    return "".join(ch for ch in str(t or "") if ch not in _MATCH_STRIP)
+
+
 def align(raw: str, segments: list[dict]) -> list[dict]:
-    """Attach raw-text [start,end) offsets to each segment by walking a cursor."""
-    cursor = 0
+    """Attach raw-text [start,end) offsets to each segment, robust to whitespace and
+    quote-bracket-variant differences (maps a stripped match back to real offsets)."""
+    # build a stripped index of the raw text -> original char positions
+    sidx: list[int] = []
+    schars: list[str] = []
+    for k, ch in enumerate(raw):
+        if ch in _MATCH_STRIP:
+            continue
+        schars.append(ch)
+        sidx.append(k)
+    sraw = "".join(schars)
+    scursor = 0
     out = []
     for i, s in enumerate(segments):
-        t = s.get("text", "")
-        p = raw.find(t, cursor)
-        if p < 0:
-            pat = re.compile(r"\s*".join(re.escape(c) for c in t[:8]))
-            m = pat.search(raw, cursor)
-            p = m.start() if m else -1
-        start, end = (p, p + len(t)) if p >= 0 else (-1, -1)
-        if p >= 0:
-            cursor = end
+        key = _norm_key(s.get("text", ""))
+        start = end = -1
+        if key:
+            p = sraw.find(key, scursor)
+            if p < 0:
+                p = sraw.find(key)  # fall back to a global search if cursor overshot
+            if p >= 0:
+                start = sidx[p]
+                end = sidx[p + len(key) - 1] + 1
+                scursor = p + len(key)
         evidence = str(s.get("evidence") or "")
         try:
             conf = float(s.get("confidence") or 1.0)
@@ -69,7 +89,7 @@ def align(raw: str, segments: list[dict]) -> list[dict]:
             "i": i,
             "speaker": s.get("speaker", ""),
             "orig_speaker": s.get("speaker", ""),
-            "text": t,
+            "text": s.get("text", ""),
             "confidence": s.get("confidence"),
             "attribution_type": s.get("attribution_type"),
             "evidence": evidence[:120],
