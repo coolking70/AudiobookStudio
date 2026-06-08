@@ -2461,7 +2461,7 @@
             <div id="parseModePanel" class="parse-mode-panel">
               <div class="parse-mode-title">文本分析（BatchLLM 主管线）</div>
               <!-- 旧的"分析方式"选择（LLM 组合流程 / 纯规则）已弃用并从界面隐藏；BatchLLM 为唯一默认管线，后端逻辑保留。 -->
-              <div class="parse-mode-options" hidden>
+              <div class="parse-mode-options" style="display:none;">
                 <label class="parse-mode-option">
                   <input type="radio" name="parseMode" value="llm" onchange="setParseMode('llm')" />
                   <span>LLM 流程<small>章节识别、分段、语音适配和角色分析</small></span>
@@ -2543,10 +2543,8 @@
           </div>
 
           <div id="status" class="status" hidden>等待操作…</div>
-        </div>
 
-        <div class="card">
-          <details class="mcp-review-panel" id="mcpReviewPanel">
+          <details class="mcp-review-panel" id="mcpReviewPanel" style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">
             <summary>强模型复核（MCP）— 密集多人场景</summary>
             <div class="mcp-review-body" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
               <div class="mini-note" style="margin:0;">密集多人场景（局部 ≥3 人同框的寒暄/问候）自动准确率较低。可在本地启动一个 MCP 服务器，让 Claude 等<strong>强模型智能体经它重判当前任务的密集片段</strong>——强模型由你的 MCP 客户端提供，<strong>不暴露任何 API key</strong>，真值/打分留在服务器端。</div>
