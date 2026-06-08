@@ -1955,15 +1955,15 @@
                     <input id="chapterSampleChars" type="number" min="600" max="20000" step="200" value="5000" />
                     <div class="mini-note">章节识别会先截取开头一小段文本交给 LLM 判断章节标题模式，再映射成正则并用代码快速拆分。这个阶段固定单线程。</div>
 
-                    <label>后续分析组合</label>
-                    <select id="analysisCombo" onchange="updateAnalysisFlowUI()">
+                    <!-- 旧的 role_analyzer 组合流程选择器已弃用并从界面隐藏（BatchLLM 主管线为唯一路径）。保留 DOM 以兼容后端字段。 -->
+                    <label hidden>后续分析组合</label>
+                    <select id="analysisCombo" onchange="updateAnalysisFlowUI()" hidden>
                       <option value="separate" selected>1+1+1：智能分段 -> 语音适配优化 -> 角色分析</option>
                       <option value="segment_then_optimize_analyze">1+2：智能分段 -> 语音适配优化+角色分析</option>
                       <option value="segment_optimize_then_analyze">2+1：智能分段+语音适配优化 -> 角色分析</option>
                       <option value="segment_then_analyze">1+3：智能分段 -> 角色分析（跳过语音适配优化）</option>
                       <option value="chapter_then_analyze">章节直析：章节识别 -> 角色分析（跳过智能分段和语音适配优化）</option>
                     </select>
-                    <div class="mini-note">组合模式在模型配置阶段统一设定。文本分析页会直接按这里的配置执行，不再单独勾选流程。</div>
 
                     <label>上下文感知模式</label>
                     <select id="contextMode">
@@ -2460,20 +2460,21 @@
 
             <!-- ── 解析模式选择 ── -->
             <div id="parseModePanel" class="parse-mode-panel">
-              <div class="parse-mode-title">分析方式</div>
-              <div class="parse-mode-options">
+              <div class="parse-mode-title">文本分析（BatchLLM 主管线）</div>
+              <!-- 旧的"分析方式"选择（LLM 组合流程 / 纯规则）已弃用并从界面隐藏；BatchLLM 为唯一默认管线，后端逻辑保留。 -->
+              <div class="parse-mode-options" hidden>
                 <label class="parse-mode-option">
-                  <input type="radio" name="parseMode" value="llm" checked onchange="setParseMode('llm')" />
+                  <input type="radio" name="parseMode" value="llm" onchange="setParseMode('llm')" />
                   <span>LLM 流程<small>章节识别、分段、语音适配和角色分析</small></span>
                 </label>
                 <label class="parse-mode-option">
-                  <input type="radio" name="parseMode" value="structured" onchange="setParseMode('structured')" />
+                  <input type="radio" name="parseMode" value="structured" checked onchange="setParseMode('structured')" />
                   <span>BookVoiceParser<small>规则解析台词，可选低置信度 LLM 复核</small></span>
                 </label>
               </div>
               <!-- 结构化解析扩展选项 -->
-              <div id="parseModeHint" class="mini-note" style="margin-top:8px;">使用模型配置中的组合流程，适合需要章节识别、语音适配优化和完整角色分析的长文本。</div>
-              <div id="structuredParseOptions" class="structured-options" hidden>
+              <div id="parseModeHint" class="mini-note" style="margin-top:8px;" hidden></div>
+              <div id="structuredParseOptions" class="structured-options">
                 <label>
                   角色提示（可选，逗号分隔）
                   <input id="roleHintsInput" type="text" placeholder='例：{"张三":["三哥"],"李四":[]} 或 张三,李四' />
@@ -2483,11 +2484,11 @@
                   <input id="narratorInput" type="text" placeholder="例：甘织玲奈子" />
                 </label>
                 <button type="button" class="secondary" onclick="copyRoleHintsPrompt()">复制角色提示词</button>
-                <label class="structured-check">
-                  <input type="checkbox" id="useBatchLlm" onchange="toggleBatchLlmOptions()" />
+                <label class="structured-check" hidden>
+                  <input type="checkbox" id="useBatchLlm" checked onchange="toggleBatchLlmOptions()" />
                   <span>使用 BatchLLM 主管线（推荐，使用当前文本模型配置）</span>
                 </label>
-                <div id="batchLlmOptions" hidden style="margin-left:20px;display:flex;align-items:center;gap:8px;">
+                <div id="batchLlmOptions" style="margin-left:20px;display:flex;align-items:center;gap:8px;">
                   <label style="font-size:0.85em;margin:0;">max_tokens
                     <input id="batchLlmMaxTokens" type="number" value="2048" min="512" max="32768" step="512" style="width:90px;" />
                   </label>
@@ -2543,6 +2544,29 @@
           </div>
 
           <div id="status" class="status" hidden>等待操作…</div>
+        </div>
+
+        <div class="card">
+          <details class="mcp-review-panel" id="mcpReviewPanel">
+            <summary>强模型复核（MCP）— 密集多人场景</summary>
+            <div class="mcp-review-body" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+              <div class="mini-note" style="margin:0;">密集多人场景（局部 ≥3 人同框的寒暄/问候）自动准确率较低。可在本地启动一个 MCP 服务器，让 Claude 等<strong>强模型智能体经它重判当前任务的密集片段</strong>——强模型由你的 MCP 客户端提供，<strong>不暴露任何 API key</strong>，真值/打分留在服务器端。</div>
+              <div class="actions" style="margin:0;">
+                <button type="button" id="mcpStartBtn" class="secondary" onclick="startMcpReview()">启动 MCP 复核服务器</button>
+                <button type="button" id="mcpStopBtn" class="secondary" onclick="stopMcpReview()" disabled>停止</button>
+                <button type="button" id="mcpImportBtn" class="secondary" onclick="importMcpCorrections()" disabled>导入复核结果</button>
+                <span id="mcpStatusText" class="section-meta" style="align-self:center;">● 未启动</span>
+              </div>
+              <div id="mcpConnectBox" hidden style="display:flex;flex-direction:column;gap:6px;">
+                <label style="margin:0;">SSE 接入地址（只读，点击全选）
+                  <input id="mcpSseUrl" type="text" readonly onclick="this.select()" style="font-family:monospace;" />
+                </label>
+                <div class="mini-note" style="margin:0;">接入教程：在终端运行，把本服务器加进 MCP 客户端（以 Claude Code 为例）：</div>
+                <textarea id="mcpAddCmd" rows="2" readonly onclick="this.select()" style="font-family:monospace;font-size:12px;"></textarea>
+                <div class="mini-note" style="margin:0;">连接后对智能体说：「复核当前任务的密集场景」。它会 <code>list_dense_scenes</code> → 按方法重判 → <code>submit_attributions</code> 写回；完成后点上方<strong>「导入复核结果」</strong>应用到本任务。</div>
+              </div>
+            </div>
+          </details>
         </div>
 
         <div class="card">
@@ -2810,7 +2834,7 @@
   let taskElapsedTimer = null;
   let pendingProgressAutoExpandTimer = null;
   let analysisSourceMode = "openai_compat";
-  let parseMode = "llm"; // "llm" | "structured"
+  let parseMode = "structured"; // 固定为 BatchLLM 主管线（旧 "llm" 组合流程已从 UI 隐藏）
   let activeWorkspaceTab = "models";
   let activeModelsConfigView = "text";
   let externalPromptChunks = [];
@@ -12370,6 +12394,61 @@ very high pitch, very low pitch, whisper, young adult
   setAnalysisSourceMode("openai_compat");
   renderAnalysisPipelineMeta();
   refreshExternalPromptView();
+  // ── MCP 强模型复核（密集多人场景）控制 ──────────────────────────────────────
+  function setMcpUi(running, url) {
+    const dot = document.getElementById("mcpStatusText");
+    const startBtn = document.getElementById("mcpStartBtn");
+    const stopBtn = document.getElementById("mcpStopBtn");
+    const importBtn = document.getElementById("mcpImportBtn");
+    const box = document.getElementById("mcpConnectBox");
+    if (dot) { dot.textContent = running ? "● 运行中" : "● 未启动"; dot.style.color = running ? "#3ecf8e" : ""; }
+    if (startBtn) startBtn.disabled = !!running;
+    if (stopBtn) stopBtn.disabled = !running;
+    if (importBtn) importBtn.disabled = !running;
+    if (box) box.hidden = !running;
+    if (running && url) {
+      const u = document.getElementById("mcpSseUrl"); if (u) u.value = url;
+      const cmd = document.getElementById("mcpAddCmd"); if (cmd) cmd.value = `claude mcp add audiobook-review --transport sse ${url}`;
+    }
+  }
+  async function refreshMcpStatus() {
+    try { const d = await (await fetch("/api/mcp/status")).json(); setMcpUi(!!d.running, d.url); } catch (e) {}
+  }
+  async function startMcpReview() {
+    if (!segmentsState.length) { setStatus("当前没有分析结果可复核，请先执行 BatchLLM 分析。"); return; }
+    const sourceText = String(document.getElementById("sourceText")?.value || "");
+    const segments = segmentsState.map(s => ({ speaker: s.speaker, text: s.text }));
+    setStatus("正在启动 MCP 复核服务器…");
+    try {
+      const r = await fetch("/api/mcp/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sourceText, segments }) });
+      const d = await r.json();
+      if (!r.ok) { setStatus("启动 MCP 服务器失败：" + (d.detail || r.status)); return; }
+      setMcpUi(true, d.url);
+      const panel = document.getElementById("mcpReviewPanel"); if (panel) panel.open = true;
+      setStatus("MCP 复核服务器已启动：" + d.url + "（请按教程在客户端接入）");
+    } catch (e) { setStatus("启动 MCP 服务器出错：" + e.message); }
+  }
+  async function stopMcpReview() {
+    try { await fetch("/api/mcp/stop", { method: "POST" }); } catch (e) {}
+    setMcpUi(false, null);
+    setStatus("MCP 复核服务器已停止。");
+  }
+  async function importMcpCorrections() {
+    try {
+      const d = await (await fetch("/api/mcp/corrections")).json();
+      const corr = d.corrections || {};
+      let n = 0;
+      Object.entries(corr).forEach(([idx, spk]) => {
+        const i = parseInt(idx, 10);
+        if (Number.isInteger(i) && i >= 0 && i < segmentsState.length && spk && segmentsState[i].speaker !== spk) {
+          segmentsState[i].speaker = spk; n++;
+        }
+      });
+      if (n > 0) applySegmentsState(segmentsState, { persist: true });
+      setStatus(n > 0 ? `已从 MCP 复核导入 ${n} 处修正并写回当前任务。` : "MCP 复核暂无可导入的修正（智能体尚未提交或无改动）。");
+    } catch (e) { setStatus("导入复核结果出错：" + e.message); }
+  }
+
   initDesignPrompt();
   renderDesignStylePicker();
   loadNarrationProgress();
@@ -12381,6 +12460,10 @@ very high pitch, very low pitch, whisper, young adult
   loadReviewLlmConfig();
   updateAnalysisFlowUI();
   initProgressPanelPrefs();
+  // 固定使用 BatchLLM 主管线（旧分析方式已从 UI 隐藏）：初始化按钮标签与选项可见性
+  setParseMode("structured");
+  if (document.getElementById("useBatchLlm")) { document.getElementById("useBatchLlm").checked = true; toggleBatchLlmOptions(); }
+  refreshMcpStatus();
 
   // 离开/刷新页面前的进度丢失提示
   window.addEventListener("beforeunload", function (e) {
