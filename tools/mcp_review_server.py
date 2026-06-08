@@ -16,6 +16,7 @@ Wire into a client, e.g. Claude Code:
 """
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -25,6 +26,10 @@ from mcp.server.fastmcp import FastMCP
 
 REPO = Path(__file__).resolve().parents[1]
 SAMP = REPO / "docs/samples"
+
+# Single-task mode: when set (via --task-file), all tools operate on this one task
+# (the live analysis task exported by the web UI) instead of the docs/samples dev files.
+_TASK_FILE: Path | None = None
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(REPO / "BookVoiceParser"))
 
@@ -74,12 +79,28 @@ def _stem(sample: str) -> str:
 
 
 def _load(sample: str):
+    """Return (stem, raw_text, segments, gt_or_None).
+
+    Task mode (--task-file): load the live task snapshot ({sourceText, segments});
+    production has no ground truth (gt=None). Sample mode: dev files under docs/samples.
+    """
+    if _TASK_FILE is not None:
+        task = json.loads(_TASK_FILE.read_text(encoding="utf-8"))
+        raw = task.get("sourceText") or task.get("source_text") or ""
+        parse = task.get("segments") or []
+        return "current", raw, parse, None
     stem = _stem(sample)
     raw = (SAMP / f"{stem}_sample.txt").read_text(encoding="utf-8")
     parse = json.loads((SAMP / f"{stem}_parse.json").read_text(encoding="utf-8"))["segments"]
     gtf = SAMP / f"{stem}_groundtruth.json"
     gt = {s["i"]: s for s in json.loads(gtf.read_text(encoding="utf-8"))["segments"]} if gtf.exists() else None
     return stem, raw, parse, gt
+
+
+def _corrections_path() -> Path:
+    if _TASK_FILE is not None:
+        return _TASK_FILE.with_suffix(".corrections.json")
+    return SAMP / "_mcp_corrections.json"
 
 
 def _quote_positions(raw: str, parse: list[dict]):
@@ -107,9 +128,11 @@ mcp = FastMCP("audiobook-review")
 
 @mcp.tool()
 def list_samples() -> dict:
-    """列出可复核的样本（docs/samples 下已解析的样本）。"""
+    """列出可复核的对象。任务模式下为当前分析任务（current）；否则为 docs/samples 下已解析样本。"""
+    if _TASK_FILE is not None:
+        return {"samples": ["current"], "mode": "task"}
     stems = sorted({p.name[:-len("_parse.json")] for p in SAMP.glob("*_parse.json")})
-    return {"samples": [s.replace("muli4_", "") for s in stems]}
+    return {"samples": [s.replace("muli4_", "") for s in stems], "mode": "samples"}
 
 
 @mcp.tool()
@@ -177,7 +200,7 @@ def submit_attributions(sample: str, attributions: dict) -> dict:
         m = re.match(rf"^{re.escape(sk)}_(\d+)$", str(tag))
         if m:
             corrections[m.group(1)] = str(spk)
-    out_path = SAMP / f"{stem}_mcp_review.json"
+    out_path = _corrections_path()
     out_path.write_text(json.dumps({"source": "mcp_review", "corrections": corrections},
                                    ensure_ascii=False, indent=2), encoding="utf-8")
     result = {"sample": sk, "applied": len(corrections), "review_file": str(out_path.name)}
@@ -214,4 +237,17 @@ def submit_attributions(sample: str, attributions: dict) -> dict:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    ap = argparse.ArgumentParser(description="Audiobook dense-scene review MCP server")
+    ap.add_argument("--transport", choices=["stdio", "sse", "streamable-http"], default="stdio")
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", type=int, default=8970)
+    ap.add_argument("--task-file", type=Path, default=None,
+                    help="当前分析任务快照（{sourceText, segments}）；给出后所有工具针对该任务而非 docs/samples")
+    args = ap.parse_args()
+    if args.task_file is not None:
+        _TASK_FILE = args.task_file.expanduser().resolve()
+    if args.transport in ("sse", "streamable-http"):
+        # bind locally so the web UI can launch it and a client connects to http://host:port/sse
+        mcp.settings.host = args.host
+        mcp.settings.port = args.port
+    mcp.run(transport=args.transport)
