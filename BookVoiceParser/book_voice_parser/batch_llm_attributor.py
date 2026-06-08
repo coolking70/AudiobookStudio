@@ -1056,6 +1056,24 @@ _AFTER_NAME_VERB = _re.compile(
 )
 
 
+# 受话介词：其后的角色名是受话对象而非说话人（"我对着小香穗说道"→香穗是受话人）。
+_ADDRESSEE_PREP = _re.compile(r"(?:对着?|朝着?|冲|向|望着?|看向|注视着?|盯着?|看着)")
+
+
+def _role_is_addressee(clause: str, role: str) -> bool:
+    """该角色名在子句中是否为受话对象——其最近出现位置之前存在受话介词。
+    用于让保守显性归因在受话人陷阱时放弃（交给 LLM/叙述者锚点），不做高置信误判。"""
+    aliases = [role]
+    if len(role) >= 4:
+        aliases.append(role[-3:])
+    if len(role) >= 3:
+        aliases.append(role[-2:])
+    rpos = max((clause.rfind(a) for a in aliases), default=-1)
+    if rpos < 0:
+        return False
+    return any(m.end() <= rpos for m in _ADDRESSEE_PREP.finditer(clause[:rpos + 1]))
+
+
 def _find_role_in_clause(clause: str, role_hints: list[str]) -> str | None:
     """
     在文本片段中查找最靠近末尾的 role_hint（或其简称）出现位置。
@@ -1118,7 +1136,7 @@ def attribute_explicit_conservative(
         tight_parts = _re.split(r"[，、]", cb_clause)
         tight_clause = tight_parts[-1].strip() if tight_parts else cb_clause
         role = _find_role_in_clause(tight_clause, role_hints)
-        if role:
+        if role and not _role_is_addressee(tight_clause, role):
             evidence_text = cb_clause[-40:].strip()
             return Attribution(
                 quote_id=quote.quote_id,
