@@ -948,6 +948,47 @@ def _build_dialogue_blocks(quotes: list[QuoteSpan]) -> dict[str, str]:
     return result
 
 
+# ── 密集多人场景复核路由 ──────────────────────────────────────────────────────
+_CROWD_PREFIXES = ("群众·", "厕所女生")
+_CROWD_OR_NARRATION = {"", "旁白", "未知", "UNKNOWN", "未知临时人物", "其他", "众人", "大家", "二人", "三人", "所有人"}
+
+
+def _is_crowd_or_narration(speaker: str | None) -> bool:
+    sp = str(speaker or "")
+    return sp in _CROWD_OR_NARRATION or any(sp.startswith(p) for p in _CROWD_PREFIXES)
+
+
+def _apply_dense_scene_review_routing(
+    segments: list[SegmentEx],
+    review_threshold: float,
+    min_scene_size: int = 3,
+    window: int = 4,
+) -> tuple[list[SegmentEx], dict[str, Any]]:
+    """把局部同时在场 >= min_scene_size 个具名说话人的对话句路由到人工复核。
+
+    依据：评测显示密集多人场景（≥3 人同框寒暄/问候）错误率约为普通双人对话的 5 倍，
+    且模型常以高置信给出错误归属。这里把这类句子的置信度压到复核阈值以下（保留说话人，
+    只是进入复核队列），让产品行为体现"密集多人场景默认转人工复核"。
+    """
+    stats: dict[str, Any] = {
+        "mode": "dense_scene_review_routing",
+        "min_scene_size": min_scene_size,
+        "window": window,
+        "routed": 0,
+    }
+    n = len(segments)
+    names = ["" if _is_crowd_or_narration(s.speaker) else str(s.speaker) for s in segments]
+    for i, seg in enumerate(segments):
+        if _is_crowd_or_narration(seg.speaker):
+            continue
+        local = {names[j] for j in range(max(0, i - window), min(n, i + window + 1)) if names[j]}
+        if len(local) >= min_scene_size and float(seg.confidence or 0.0) >= review_threshold:
+            seg.confidence = max(0.1, review_threshold - 0.05)
+            seg.evidence = f"{seg.evidence or ''}；密集多人场景({len(local)}人同框)，自动转人工复核"
+            stats["routed"] = int(stats["routed"]) + 1
+    return segments, stats
+
+
 # ── P0：批量 LLM 归因路径 ────────────────────────────────────────────────────
 
 def _parse_with_batch_llm(
@@ -964,6 +1005,7 @@ def _parse_with_batch_llm(
     initial_recent_speakers: list[str] | None = None,
     on_progress: Any | None = None,
     enable_block_review: bool = True,
+    dense_scene_review_size: int = 3,
 ) -> list[SegmentEx] | ParseResult:
     """
     使用 BatchLLMAttributor 的完整归因路径。
@@ -1375,6 +1417,13 @@ def _parse_with_batch_llm(
             logger.warning(f"[parser] block_review skipped due to error: {exc}")
             block_review_stats = {"mode": "block_review", "enabled": False, "error": repr(exc)}
 
+    # ── 密集多人场景 → 人工复核路由（最后一步）────────────────────────────────
+    dense_scene_stats: dict[str, Any] = {"mode": "dense_scene_review_routing", "enabled": False}
+    if dense_scene_review_size and int(dense_scene_review_size) >= 2:
+        segments, dense_scene_stats = _apply_dense_scene_review_routing(
+            segments, review_threshold, min_scene_size=int(dense_scene_review_size))
+        dense_scene_stats["enabled"] = True
+
     result = ParseResult(
         segments=segments,
         review_items=collect_review_items(segments, threshold=review_threshold),
@@ -1389,6 +1438,7 @@ def _parse_with_batch_llm(
             "scene_state": scene_state_stats,
             "address_term_backcheck": address_term_stats,
             "block_review": block_review_stats,
+            "dense_scene_review_routing": dense_scene_stats,
         },
     )
     return result if return_result else result.segments
@@ -1414,6 +1464,7 @@ def parse_novel(
     initial_recent_speakers: list[str] | None = None,
     on_progress: Any | None = None,
     enable_block_review: bool = True,
+    dense_scene_review_size: int = 3,
 ) -> list[SegmentEx] | ParseResult:
     """Parse Chinese novel text into speaker-attributed TTS segments.
 
@@ -1463,6 +1514,7 @@ def parse_novel(
             initial_recent_speakers=initial_recent_speakers,
             on_progress=on_progress,
             enable_block_review=enable_block_review,
+            dense_scene_review_size=dense_scene_review_size,
         )
 
     # ── 经典逐条路径（兼容旧接口）──────────────────────────────────────────────
