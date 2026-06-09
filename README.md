@@ -36,6 +36,7 @@
 - [BookVoiceParser 方案规划](docs/book_voice_parser_plan.md)
 - [角色分析优化交接记录](docs/role-analysis-optimization-handoff.md)
 - [2026-06-07 模型评测记录](docs/model_evaluation_2026-06-07.md)
+- [权威样本生产流程（说话人评测集）](docs/samples/SAMPLE_WORKFLOW.md)
 
 ## 运行模式
 
