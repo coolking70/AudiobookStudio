@@ -78,17 +78,23 @@ open("docs/samples/muli4_seg6_sample.txt", "w", encoding="utf-8").write(chunk.st
 
 ### Step 2 — 跑模型解析 → `parse.json` + `transcript.txt`
 
-用与 seg5 完全相同的全流水线（`agnes-2.0-flash` + 块级复核 + 密集场景路由 + 称呼回查）。
-最简单的方式是参考 `tools/eval_external_model.py` 里的 `run()`：`parse_novel(raw, role_hints=ROLE_HINTS,
-batch_llm_config=cfg, narrator="甘织玲奈子", include_narration=False, review_threshold=0.7,
-enable_block_review=True)`，其中 `cfg` 用 Agnes 参数（见上表）。把 `result.segments` dump 成
-`{"segments":[...], "stats":...}` 存为 `muli4_seg6_parse.json`。
+**一条命令搞定，必须用它**（封装了与 seg5 完全一致的完整流水线，别手搓、别裸调模型）：
 
-固定参数：`batch_size=8, max_tokens=5000, temperature=0.0, context_chars=320,
-output_mode="compact", disable_thinking=True, narrator="甘织玲奈子"`。
+```bash
+source .env                                              # 让 AGNES_API_KEY 就位
+.venv/bin/python tools/parse_sample.py --seg muli4_seg6
+```
 
-`transcript.txt` 在 Step 4 由 `build_groundtruth.py` 从最终 parse 自动重生成 —— **不要手写**，
-否则会和 parse 不同步（seg5 的旧 transcript 就因为先于 parse 定稿而过时了）。
+它内部用 `parse_novel(..., enable_block_review=True)` + Agnes 参数
+（`batch_size=8, max_tokens=5000, temperature=0, context_chars=320, output_mode="compact",
+disable_thinking=True, narrator="甘织玲奈子"`），跑完块级复核/密集场景路由/称呼回查等全部纠错
+阶段，再用 `model_dump(mode="json")` 正确序列化，产出 `parse.json`（含 21 字段 + 完整 stats）
+和初版 `transcript.txt`。完成后会打印实际跑过的流水线阶段，确认不是裸直出。
+
+> ❌ **绝不要**用「裸 `agnes-2.0-flash` 单遍调用」拼 parse —— 那会缺纠错阶段和字段，
+> `model_speaker` 不可比，Step 5 会被溯源校验 FAIL。详见 Step 5 的翻车点说明。
+
+`transcript.txt` 会在 Step 4 由 `build_groundtruth.py` 从最终 parse 再重生成一次，保持同步。
 
 ### Step 3 — 人工/AI 复核 → `review.json`
 
@@ -132,7 +138,14 @@ output_mode="compact", disable_thinking=True, narrator="甘织玲奈子"`。
 ```
 
 交叉校验 parse / review / groundtruth 三者一致（段数、文本、修正落地、corrected 标记、
-corrected_indices、以及 5 项口径自洽）。输出 `✓ PASS` 才算合格。
+corrected_indices、以及 5 项口径自洽），**并校验 parse 确实是 BookVoiceParser 完整流水线产物**
+（stats 含 `block_review`/`address_term_backcheck`/`scene_state` 阶段、`attribution_type` 为小写
+JSON 值、段内含 `quote_id`/`candidates`/`scene_characters` 等字段）。输出 `✓ PASS` 才算合格。
+
+> ⚠️ 常见翻车点：图省事用「裸 `agnes-2.0-flash` 单遍直出」代替 Step 2 的完整流水线。这种 parse
+> 缺少复核阶段、字段残缺、`attribution_type` 会是 `"AttributionType.IMPLICIT"` 这种枚举 repr，
+> **`model_speaker` 是未经纠错的弱基线，与 seg1-5 不可比**。`verify_sample.py` 现在会直接 FAIL 拦下。
+> 已知一例：`muli4_seg6_bareflash_*` 即裸单遍版本（具名准确率 92.89%），作为对照基线保留，见下。
 
 ---
 
@@ -167,7 +180,20 @@ MODEL_BASE_URL=https://omnitok.xyz/v1 MODEL_NAME=gpt-5.5 MODEL_API_KEY=sk-... \
 
 ---
 
-## 5. 历史样本说明
+## 5. 对照基线（reference_baseline）
+
+如果想保留某种**非生产流水线**的解析做对比（如裸单遍模型），把它另存为 `*_bareflash_*` 一类的
+独立文件集，并在其 `groundtruth.json` 顶层加 `"reference_baseline": true`（再补一句 `reference_note`
+说明用途）。这样：
+
+- `verify_sample.py` 仍校验它内部一致，但**豁免流水线溯源**（降级为提示，不算 FAIL）；
+- 它不会被误当成权威样本参与流水线准确率统计。
+
+现有一例：`muli4_seg6_bareflash_*` = seg6 切片上裸 `agnes-2.0-flash` 单遍直出 + 人工复核，具名
+准确率 **92.89%**。留作和完整流水线版 `muli4_seg6_*` 在**同一段原文**上对比（看流水线复核到底加了
+多少分；注意两者切分段数不同，需按文本而非段号对齐比较）。
+
+## 6. 历史样本说明
 
 `seg1`~`seg4` 早于本固化工具，用的是手工记账：早期把群众写成裸名（如 `女生小团体`，
 groundtruth 里才补 `群众·` 前缀）、`named_corrections` 有 ±1~2 的人工漂移、seg2/seg3 没有口径字段。

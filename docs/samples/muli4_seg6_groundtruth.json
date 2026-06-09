@@ -1,0 +1,1610 @@
+{
+  "source": {
+    "raw_file": "docs/samples/muli4_seg6_sample.txt",
+    "parse_file": "docs/samples/muli4_seg6_parse.json",
+    "parser": "agnes-2.0-flash + block_review + dense_scene_review_routing + address_term_backcheck",
+    "finalized": "2026-06-09T14:50:13",
+    "human_reviewed": true,
+    "crowd_convention": "群众·<群体名>，评分按 crowd:true 排除"
+  },
+  "total_segments": 225,
+  "crowd_segments": 0,
+  "named_corrections": 16,
+  "named_total": 225,
+  "model_named_accuracy": 0.9289,
+  "corrected_indices": [
+    26,
+    42,
+    81,
+    92,
+    93,
+    101,
+    104,
+    109,
+    110,
+    113,
+    114,
+    115,
+    117,
+    119,
+    120,
+    123
+  ],
+  "segments": [
+    {
+      "i": 0,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "才不是啊！有名的神级Coser大佬都差不多是前300名左右的。在这底下基本上是大混战状态！所以我其实，根本，其实，也没什么啊！",
+      "corrected": false
+    },
+    {
+      "i": 1,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "既然是幕张的Cosplay高峰会，肯定只会邀请前100名的Coser，因为那就算在日本也是屈指可数的惊人活动……",
+      "corrected": false
+    },
+    {
+      "i": 2,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "………所以，我觉得只是主办方有发掘新人的想法，然后我只是被选上那个空缺。",
+      "corrected": false
+    },
+    {
+      "i": 3,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "小香穗好厉害！",
+      "corrected": false
+    },
+    {
+      "i": 4,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "小香穗果然好厉害！小香穗最棒了！",
+      "corrected": false
+    },
+    {
+      "i": 5,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "拒绝好了……",
+      "corrected": false
+    },
+    {
+      "i": 6,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "等等！？为什么！？",
+      "corrected": false
+    },
+    {
+      "i": 7,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "我没办法参加对不起",
+      "corrected": false
+    },
+    {
+      "i": 8,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "因为要是连我这种人都去参加的话，这样对其他无法参加的人会很过意不去的……",
+      "corrected": false
+    },
+    {
+      "i": 9,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "可是被选上的是小香穗啊！？你大可抬头挺胸的！",
+      "corrected": false
+    },
+    {
+      "i": 10,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "比起我，明明还有很多很多更认真看待Cosplay的人啊……要是我出场的话，大家都会不舒服的……",
+      "corrected": false
+    },
+    {
+      "i": 11,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "才不是！这只是小香穗一直以来所做的一切被认同了啊！",
+      "corrected": false
+    },
+    {
+      "i": 12,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "因为你一直都很开心地在Cosplay，让许多的人也因此开心了啊！所以，你真的很厉害！你一直都有在努力啊！",
+      "corrected": false
+    },
+    {
+      "i": 13,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "所以，那个，要你马上做出决定，或许是很难没错……",
+      "corrected": false
+    },
+    {
+      "i": 14,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "试试看吧，小香穗。只要是我能做到的，不论什么我都会帮你的。",
+      "corrected": false
+    },
+    {
+      "i": 15,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "玲奈亲……",
+      "corrected": false
+    },
+    {
+      "i": 16,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "谢谢你，很谢谢你愿意这么说……虽然一直以来也不全都是快乐的事情，也有很多时候想要放弃，可是，嗯。我会再好好考虑一下的……",
+      "corrected": false
+    },
+    {
+      "i": 17,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "嗯！",
+      "corrected": false
+    },
+    {
+      "i": 18,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "小香穗，你要睡了吗？",
+      "corrected": false
+    },
+    {
+      "i": 19,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "嗯……稍微有点困了……",
+      "corrected": false
+    },
+    {
+      "i": 20,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "小香穗，再几步就到床上了哦。",
+      "corrected": false
+    },
+    {
+      "i": 21,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "嗯唔……",
+      "corrected": false
+    },
+    {
+      "i": 22,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "想变成美女",
+      "corrected": false
+    },
+    {
+      "i": 23,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "玲奈亲～……",
+      "corrected": false
+    },
+    {
+      "i": 24,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "来了～",
+      "corrected": false
+    },
+    {
+      "i": 25,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "小、小香穗？",
+      "corrected": false
+    },
+    {
+      "i": 26,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "小柳香穗",
+      "text": "唉？怎么了？怎么回事？",
+      "corrected": true
+    },
+    {
+      "i": 27,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "没有抱枕我睡不着",
+      "corrected": false
+    },
+    {
+      "i": 28,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "玲奈亲的肚子，好软好软……是个好枕头，睡起来好舒服……",
+      "corrected": false
+    },
+    {
+      "i": 29,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "是吗！？呃，谢谢你的夸奖！？",
+      "corrected": false
+    },
+    {
+      "i": 30,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "软得恰到好处的话，好像会比较受欢迎喔。",
+      "corrected": false
+    },
+    {
+      "i": 31,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "我说……玲奈亲，你还喜欢……真唯吗？",
+      "corrected": false
+    },
+    {
+      "i": 32,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "这……",
+      "corrected": false
+    },
+    {
+      "i": 33,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "玲奈亲，你该不会也喜欢真唯吧！？",
+      "corrected": false
+    },
+    {
+      "i": 34,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "……嗯，大概，喜欢吧。",
+      "corrected": false
+    },
+    {
+      "i": 35,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "这样啊。",
+      "corrected": false
+    },
+    {
+      "i": 36,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "我也不会输给你的喔。",
+      "corrected": false
+    },
+    {
+      "i": 37,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "嗯，小香穗。",
+      "corrected": false
+    },
+    {
+      "i": 38,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "我也会加油的。",
+      "corrected": false
+    },
+    {
+      "i": 39,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "嗯！",
+      "corrected": false
+    },
+    {
+      "i": 40,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "……差不多，该睡了吧，小香穗。",
+      "corrected": false
+    },
+    {
+      "i": 41,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "承担对方的人生",
+      "corrected": false
+    },
+    {
+      "i": 42,
+      "speaker": "美知留",
+      "model_speaker": "甘织玲奈子",
+      "text": "王冢同学～？",
+      "corrected": true
+    },
+    {
+      "i": 43,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "呃，对。",
+      "corrected": false
+    },
+    {
+      "i": 44,
+      "speaker": "美知留",
+      "model_speaker": "美知留",
+      "text": "呃，对不起哦，我这边好像没看到她～",
+      "corrected": false
+    },
+    {
+      "i": 45,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "这、这样啊。好的，我会去找看看。谢谢老师。",
+      "corrected": false
+    },
+    {
+      "i": 46,
+      "speaker": "美知留",
+      "model_speaker": "美知留",
+      "text": "啊，对了，甘织～不可以太常去屋顶喔。那里护栏很低，很危险的，不可以进去哦～",
+      "corrected": false
+    },
+    {
+      "i": 47,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "烦死了！",
+      "corrected": false
+    },
+    {
+      "i": 48,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊，好的，我知道了，对不起。",
+      "corrected": false
+    },
+    {
+      "i": 49,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "真唯……？",
+      "corrected": false
+    },
+    {
+      "i": 50,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "……是你啊。",
+      "corrected": false
+    },
+    {
+      "i": 51,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "刚刚……",
+      "corrected": false
+    },
+    {
+      "i": 52,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "不，没什么。那个，我想找你说点事。",
+      "corrected": false
+    },
+    {
+      "i": 53,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "这样啊，真是巧呢，其实我也是。",
+      "corrected": false
+    },
+    {
+      "i": 54,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊，这样啊。",
+      "corrected": false
+    },
+    {
+      "i": 55,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "嗯，是啊。",
+      "corrected": false
+    },
+    {
+      "i": 56,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "那个，你先说吧。",
+      "corrected": false
+    },
+    {
+      "i": 57,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "啊，嗯，也好。",
+      "corrected": false
+    },
+    {
+      "i": 58,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "那么，就容我先开口了。",
+      "corrected": false
+    },
+    {
+      "i": 59,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "其实，这周日我好像能久违地休假，所以想邀请你。我们一起去约会吧。",
+      "corrected": false
+    },
+    {
+      "i": 60,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "约、约会！",
+      "corrected": false
+    },
+    {
+      "i": 61,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "看你这么惊讶，也不枉我鼓起勇气了呢。",
+      "corrected": false
+    },
+    {
+      "i": 62,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "刚、刚刚只是因为那句话碰巧戳中了我而已……",
+      "corrected": false
+    },
+    {
+      "i": 63,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "话是这么说，但不是只有我们两个人。我打算找紫阳花加入，我们三个人一起怎么样？",
+      "corrected": false
+    },
+    {
+      "i": 64,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "唉？三、三个人！？",
+      "corrected": false
+    },
+    {
+      "i": 65,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "当然，如果你不愿意的话……",
+      "corrected": false
+    },
+    {
+      "i": 66,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "等、等等，先等一下！",
+      "corrected": false
+    },
+    {
+      "i": 67,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "哎呀，不用那么防着我。我并不是要逼你现在做出决定。我只是觉得就这样坐等时间流逝的话，大家也都会难受的。你意下如何？如果对你负担太大的话，下次再找机会也是可以。",
+      "corrected": false
+    },
+    {
+      "i": 68,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "…………我知道了。",
+      "corrected": false
+    },
+    {
+      "i": 69,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "我很期待！",
+      "corrected": false
+    },
+    {
+      "i": 70,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "嗯……是吗。那么，我想想，机会难得，不如去游乐园吧。",
+      "corrected": false
+    },
+    {
+      "i": 71,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "游乐园！",
+      "corrected": false
+    },
+    {
+      "i": 72,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊，但你不可以包场喔！？我会不好意思到整个胃都炸开的！",
+      "corrected": false
+    },
+    {
+      "i": 73,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "知道了。不过是否要包场这件事，姑且也问问紫阳花的意见吧。如果意见不同，就采用多数决。",
+      "corrected": false
+    },
+    {
+      "i": 74,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "我们就以全员一致为目标吧！",
+      "corrected": false
+    },
+    {
+      "i": 75,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "话说，你找我有什么事？",
+      "corrected": false
+    },
+    {
+      "i": 76,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊，呃。嗯。",
+      "corrected": false
+    },
+    {
+      "i": 77,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "机会难得，那个，不然就留到约会的时候说吧。那个，嗯。",
+      "corrected": false
+    },
+    {
+      "i": 78,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "这样啊，好吧。我很期待喔。",
+      "corrected": false
+    },
+    {
+      "i": 79,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "？",
+      "corrected": false
+    },
+    {
+      "i": 80,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "没什么啦！",
+      "corrected": false
+    },
+    {
+      "i": 81,
+      "speaker": "王冢真唯",
+      "model_speaker": "甘织玲奈子",
+      "text": "我是那种想放晴就会放晴的女人",
+      "corrected": true
+    },
+    {
+      "i": 82,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "没想到我会和真唯还有紫阳花同学，三个人一起来游乐园玩啊。",
+      "corrected": false
+    },
+    {
+      "i": 83,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "早安，小玲奈。",
+      "corrected": false
+    },
+    {
+      "i": 84,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "早、早安！",
+      "corrected": false
+    },
+    {
+      "i": 85,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "怎、怎么了吗？",
+      "corrected": false
+    },
+    {
+      "i": 86,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "嗯～我在想，你今天会不会跟我说什么呢？所以才看着你。",
+      "corrected": false
+    },
+    {
+      "i": 87,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "说什么…………今、今天真是个好天气……？",
+      "corrected": false
+    },
+    {
+      "i": 88,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "就是啊～",
+      "corrected": false
+    },
+    {
+      "i": 89,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "假、假日也能见到紫阳花同学，我好开心喔！",
+      "corrected": false
+    },
+    {
+      "i": 90,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "嗯～～不客气。",
+      "corrected": false
+    },
+    {
+      "i": 91,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "呜哇──好可爱喔！",
+      "corrected": false
+    },
+    {
+      "i": 92,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "甘织玲奈子",
+      "text": "所以，小真唯还没来吗？",
+      "corrected": true
+    },
+    {
+      "i": 93,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "濑名紫阳花",
+      "text": "是、是啊。但是，说不定她已经坐豪华轿车到停车场了。",
+      "corrected": true
+    },
+    {
+      "i": 94,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "啊，那辆豪华轿车。下雨天的时候，小真唯偶尔也会坐豪华轿车来学校呢。好有大小姐的感觉，真厉害呢。",
+      "corrected": false
+    },
+    {
+      "i": 95,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "是小真唯打来的。喂。",
+      "corrected": false
+    },
+    {
+      "i": 96,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "小真唯说突然有工作，今天没办法过来了……",
+      "corrected": false
+    },
+    {
+      "i": 97,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "唉……？",
+      "corrected": false
+    },
+    {
+      "i": 98,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "她叫我们两个人好好玩……",
+      "corrected": false
+    },
+    {
+      "i": 99,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "唉唉唉唉……？",
+      "corrected": false
+    },
+    {
+      "i": 100,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "呃，既然是因为工作，那可能也没办法，不过……",
+      "corrected": false
+    },
+    {
+      "i": 101,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "甘织玲奈子",
+      "text": "嗯……该怎么办呢？",
+      "corrected": true
+    },
+    {
+      "i": 102,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊，既然真唯不在，那我就回去了。明天学校见！",
+      "corrected": false
+    },
+    {
+      "i": 103,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "那、那就我们两个人去玩吧……",
+      "corrected": false
+    },
+    {
+      "i": 104,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "甘织玲奈子",
+      "text": "可是……",
+      "corrected": true
+    },
+    {
+      "i": 105,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "我们两个一起玩翻天吧！走吧走吧！哎呀～我好期待这次来游乐园喔！而且还是和紫阳花同学两个人！耶～耶～！",
+      "corrected": false
+    },
+    {
+      "i": 106,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "哇。",
+      "corrected": false
+    },
+    {
+      "i": 107,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊，不，那个，不是这样的！",
+      "corrected": false
+    },
+    {
+      "i": 108,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "嗯、嗯……我知道。今天就……请多关照了。",
+      "corrected": false
+    },
+    {
+      "i": 109,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "甘织玲奈子",
+      "text": "机会难得，我们两个人一起好好玩吧。",
+      "corrected": true
+    },
+    {
+      "i": 110,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "王冢真唯",
+      "text": "小玲奈，你敢坐云霄飞车吗？……小玲奈？",
+      "corrected": true
+    },
+    {
+      "i": 111,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊，可以。",
+      "corrected": false
+    },
+    {
+      "i": 112,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "我不用",
+      "corrected": false
+    },
+    {
+      "i": 113,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "王冢真唯",
+      "text": "呃，那紫阳花同学呢？",
+      "corrected": true
+    },
+    {
+      "i": 114,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "王冢真唯",
+      "text": "我有点想试试呢。",
+      "corrected": true
+    },
+    {
+      "i": 115,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "王冢真唯",
+      "text": "如果是和家人来的话，坐什么都得配合小鬼头，每次都是坐旋转木马或是咖啡杯什么的。真是的，都已经是高中生了，这样我会有点害羞啦。",
+      "corrected": true
+    },
+    {
+      "i": 116,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "原来如此！那就去坐吧！",
+      "corrected": false
+    },
+    {
+      "i": 117,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "王冢真唯",
+      "text": "可以吗？",
+      "corrected": true
+    },
+    {
+      "i": 118,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "嗯，没事，我当然没事。毕竟我可是连3D都不怎么会晕的体质！",
+      "corrected": false
+    },
+    {
+      "i": 119,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "王冢真唯",
+      "text": "这样啊，那么，云霄飞车也有很多种类。",
+      "corrected": true
+    },
+    {
+      "i": 120,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "王冢真唯",
+      "text": "怎么了？",
+      "corrected": true
+    },
+    {
+      "i": 121,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊，没有。",
+      "corrected": false
+    },
+    {
+      "i": 122,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "就是觉得，紫阳花同学今天也好可爱这样……",
+      "corrected": false
+    },
+    {
+      "i": 123,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "王冢真唯",
+      "text": "啊，那句。",
+      "corrected": true
+    },
+    {
+      "i": 124,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "你终于肯说我可爱了呢。",
+      "corrected": false
+    },
+    {
+      "i": 125,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "唔唉！？",
+      "corrected": false
+    },
+    {
+      "i": 126,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "不不不……我讲出来的次数，根本只有我在心里想的百分之一……",
+      "corrected": false
+    },
+    {
+      "i": 127,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "……也就是说，你在心里想了至少一百次？",
+      "corrected": false
+    },
+    {
+      "i": 128,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "说、说不定是这样呢……",
+      "corrected": false
+    },
+    {
+      "i": 129,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "唉～？",
+      "corrected": false
+    },
+    {
+      "i": 130,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "不，一百倍还算少呢！因为紫阳花同学每分每秒都好可爱。现在这个瞬间也很可爱！超可爱！",
+      "corrected": false
+    },
+    {
+      "i": 131,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "这、这样的话～……",
+      "corrected": false
+    },
+    {
+      "i": 132,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那我希望你想到的时候，能好好用讲的表达出来呢～这样？",
+      "corrected": false
+    },
+    {
+      "i": 133,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "砂糖很甜",
+      "corrected": false
+    },
+    {
+      "i": 134,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "夕阳很红",
+      "corrected": false
+    },
+    {
+      "i": 135,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "我知道了。紫阳花同学好可爱。",
+      "corrected": false
+    },
+    {
+      "i": 136,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "这么突然的吗！？",
+      "corrected": false
+    },
+    {
+      "i": 137,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "惊讶的紫阳花同学好可爱。紫阳花同学的吐槽也好可爱。基本上声音就很可爱。",
+      "corrected": false
+    },
+    {
+      "i": 138,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "要、要走了喔，小玲奈！",
+      "corrected": false
+    },
+    {
+      "i": 139,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊啊，迈出步伐的紫阳花同学好可爱。一步一步的走路声也好可爱。简直就是可爱穿着可爱在走路，好可爱。背影看起来也好可爱啊。",
+      "corrected": false
+    },
+    {
+      "i": 140,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "我已经知道了啦！是我错了啦～！",
+      "corrected": false
+    },
+    {
+      "i": 141,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "不行！",
+      "corrected": false
+    },
+    {
+      "i": 142,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "感、感觉现在心跳得好快……",
+      "corrected": false
+    },
+    {
+      "i": 143,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "嗯、嗯，我也开始紧张起来了。好期待呢。",
+      "corrected": false
+    },
+    {
+      "i": 144,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "是不是应该别坐上来的……？",
+      "corrected": false
+    },
+    {
+      "i": 145,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "咿──",
+      "corrected": false
+    },
+    {
+      "i": 146,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "呀──────",
+      "corrected": false
+    },
+    {
+      "i": 147,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "好赞喔！好开心呢，小玲奈！",
+      "corrected": false
+    },
+    {
+      "i": 148,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "好、好好、好……",
+      "corrected": false
+    },
+    {
+      "i": 149,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "小、小玲奈？果，果然还是太可怕了吗？要不要稍微休息一下……？",
+      "corrected": false
+    },
+    {
+      "i": 150,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "──好开心啊！",
+      "corrected": false
+    },
+    {
+      "i": 151,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "感、感觉小玲奈的眼睛一下子闪闪发光！",
+      "corrected": false
+    },
+    {
+      "i": 152,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "嗯！真的很开心！好舒服啊！",
+      "corrected": false
+    },
+    {
+      "i": 153,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "小玲奈？",
+      "corrected": false
+    },
+    {
+      "i": 154,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "抱、抱歉，你刚刚说了什么？",
+      "corrected": false
+    },
+    {
+      "i": 155,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "没有啦，我只是问接下来要去哪。",
+      "corrected": false
+    },
+    {
+      "i": 156,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "也、也对。总之我想先征服所有的尖叫游乐设施！",
+      "corrected": false
+    },
+    {
+      "i": 157,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "小玲奈真起劲呢～啊，不过……",
+      "corrected": false
+    },
+    {
+      "i": 158,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "我想至少留下一个呢……为了下次和小真唯一起来的时候。",
+      "corrected": false
+    },
+    {
+      "i": 159,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊……",
+      "corrected": false
+    },
+    {
+      "i": 160,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "嗯。",
+      "corrected": false
+    },
+    {
+      "i": 161,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "要是真唯害怕尖叫游乐设施的话怎么办呢？",
+      "corrected": false
+    },
+    {
+      "i": 162,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "啊哈哈，搞不好她会有那种意外的一面呢～那样的话，到时就和小真唯三个人一起坐旋转木马吧。",
+      "corrected": false
+    },
+    {
+      "i": 163,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "唉～什么啦，超可爱的～好想拿手机录下来喔。",
+      "corrected": false
+    },
+    {
+      "i": 164,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "今天玩得好尽兴呢～",
+      "corrected": false
+    },
+    {
+      "i": 165,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "玩得好疯呢～",
+      "corrected": false
+    },
+    {
+      "i": 166,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "最后还能再坐一个吧。那个，紫阳花同学有什么想坐的吗？",
+      "corrected": false
+    },
+    {
+      "i": 167,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "啊，那么，呃。",
+      "corrected": false
+    },
+    {
+      "i": 168,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "怎么了怎么了？什么都可以，快说吧。毕竟今天一直都是我在提要求，最后就去紫阳花同学想去的地方吧！",
+      "corrected": false
+    },
+    {
+      "i": 169,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "我自己也想玩尖叫游乐设施，所以就这点来说我们是一样的～嗯，不过还是谢谢你，小玲奈。",
+      "corrected": false
+    },
+    {
+      "i": 170,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "不会不会！",
+      "corrected": false
+    },
+    {
+      "i": 171,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "其实，我在想会不会还有点早……不过机会难得，我想和你一起去坐。",
+      "corrected": false
+    },
+    {
+      "i": 172,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那个……我一直想着，有一天，要和喜欢的人一起坐摩天轮呢。",
+      "corrected": false
+    },
+    {
+      "i": 173,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊，那个……",
+      "corrected": false
+    },
+    {
+      "i": 174,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "……嗯。",
+      "corrected": false
+    },
+    {
+      "i": 175,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "走吧。",
+      "corrected": false
+    },
+    {
+      "i": 176,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "嗯……小玲奈。",
+      "corrected": false
+    },
+    {
+      "i": 177,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "……那个，小玲奈。",
+      "corrected": false
+    },
+    {
+      "i": 178,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊，是。",
+      "corrected": false
+    },
+    {
+      "i": 179,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "我呢……现在非常紧张。",
+      "corrected": false
+    },
+    {
+      "i": 180,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "这、这样啊……我也是……",
+      "corrected": false
+    },
+    {
+      "i": 181,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "所以，那个……可能，会做出很奇怪的事，吓到小玲奈也不一定。如果吓到你了，就先跟你对不起哦。",
+      "corrected": false
+    },
+    {
+      "i": 182,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "这、这样啊……但是没关系的！因为，我已经习惯受到惊吓了！",
+      "corrected": false
+    },
+    {
+      "i": 183,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "没、没事吧？要不要让玲奈子姊姊跟你说好乖好乖～什么的……",
+      "corrected": false
+    },
+    {
+      "i": 184,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "真是的……现在不该做那种事情啦。",
+      "corrected": false
+    },
+    {
+      "i": 185,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "对不起！",
+      "corrected": false
+    },
+    {
+      "i": 186,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "小、小玲奈……",
+      "corrected": false
+    },
+    {
+      "i": 187,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "是，那个……",
+      "corrected": false
+    },
+    {
+      "i": 188,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "……我喜欢你。",
+      "corrected": false
+    },
+    {
+      "i": 189,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "…………唔、嗯……",
+      "corrected": false
+    },
+    {
+      "i": 190,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "我……喜欢小玲奈喔……今天一天，很谢谢你。",
+      "corrected": false
+    },
+    {
+      "i": 191,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "不……我才是……",
+      "corrected": false
+    },
+    {
+      "i": 192,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "我很开心。",
+      "corrected": false
+    },
+    {
+      "i": 193,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "嗯，我也是。",
+      "corrected": false
+    },
+    {
+      "i": 194,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "唉…………讲出喜欢这句话，真的很需要勇气呢。小玲奈好厉害啊……",
+      "corrected": false
+    },
+    {
+      "i": 195,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "是、是吗？",
+      "corrected": false
+    },
+    {
+      "i": 196,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "因为你平常总是一直喜欢喜欢的对我说个不停嘛。",
+      "corrected": false
+    },
+    {
+      "i": 197,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "呃……那个和可爱是一样的，全都是我的真心话……",
+      "corrected": false
+    },
+    {
+      "i": 198,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "喜欢",
+      "corrected": false
+    },
+    {
+      "i": 199,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "啊哈。",
+      "corrected": false
+    },
+    {
+      "i": 200,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "不过，像这样并肩坐着摩天轮，两个人单独约会，必须要向学校的大家保密呢。",
+      "corrected": false
+    },
+    {
+      "i": 201,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "就、就是啊。",
+      "corrected": false
+    },
+    {
+      "i": 202,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "是秘密哦。来，小玲奈也一起做。",
+      "corrected": false
+    },
+    {
+      "i": 203,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "嗯。",
+      "corrected": false
+    },
+    {
+      "i": 204,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "是秘密──",
+      "corrected": false
+    },
+    {
+      "i": 205,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "咦──",
+      "corrected": false
+    },
+    {
+      "i": 206,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "啊哈……",
+      "corrected": false
+    },
+    {
+      "i": 207,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "……好紧张啊。",
+      "corrected": false
+    },
+    {
+      "i": 208,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "紫……紫阳花同学……",
+      "corrected": false
+    },
+    {
+      "i": 209,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "嗯，那个啊。",
+      "corrected": false
+    },
+    {
+      "i": 210,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "因为，我和小玲奈还没有交往，所以不可以接吻。可是，我很想这么做……因为实在太想了，所以就隔着手指……接吻了。",
+      "corrected": false
+    },
+    {
+      "i": 211,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那么，拜拜啰，小玲奈。",
+      "corrected": false
+    },
+    {
+      "i": 212,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "嗯……回去的路上要小心哦，紫阳花同学。",
+      "corrected": false
+    },
+    {
+      "i": 213,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "小玲奈也是啦。因为你是个非常可爱的女孩子。",
+      "corrected": false
+    },
+    {
+      "i": 214,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "是、是吗？这样啊。",
+      "corrected": false
+    },
+    {
+      "i": 215,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那就，那个……晚安。",
+      "corrected": false
+    },
+    {
+      "i": 216,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "好～晚安。",
+      "corrected": false
+    },
+    {
+      "i": 217,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "下次，小真唯也要一起哦。",
+      "corrected": false
+    },
+    {
+      "i": 218,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "嗯……真唯也要一起。",
+      "corrected": false
+    },
+    {
+      "i": 219,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "……唉……",
+      "corrected": false
+    },
+    {
+      "i": 220,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "下次，真唯和紫阳花同学来学校之后，到时，我一定要好好地……好好地……",
+      "corrected": false
+    },
+    {
+      "i": 221,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "我决定参加在幕张举办的Cosplay高峰会了。",
+      "corrected": false
+    },
+    {
+      "i": 222,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "我果然……还是喜欢Cosplay。若是让其他人代替我出场的话，我一定，绝对，会后悔的。",
+      "corrected": false
+    },
+    {
+      "i": 223,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "所以呢，就算有许多人说我不配出现在那里……我还是想参加。因为那里是我憧憬的地方。",
+      "corrected": false
+    },
+    {
+      "i": 224,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "喜欢",
+      "corrected": false
+    }
+  ]
+}

@@ -1,0 +1,1810 @@
+{
+  "segments": [
+    {
+      "i": 0,
+      "speaker": "小柳香穗",
+      "text": "才不是啊！有名的神级Coser大佬都差不多是前300名左右的。在这底下基本上是大混战状态！所以我其实，根本，其实，也没什么啊！",
+      "confidence": 0.95,
+      "evidence": "紧前文「小香穗拼命摇头否定」，且台词为否定语气；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 1,
+      "speaker": "小柳香穗",
+      "text": "既然是幕张的Cosplay高峰会，肯定只会邀请前100名的Coser，因为那就算在日本也是屈指可数的惊人活动……",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→小柳香穗",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 2,
+      "speaker": "小柳香穗",
+      "text": "………所以，我觉得只是主办方有发掘新人的想法，然后我只是被选上那个空缺。",
+      "confidence": 0.95,
+      "evidence": "紧前文香穗停止，且台词含「我」指代自己，承接上文",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 3,
+      "speaker": "甘织玲奈子",
+      "text": "小香穗好厉害！",
+      "confidence": 0.95,
+      "evidence": "紧前文叙述者感想，且台词为对香穗的夸奖",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 4,
+      "speaker": "甘织玲奈子",
+      "text": "小香穗果然好厉害！小香穗最棒了！",
+      "confidence": 0.95,
+      "evidence": "紧前文叙述者内心独白，且台词为情绪高涨的夸奖",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 5,
+      "speaker": "小柳香穗",
+      "text": "拒绝好了……",
+      "confidence": 0.95,
+      "evidence": "紧前文香穗眼神游移，且台词为拒绝参加",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 6,
+      "speaker": "甘织玲奈子",
+      "text": "等等！？为什么！？",
+      "confidence": 0.95,
+      "evidence": "紧前文香穗拒绝，且台词为惊讶反问",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 7,
+      "speaker": "小柳香穗",
+      "text": "我没办法参加对不起",
+      "confidence": 0.95,
+      "evidence": "紧前文叙述者描述香穗打讯息，且台词为讯息内容",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 8,
+      "speaker": "小柳香穗",
+      "text": "因为要是连我这种人都去参加的话，这样对其他无法参加的人会很过意不去的……",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子制止，轮换；台词含“我这种”",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 9,
+      "speaker": "甘织玲奈子",
+      "text": "可是被选上的是小香穗啊！？你大可抬头挺胸的！",
+      "confidence": 0.95,
+      "evidence": "紧前文香穗自谦，轮换；台词含“小香穗”",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 10,
+      "speaker": "小柳香穗",
+      "text": "比起我，明明还有很多很多更认真看待Cosplay的人啊……要是我出场的话，大家都会不舒服的……",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子鼓励，轮换；台词含“我出场”",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 11,
+      "speaker": "甘织玲奈子",
+      "text": "才不是！这只是小香穗一直以来所做的一切被认同了啊！",
+      "confidence": 0.95,
+      "evidence": "紧前文香穗自卑，轮换；紧前文有“可是！”",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 12,
+      "speaker": "甘织玲奈子",
+      "text": "因为你一直都很开心地在Cosplay，让许多的人也因此开心了啊！所以，你真的很厉害！你一直都有在努力啊！",
+      "confidence": 0.95,
+      "evidence": "紧前文「如此开导她」，明确归属；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 13,
+      "speaker": "甘织玲奈子",
+      "text": "所以，那个，要你马上做出决定，或许是很难没错……",
+      "confidence": 0.9,
+      "evidence": "紧前文为旁白叙述，延续上一句说话人；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 14,
+      "speaker": "甘织玲奈子",
+      "text": "试试看吧，小香穗。只要是我能做到的，不论什么我都会帮你的。",
+      "confidence": 0.95,
+      "evidence": "紧前文「注视着她的眼睛」，动作主语为玲奈子；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 15,
+      "speaker": "小柳香穗",
+      "text": "玲奈亲……",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子发言，轮换；称呼“玲奈亲”；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 16,
+      "speaker": "小柳香穗",
+      "text": "谢谢你，很谢谢你愿意这么说……虽然一直以来也不全都是快乐的事情，也有很多时候想要放弃，可是，嗯。我会再好好考虑一下的……",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子鼓励，香穗回应感谢；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 17,
+      "speaker": "甘织玲奈子",
+      "text": "嗯！",
+      "confidence": 0.95,
+      "evidence": "紧前文香穗表态，玲奈子回应肯定",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 18,
+      "speaker": "甘织玲奈子",
+      "text": "小香穗，你要睡了吗？",
+      "confidence": 0.95,
+      "evidence": "紧前文叙述者动作，玲奈子询问；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 19,
+      "speaker": "小柳香穗",
+      "text": "嗯……稍微有点困了……",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子询问，香穗回答困倦；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 20,
+      "speaker": "甘织玲奈子",
+      "text": "小香穗，再几步就到床上了哦。",
+      "confidence": 0.95,
+      "evidence": "紧前文叙述者视角，玲奈子引导动作；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 21,
+      "speaker": "小柳香穗",
+      "text": "嗯唔……",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子引导，香穗发出声音",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 22,
+      "speaker": "小柳香穗",
+      "text": "想变成美女",
+      "confidence": 0.95,
+      "evidence": "紧前文叙述者心理活动，香穗接话；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 23,
+      "speaker": "小柳香穗",
+      "text": "玲奈亲～……",
+      "confidence": 0.95,
+      "evidence": "紧前文叙述者心理活动，香穗呼唤；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 24,
+      "speaker": "甘织玲奈子",
+      "text": "来了～",
+      "confidence": 0.95,
+      "evidence": "紧前文「小香穗...想变成美女」，称呼「玲奈亲」，且为回应呼唤；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 25,
+      "speaker": "甘织玲奈子",
+      "text": "小、小香穗？",
+      "confidence": 0.69,
+      "evidence": "紧前文描述「我」的感觉，且称呼对方为「小香穗」；仅叙述者锚点支持，场景含未命名人物；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 26,
+      "speaker": "小柳香穗",
+      "text": "唉？怎么了？怎么回事？",
+      "confidence": 0.95,
+      "evidence": "紧前文「小香穗...」，且为回应「小、小香穗？」的疑问",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 27,
+      "speaker": "小柳香穗",
+      "text": "没有抱枕我睡不着",
+      "confidence": 0.93,
+      "evidence": "前显性：「要是现在小香穗对我说」；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 28,
+      "speaker": "小柳香穗",
+      "text": "玲奈亲的肚子，好软好软……是个好枕头，睡起来好舒服……",
+      "confidence": 0.95,
+      "evidence": "紧前文「小香穗...喃喃自语」，内容涉及「玲奈亲」；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 29,
+      "speaker": "甘织玲奈子",
+      "text": "是吗！？呃，谢谢你的夸奖！？",
+      "confidence": 0.95,
+      "evidence": "紧前文「小香穗...好舒服」，且为回应夸奖；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 30,
+      "speaker": "小柳香穗",
+      "text": "软得恰到好处的话，好像会比较受欢迎喔。",
+      "confidence": 0.95,
+      "evidence": "紧前文「她轻笑两声」，且为对「胖」的回应；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 31,
+      "speaker": "小柳香穗",
+      "text": "我说……玲奈亲，你还喜欢……真唯吗？",
+      "confidence": 0.95,
+      "evidence": "紧前文「小香穗...问了我问题」，且称呼「玲奈亲」；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 32,
+      "speaker": "甘织玲奈子",
+      "text": "这……",
+      "confidence": 0.95,
+      "evidence": "紧前文「小香穗...问...」，且为对问题的回答；场景状态：小柳香穗 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 33,
+      "speaker": "小柳香穗",
+      "text": "玲奈亲，你该不会也喜欢真唯吧！？",
+      "confidence": 0.95,
+      "evidence": "紧前文回忆小香穗问过，且台词为反问句，符合上下文回忆语境；场景状态：小柳香穗 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 34,
+      "speaker": "甘织玲奈子",
+      "text": "……嗯，大概，喜欢吧。",
+      "confidence": 0.92,
+      "evidence": "紧前文「我...开口说道」，主语为叙述者我",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 35,
+      "speaker": "小柳香穗",
+      "text": "这样啊。",
+      "confidence": 0.92,
+      "evidence": "紧前文「我感觉她笑了」，且为对话轮换；场景状态：小柳香穗 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 36,
+      "speaker": "小柳香穗",
+      "text": "我也不会输给你的喔。",
+      "confidence": 0.81,
+      "evidence": "紧前文甘织玲奈子内心独白结束，小香穗回应，符合对话轮换；双人重复惩罚：小柳香穗 连续发言，可能应为 甘织玲奈子，建议复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 37,
+      "speaker": "甘织玲奈子",
+      "text": "嗯，小香穗。",
+      "confidence": 0.92,
+      "evidence": "紧前文内心独白，且后文「我抚摸着她」，主语为叙述者我",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 38,
+      "speaker": "甘织玲奈子",
+      "text": "我也会加油的。",
+      "confidence": 0.6499999999999999,
+      "evidence": "块级结构化复核：轮次归属 小柳香穗→甘织玲奈子；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 39,
+      "speaker": "小柳香穗",
+      "text": "嗯！",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文小香穗回应，且后文描述小香穗动作，主语为小香穗；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 40,
+      "speaker": "甘织玲奈子",
+      "text": "……差不多，该睡了吧，小香穗。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文描述小香穗动作，后文「我刚说完」，主语为叙述者我；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 41,
+      "speaker": "甘织玲奈子",
+      "text": "承担对方的人生",
+      "confidence": 0.6499999999999999,
+      "evidence": "叙述者内心独白，承接上文心理描写；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 42,
+      "speaker": "美知留",
+      "text": "王冢同学～？",
+      "confidence": 0.6499999999999999,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→美知留；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 43,
+      "speaker": "甘织玲奈子",
+      "text": "呃，对。",
+      "confidence": 0.6499999999999999,
+      "evidence": "块级结构化复核：轮次归属 美知留→甘织玲奈子；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 44,
+      "speaker": "美知留",
+      "text": "呃，对不起哦，我这边好像没看到她～",
+      "confidence": 0.92,
+      "evidence": "紧前文「呃，对」为玲奈子回答，此句为老师回应；场景状态：美知留 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_AFTER"
+    },
+    {
+      "i": 45,
+      "speaker": "甘织玲奈子",
+      "text": "这、这样啊。好的，我会去找看看。谢谢老师。",
+      "confidence": 0.92,
+      "evidence": "紧前文老师否认看到真唯，此句为玲奈子回应；场景状态：美知留 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_AFTER"
+    },
+    {
+      "i": 46,
+      "speaker": "美知留",
+      "text": "啊，对了，甘织～不可以太常去屋顶喔。那里护栏很低，很危险的，不可以进去哦～",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文「身后传来老师的声音」，此句为老师叮嘱；场景状态：美知留 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.EXPLICIT_AFTER"
+    },
+    {
+      "i": 47,
+      "speaker": "甘织玲奈子",
+      "text": "烦死了！",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文心理活动提及“烦死了”，此处为内心吐槽；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 48,
+      "speaker": "甘织玲奈子",
+      "text": "啊，好的，我知道了，对不起。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文老师叮嘱，此句为玲奈子道歉回应；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.EXPLICIT_AFTER"
+    },
+    {
+      "i": 49,
+      "speaker": "甘织玲奈子",
+      "text": "真唯……？",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文为叙述者心理活动，且为对话块首句，叙述者视角；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 50,
+      "speaker": "王冢真唯",
+      "text": "……是你啊。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文「真唯转过头」，动作主语为真唯，且轮换；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 51,
+      "speaker": "甘织玲奈子",
+      "text": "刚刚……",
+      "confidence": 0.95,
+      "evidence": "紧前文为叙述者心理活动，且轮换",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 52,
+      "speaker": "甘织玲奈子",
+      "text": "不，没什么。那个，我想找你说点事。",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 王冢真唯→甘织玲奈子",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 53,
+      "speaker": "王冢真唯",
+      "text": "这样啊，真是巧呢，其实我也是。",
+      "confidence": 0.95,
+      "evidence": "紧前文描述真唯笑容，且轮换；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 54,
+      "speaker": "甘织玲奈子",
+      "text": "啊，这样啊。",
+      "confidence": 0.95,
+      "evidence": "紧前文为真唯台词，且轮换；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 55,
+      "speaker": "王冢真唯",
+      "text": "嗯，是啊。",
+      "confidence": 0.95,
+      "evidence": "紧前文为甘织玲奈子台词，且轮换；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 56,
+      "speaker": "甘织玲奈子",
+      "text": "那个，你先说吧。",
+      "confidence": 0.95,
+      "evidence": "紧前文为叙述者动作描写，且轮换；场景状态：小柳香穗 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 57,
+      "speaker": "王冢真唯",
+      "text": "啊，嗯，也好。",
+      "confidence": 0.95,
+      "evidence": "上句玲奈子，轮换；后文真唯微笑；场景状态：小柳香穗 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 58,
+      "speaker": "王冢真唯",
+      "text": "那么，就容我先开口了。",
+      "confidence": 0.95,
+      "evidence": "上句玲奈子，轮换；后文真唯微笑；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 59,
+      "speaker": "王冢真唯",
+      "text": "其实，这周日我好像能久违地休假，所以想邀请你。我们一起去约会吧。",
+      "confidence": 0.95,
+      "evidence": "紧前文「真唯露出了...微笑」后接台词；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 60,
+      "speaker": "甘织玲奈子",
+      "text": "约、约会！",
+      "confidence": 0.95,
+      "evidence": "上句真唯，轮换；后文「看见我夸张反应」；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 61,
+      "speaker": "王冢真唯",
+      "text": "看你这么惊讶，也不枉我鼓起勇气了呢。",
+      "confidence": 0.95,
+      "evidence": "上句玲奈子，轮换；后文「真唯耸了耸肩」；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 62,
+      "speaker": "甘织玲奈子",
+      "text": "刚、刚刚只是因为那句话碰巧戳中了我而已……",
+      "confidence": 0.95,
+      "evidence": "上句真唯，轮换；后文「我讲了...借口」；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 63,
+      "speaker": "王冢真唯",
+      "text": "话是这么说，但不是只有我们两个人。我打算找紫阳花加入，我们三个人一起怎么样？",
+      "confidence": 0.95,
+      "evidence": "上句玲奈子，轮换；后文「真唯耸了耸肩」；场景状态：王冢真唯 由动作/登场语义加入当前场景；称呼反推：紫阳花 在相邻同称呼块中指向 甘织玲奈子(0.95)，作为候选保留",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 64,
+      "speaker": "甘织玲奈子",
+      "text": "唉？三、三个人！？",
+      "confidence": 0.95,
+      "evidence": "上句真唯，轮换；后文「我反覆眨眼」；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 65,
+      "speaker": "王冢真唯",
+      "text": "当然，如果你不愿意的话……",
+      "confidence": 0.95,
+      "evidence": "紧前文为真唯提议，此处为补充说明；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 66,
+      "speaker": "甘织玲奈子",
+      "text": "等、等等，先等一下！",
+      "confidence": 0.95,
+      "evidence": "紧前文为玲奈子内心独白，此处为打断动作伴随台词；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 67,
+      "speaker": "王冢真唯",
+      "text": "哎呀，不用那么防着我。我并不是要逼你现在做出决定。我只是觉得就这样坐等时间流逝的话，大家也都会难受的。你意下如何？如果对你负担太大的话，下次再找机会也是可以。",
+      "confidence": 0.95,
+      "evidence": "紧前文「真唯微微抬头...」，主语为真唯；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 68,
+      "speaker": "甘织玲奈子",
+      "text": "…………我知道了。",
+      "confidence": 0.95,
+      "evidence": "紧前文为玲奈子点头动作，此处为回应",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 69,
+      "speaker": "甘织玲奈子",
+      "text": "我很期待！",
+      "confidence": 0.69,
+      "evidence": "紧前文为玲奈子握拳点头动作，此处为台词；仅叙述者锚点支持，场景含未命名人物",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 70,
+      "speaker": "王冢真唯",
+      "text": "嗯……是吗。那么，我想想，机会难得，不如去游乐园吧。",
+      "confidence": 0.95,
+      "evidence": "紧前文为玲奈子说期待，此处为真唯回应并提议",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 71,
+      "speaker": "甘织玲奈子",
+      "text": "游乐园！",
+      "confidence": 0.69,
+      "evidence": "紧前文为真唯提议游乐园，此处为玲奈子惊呼；仅叙述者锚点支持，场景含未命名人物",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 72,
+      "speaker": "甘织玲奈子",
+      "text": "啊，但你不可以包场喔！？我会不好意思到整个胃都炸开的！",
+      "confidence": 0.69,
+      "evidence": "紧前文为玲奈子心理活动，此处为补充请求；仅叙述者锚点支持，场景含未命名人物",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 73,
+      "speaker": "王冢真唯",
+      "text": "知道了。不过是否要包场这件事，姑且也问问紫阳花的意见吧。如果意见不同，就采用多数决。",
+      "confidence": 0.95,
+      "evidence": "上句玲奈子，轮换；回应包场提议；称呼反推：紫阳花 在相邻同称呼块中指向 甘织玲奈子(0.95)，作为候选保留",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 74,
+      "speaker": "甘织玲奈子",
+      "text": "我们就以全员一致为目标吧！",
+      "confidence": 0.95,
+      "evidence": "上句真唯，轮换；回应多数决；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 75,
+      "speaker": "王冢真唯",
+      "text": "话说，你找我有什么事？",
+      "confidence": 0.95,
+      "evidence": "上句玲奈子，轮换；后文真唯笑；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 76,
+      "speaker": "甘织玲奈子",
+      "text": "啊，呃。嗯。",
+      "confidence": 0.95,
+      "evidence": "上句真唯，轮换；后文我搔脸颊；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 77,
+      "speaker": "甘织玲奈子",
+      "text": "机会难得，那个，不然就留到约会的时候说吧。那个，嗯。",
+      "confidence": 0.95,
+      "evidence": "上句真唯，轮换；后文我害羞；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 78,
+      "speaker": "王冢真唯",
+      "text": "这样啊，好吧。我很期待喔。",
+      "confidence": 0.95,
+      "evidence": "上句玲奈子，轮换；后文我期待；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 79,
+      "speaker": "王冢真唯",
+      "text": "？",
+      "confidence": 0.6499999999999999,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→王冢真唯；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 80,
+      "speaker": "甘织玲奈子",
+      "text": "没什么啦！",
+      "confidence": 0.6499999999999999,
+      "evidence": "上句真唯，轮换；后文我否认；场景状态：小柳香穗 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 81,
+      "speaker": "甘织玲奈子",
+      "text": "我是那种想放晴就会放晴的女人",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文为叙述者心理活动，无对话标记，且为内心独白延续；场景状态：小柳香穗 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 82,
+      "speaker": "甘织玲奈子",
+      "text": "没想到我会和真唯还有紫阳花同学，三个人一起来游乐园玩啊。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文为叙述者心理活动，无对话标记，且为内心独白延续；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 83,
+      "speaker": "濑名紫阳花",
+      "text": "早安，小玲奈。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文「她看到我之后...」，主语为紫阳花，且称呼「小玲奈」符合其身份；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 84,
+      "speaker": "甘织玲奈子",
+      "text": "早、早安！",
+      "confidence": 0.95,
+      "evidence": "紧前文为紫阳花的台词，此为回应，且后文为玲奈子内心反应；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_AFTER"
+    },
+    {
+      "i": 85,
+      "speaker": "甘织玲奈子",
+      "text": "怎、怎么了吗？",
+      "confidence": 0.9,
+      "evidence": "紧前文为叙述者心理，且后文「嗯～」为紫阳花回答，故本句为玲奈子反问",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 86,
+      "speaker": "濑名紫阳花",
+      "text": "嗯～我在想，你今天会不会跟我说什么呢？所以才看着你。",
+      "confidence": 0.95,
+      "evidence": "紧前文为玲奈子的台词「怎、怎么了吗？」，此为紫阳花回答",
+      "attribution_type": "AttributionType.EXPLICIT_AFTER"
+    },
+    {
+      "i": 87,
+      "speaker": "甘织玲奈子",
+      "text": "说什么…………今、今天真是个好天气……？",
+      "confidence": 0.9,
+      "evidence": "紧前文为紫阳花台词，后文「答错了」表明此句为玲奈子回答错误",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 88,
+      "speaker": "濑名紫阳花",
+      "text": "就是啊～",
+      "confidence": 0.9,
+      "evidence": "紧前文为玲奈子台词，后文「紫阳花...比了个叉」表明此句为紫阳花回应",
+      "attribution_type": "AttributionType.EXPLICIT_AFTER"
+    },
+    {
+      "i": 89,
+      "speaker": "甘织玲奈子",
+      "text": "假、假日也能见到紫阳花同学，我好开心喔！",
+      "confidence": 0.95,
+      "evidence": "紧前文「我慌忙思考」，且台词为对紫阳花的回应，符合玲奈子视角；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 90,
+      "speaker": "濑名紫阳花",
+      "text": "嗯～～不客气。",
+      "confidence": 0.95,
+      "evidence": "紧前文「我思考」，对话轮换，且后文描述紫阳花低头回应；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 91,
+      "speaker": "甘织玲奈子",
+      "text": "呜哇──好可爱喔！",
+      "confidence": 0.95,
+      "evidence": "紧前文为玲奈子内心独白，且后文「小真唯还没来吗」是玲奈子发起的新话题",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 92,
+      "speaker": "甘织玲奈子",
+      "text": "所以，小真唯还没来吗？",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 濑名紫阳花→甘织玲奈子",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 93,
+      "speaker": "濑名紫阳花",
+      "text": "是、是啊。但是，说不定她已经坐豪华轿车到停车场了。",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→濑名紫阳花",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 94,
+      "speaker": "甘织玲奈子",
+      "text": "啊，那辆豪华轿车。下雨天的时候，小真唯偶尔也会坐豪华轿车来学校呢。好有大小姐的感觉，真厉害呢。",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 濑名紫阳花→甘织玲奈子",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 95,
+      "speaker": "濑名紫阳花",
+      "text": "是小真唯打来的。喂。",
+      "confidence": 0.95,
+      "evidence": "紧前文描述紫阳花拿出手机接电话，且台词为电话用语",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 96,
+      "speaker": "濑名紫阳花",
+      "text": "小真唯说突然有工作，今天没办法过来了……",
+      "confidence": 0.95,
+      "evidence": "紧前文描述紫阳花说完冲击性台词，且后文描述紫阳花害羞移开视线；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 97,
+      "speaker": "甘织玲奈子",
+      "text": "唉……？",
+      "confidence": 0.95,
+      "evidence": "紧前文紫阳花说完，玲奈子惊讶反问；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 98,
+      "speaker": "濑名紫阳花",
+      "text": "她叫我们两个人好好玩……",
+      "confidence": 0.98,
+      "evidence": "紧前文「紫阳花同学...这样说道」；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 99,
+      "speaker": "甘织玲奈子",
+      "text": "唉唉唉唉……？",
+      "confidence": 0.95,
+      "evidence": "紧前文紫阳花说完，玲奈子再次惊讶反问；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 100,
+      "speaker": "甘织玲奈子",
+      "text": "呃，既然是因为工作，那可能也没办法，不过……",
+      "confidence": 0.9,
+      "evidence": "紧前文心理描写「我顿时惊慌失措」，接内心独白式台词",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 101,
+      "speaker": "濑名紫阳花",
+      "text": "嗯……该怎么办呢？",
+      "confidence": 0.95,
+      "evidence": "紧前文「我」指玲奈子，紫阳花反问玲奈子怎么办",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 102,
+      "speaker": "甘织玲奈子",
+      "text": "啊，既然真唯不在，那我就回去了。明天学校见！",
+      "confidence": 0.9,
+      "evidence": "紧前文心理活动「不可能说什么...」，此处为模拟内心台词；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 103,
+      "speaker": "甘织玲奈子",
+      "text": "那、那就我们两个人去玩吧……",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 濑名紫阳花→甘织玲奈子",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 104,
+      "speaker": "濑名紫阳花",
+      "text": "可是……",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→濑名紫阳花",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 105,
+      "speaker": "甘织玲奈子",
+      "text": "我们两个一起玩翻天吧！走吧走吧！哎呀～我好期待这次来游乐园喔！而且还是和紫阳花同学两个人！耶～耶～！",
+      "confidence": 0.95,
+      "evidence": "紧前文为叙述者心理活动，且台词为主动邀请，符合玲奈子性格及上一句被拒后的反应；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 106,
+      "speaker": "濑名紫阳花",
+      "text": "哇。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文为玲奈子台词，紫阳花回应“哇”表示惊讶/开心，符合对话轮换；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 107,
+      "speaker": "甘织玲奈子",
+      "text": "啊，不，那个，不是这样的！",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文为叙述者动作描写（甩开手），台词为解释误会，符合玲奈子视角；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 108,
+      "speaker": "濑名紫阳花",
+      "text": "嗯、嗯……我知道。今天就……请多关照了。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文为紫阳花回握手的动作，台词为正式回应牵手请求，符合对话轮换；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 109,
+      "speaker": "甘织玲奈子",
+      "text": "机会难得，我们两个人一起好好玩吧。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文为叙述者心理活动，台词为再次确认邀请，符合玲奈子主导对话的特征；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 110,
+      "speaker": "王冢真唯",
+      "text": "小玲奈，你敢坐云霄飞车吗？……小玲奈？",
+      "confidence": 0.6499999999999999,
+      "evidence": "块级结构化复核：轮次归属 濑名紫阳花→王冢真唯；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 111,
+      "speaker": "甘织玲奈子",
+      "text": "啊，可以。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文为紫阳花提问，台词为简短回答，符合对话轮换；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 112,
+      "speaker": "甘织玲奈子",
+      "text": "我不用",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文为叙述者内心独白（假设自己一个人会说的话），台词“我不用”是内心独白的延续或口头回答，结合后文紫阳花反问“那紫阳花同学呢”，此处应为玲奈子回答自己；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 113,
+      "speaker": "王冢真唯",
+      "text": "呃，那紫阳花同学呢？",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→王冢真唯",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 114,
+      "speaker": "甘织玲奈子",
+      "text": "我有点想试试呢。",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 濑名紫阳花→甘织玲奈子",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 115,
+      "speaker": "甘织玲奈子",
+      "text": "如果是和家人来的话，坐什么都得配合小鬼头，每次都是坐旋转木马或是咖啡杯什么的。真是的，都已经是高中生了，这样我会有点害羞啦。",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 濑名紫阳花→甘织玲奈子",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 116,
+      "speaker": "王冢真唯",
+      "text": "原来如此！那就去坐吧！",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→王冢真唯",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 117,
+      "speaker": "甘织玲奈子",
+      "text": "可以吗？",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 濑名紫阳花→甘织玲奈子",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 118,
+      "speaker": "王冢真唯",
+      "text": "嗯，没事，我当然没事。毕竟我可是连3D都不怎么会晕的体质！",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→王冢真唯",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 119,
+      "speaker": "甘织玲奈子",
+      "text": "这样啊，那么，云霄飞车也有很多种类。",
+      "confidence": 0.69,
+      "evidence": "紧前文叙述者“我”的心理活动，且后文描写“紫阳花同学...指着”，说明说话者是叙述者甘织玲奈子；仅叙述者锚点支持，场景含未命名人物",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 120,
+      "speaker": "王冢真唯",
+      "text": "怎么了？",
+      "confidence": 0.69,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→王冢真唯",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 121,
+      "speaker": "甘织玲奈子",
+      "text": "啊，没有。",
+      "confidence": 0.69,
+      "evidence": "紧前文「我...说道」，叙述者视角；仅叙述者锚点支持，场景含未命名人物",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 122,
+      "speaker": "甘织玲奈子",
+      "text": "就是觉得，紫阳花同学今天也好可爱这样……",
+      "confidence": 0.69,
+      "evidence": "紧前文「我...说道」，叙述者视角；仅叙述者锚点支持，场景含未命名人物",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 123,
+      "speaker": "王冢真唯",
+      "text": "啊，那句。",
+      "confidence": 0.6499999999999999,
+      "evidence": "块级结构化复核：轮次归属 濑名紫阳花→王冢真唯；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 124,
+      "speaker": "濑名紫阳花",
+      "text": "你终于肯说我可爱了呢。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文「紫阳花...凝视着我」，对话轮换；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 125,
+      "speaker": "甘织玲奈子",
+      "text": "唔唉！？",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文「我...呻吟声」，叙述者视角；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 126,
+      "speaker": "甘织玲奈子",
+      "text": "不不不……我讲出来的次数，根本只有我在心里想的百分之一……",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文「我...呻吟声」，叙述者视角；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 127,
+      "speaker": "濑名紫阳花",
+      "text": "……也就是说，你在心里想了至少一百次？",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文「紫阳花...提问」，对话轮换；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 128,
+      "speaker": "甘织玲奈子",
+      "text": "说、说不定是这样呢……",
+      "confidence": 0.95,
+      "evidence": "紧前文「紫阳花...犀利了」，对话轮换；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 129,
+      "speaker": "濑名紫阳花",
+      "text": "唉～？",
+      "confidence": 0.95,
+      "evidence": "上句玲奈子，轮换；后文紫阳花噘嘴；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 130,
+      "speaker": "甘织玲奈子",
+      "text": "不，一百倍还算少呢！因为紫阳花同学每分每秒都好可爱。现在这个瞬间也很可爱！超可爱！",
+      "confidence": 0.95,
+      "evidence": "上句紫阳花，轮换；后文紫阳花难启齿；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 131,
+      "speaker": "濑名紫阳花",
+      "text": "这、这样的话～……",
+      "confidence": 0.95,
+      "evidence": "上句玲奈子，轮换；后文叙述者心理活动",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 132,
+      "speaker": "濑名紫阳花",
+      "text": "那我希望你想到的时候，能好好用讲的表达出来呢～这样？",
+      "confidence": 0.95,
+      "evidence": "上句紫阳花，轮换；后文叙述者心理活动；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 133,
+      "speaker": "甘织玲奈子",
+      "text": "砂糖很甜",
+      "confidence": 0.95,
+      "evidence": "上句未知，轮换；后文叙述者心理活动；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 134,
+      "speaker": "甘织玲奈子",
+      "text": "夕阳很红",
+      "confidence": 0.95,
+      "evidence": "上句未知，轮换；后文叙述者心理活动；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 135,
+      "speaker": "甘织玲奈子",
+      "text": "我知道了。紫阳花同学好可爱。",
+      "confidence": 0.95,
+      "evidence": "上句未知，轮换；后文紫阳花惊讶",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 136,
+      "speaker": "濑名紫阳花",
+      "text": "这么突然的吗！？",
+      "confidence": 0.95,
+      "evidence": "上句玲奈子，轮换；后文玲奈子继续夸",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 137,
+      "speaker": "甘织玲奈子",
+      "text": "惊讶的紫阳花同学好可爱。紫阳花同学的吐槽也好可爱。基本上声音就很可爱。",
+      "confidence": 0.95,
+      "evidence": "紧前文为玲奈子独白，且内容符合其“可爱狂”人设",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 138,
+      "speaker": "濑名紫阳花",
+      "text": "要、要走了喔，小玲奈！",
+      "confidence": 0.95,
+      "evidence": "紧前文为玲奈子夸赞，此句为紫阳花害羞回应",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 139,
+      "speaker": "甘织玲奈子",
+      "text": "啊啊，迈出步伐的紫阳花同学好可爱。一步一步的走路声也好可爱。简直就是可爱穿着可爱在走路，好可爱。背影看起来也好可爱啊。",
+      "confidence": 0.95,
+      "evidence": "紧前文为紫阳花催促，此句为玲奈子继续夸赞",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 140,
+      "speaker": "濑名紫阳花",
+      "text": "我已经知道了啦！是我错了啦～！",
+      "confidence": 0.95,
+      "evidence": "紧前文为玲奈子夸赞背影，此句为紫阳花无奈认输；场景状态：濑名紫阳花 由高置信说话人加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 141,
+      "speaker": "濑名紫阳花",
+      "text": "不行！",
+      "confidence": 0.95,
+      "evidence": "紧前文叙述紫阳花生气，此句为紫阳花发出的强力制止",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 142,
+      "speaker": "甘织玲奈子",
+      "text": "感、感觉现在心跳得好快……",
+      "confidence": 0.9,
+      "evidence": "紧前文叙述“我”（玲奈子）无法动弹，此句为内心独白",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 143,
+      "speaker": "濑名紫阳花",
+      "text": "嗯、嗯，我也开始紧张起来了。好期待呢。",
+      "confidence": 0.9,
+      "evidence": "紧前文为玲奈子紧张，此句为紫阳花回应并表达期待",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 144,
+      "speaker": "甘织玲奈子",
+      "text": "是不是应该别坐上来的……？",
+      "confidence": 0.9,
+      "evidence": "紧前文叙述“我”听到内心声音，此句为内心后悔独白",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 145,
+      "speaker": "濑名紫阳花",
+      "text": "咿──",
+      "confidence": 0.95,
+      "evidence": "后文「紫阳花同学发出了舒服的尖叫」",
+      "attribution_type": "AttributionType.EXPLICIT_AFTER"
+    },
+    {
+      "i": 146,
+      "speaker": "甘织玲奈子",
+      "text": "呀──────",
+      "confidence": 0.95,
+      "evidence": "对话轮换，紧接紫阳花尖叫",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 147,
+      "speaker": "濑名紫阳花",
+      "text": "好赞喔！好开心呢，小玲奈！",
+      "confidence": 0.95,
+      "evidence": "对话轮换，称呼「小玲奈」；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：濑名紫阳花 由高置信说话人加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 148,
+      "speaker": "甘织玲奈子",
+      "text": "好、好好、好……",
+      "confidence": 0.95,
+      "evidence": "对话轮换，结巴回应；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：甘织玲奈子 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 149,
+      "speaker": "濑名紫阳花",
+      "text": "小、小玲奈？果，果然还是太可怕了吗？要不要稍微休息一下……？",
+      "confidence": 0.95,
+      "evidence": "对话轮换，询问玲奈子感受；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：甘织玲奈子 由动作/登场语义加入当前场景；场景状态：濑名紫阳花 由高置信说话人加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 150,
+      "speaker": "甘织玲奈子",
+      "text": "──好开心啊！",
+      "confidence": 0.95,
+      "evidence": "对话轮换，表达开心；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：甘织玲奈子 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 151,
+      "speaker": "濑名紫阳花",
+      "text": "感、感觉小玲奈的眼睛一下子闪闪发光！",
+      "confidence": 0.95,
+      "evidence": "对话轮换，描述玲奈子表情；场景状态：甘织玲奈子 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 152,
+      "speaker": "甘织玲奈子",
+      "text": "嗯！真的很开心！好舒服啊！",
+      "confidence": 0.95,
+      "evidence": "对话轮换，确认开心",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 153,
+      "speaker": "濑名紫阳花",
+      "text": "小玲奈？",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子失神，紫阳花呼唤；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 154,
+      "speaker": "甘织玲奈子",
+      "text": "抱、抱歉，你刚刚说了什么？",
+      "confidence": 0.95,
+      "evidence": "紧前文紫阳花呼唤，玲奈子回应；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 155,
+      "speaker": "濑名紫阳花",
+      "text": "没有啦，我只是问接下来要去哪。",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子道歉，紫阳花回答；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 156,
+      "speaker": "甘织玲奈子",
+      "text": "也、也对。总之我想先征服所有的尖叫游乐设施！",
+      "confidence": 0.95,
+      "evidence": "紧前文紫阳花询问，玲奈子提议；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 157,
+      "speaker": "濑名紫阳花",
+      "text": "小玲奈真起劲呢～啊，不过……",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子提议，紫阳花评价；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 158,
+      "speaker": "濑名紫阳花",
+      "text": "我想至少留下一个呢……为了下次和小真唯一起来的时候。",
+      "confidence": 0.95,
+      "evidence": "紧前文紫阳花思考后继续发言；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：甘织玲奈子 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 159,
+      "speaker": "甘织玲奈子",
+      "text": "啊……",
+      "confidence": 0.95,
+      "evidence": "紧前文紫阳花说完，玲奈子感叹；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：甘织玲奈子 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 160,
+      "speaker": "甘织玲奈子",
+      "text": "嗯。",
+      "confidence": 0.95,
+      "evidence": "紧前文内心独白，玲奈子回应；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 161,
+      "speaker": "甘织玲奈子",
+      "text": "要是真唯害怕尖叫游乐设施的话怎么办呢？",
+      "confidence": 0.95,
+      "evidence": "紧前文「我露出笑容」；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 162,
+      "speaker": "濑名紫阳花",
+      "text": "啊哈哈，搞不好她会有那种意外的一面呢～那样的话，到时就和小真唯三个人一起坐旋转木马吧。",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→濑名紫阳花",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 163,
+      "speaker": "甘织玲奈子",
+      "text": "唉～什么啦，超可爱的～好想拿手机录下来喔。",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 濑名紫阳花→甘织玲奈子",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 164,
+      "speaker": "甘织玲奈子",
+      "text": "今天玩得好尽兴呢～",
+      "confidence": 0.95,
+      "evidence": "上句紫阳花，轮换",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 165,
+      "speaker": "濑名紫阳花",
+      "text": "玩得好疯呢～",
+      "confidence": 0.95,
+      "evidence": "上句玲奈，轮换",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 166,
+      "speaker": "甘织玲奈子",
+      "text": "最后还能再坐一个吧。那个，紫阳花同学有什么想坐的吗？",
+      "confidence": 0.95,
+      "evidence": "上句紫阳花，轮换",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 167,
+      "speaker": "濑名紫阳花",
+      "text": "啊，那么，呃。",
+      "confidence": 0.95,
+      "evidence": "上句玲奈，轮换",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 168,
+      "speaker": "甘织玲奈子",
+      "text": "怎么了怎么了？什么都可以，快说吧。毕竟今天一直都是我在提要求，最后就去紫阳花同学想去的地方吧！",
+      "confidence": 0.95,
+      "evidence": "上句紫阳花，轮换",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 169,
+      "speaker": "濑名紫阳花",
+      "text": "我自己也想玩尖叫游乐设施，所以就这点来说我们是一样的～嗯，不过还是谢谢你，小玲奈。",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子提议，紫阳花回应并致谢；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：濑名紫阳花 由高置信说话人加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 170,
+      "speaker": "甘织玲奈子",
+      "text": "不会不会！",
+      "confidence": 0.95,
+      "evidence": "紧前文紫阳花致谢，玲奈子礼貌回应；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：甘织玲奈子 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 171,
+      "speaker": "濑名紫阳花",
+      "text": "其实，我在想会不会还有点早……不过机会难得，我想和你一起去坐。",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子回应，紫阳花表达心意；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：甘织玲奈子 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 172,
+      "speaker": "濑名紫阳花",
+      "text": "那个……我一直想着，有一天，要和喜欢的人一起坐摩天轮呢。",
+      "confidence": 0.95,
+      "evidence": "紧前文描写紫阳花红晕加深，继续告白",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 173,
+      "speaker": "甘织玲奈子",
+      "text": "啊，那个……",
+      "confidence": 0.95,
+      "evidence": "紧前文描写玲奈子受冲击，回应“啊，那个”",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 174,
+      "speaker": "甘织玲奈子",
+      "text": "……嗯。",
+      "confidence": 0.69,
+      "evidence": "紧前文玲奈子内心决定接受，点头回应；仅叙述者锚点支持，场景含未命名人物",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 175,
+      "speaker": "甘织玲奈子",
+      "text": "走吧。",
+      "confidence": 0.69,
+      "evidence": "紧前文玲奈子伸手邀请，说“走吧”；仅叙述者锚点支持，场景含未命名人物",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 176,
+      "speaker": "濑名紫阳花",
+      "text": "嗯……小玲奈。",
+      "confidence": 0.95,
+      "evidence": "紧前文描写紫阳花表情，回应“嗯……小玲奈”；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 177,
+      "speaker": "濑名紫阳花",
+      "text": "……那个，小玲奈。",
+      "confidence": 0.95,
+      "evidence": "后文「紫阳花同学...发出声音」",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 178,
+      "speaker": "甘织玲奈子",
+      "text": "啊，是。",
+      "confidence": 0.95,
+      "evidence": "后文「坐在旁边的紫阳花同学...」",
+      "attribution_type": "AttributionType.EXPLICIT_AFTER"
+    },
+    {
+      "i": 179,
+      "speaker": "濑名紫阳花",
+      "text": "我呢……现在非常紧张。",
+      "confidence": 0.95,
+      "evidence": "后文「紫阳花同学断断续续地说」",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 180,
+      "speaker": "甘织玲奈子",
+      "text": "这、这样啊……我也是……",
+      "confidence": 0.95,
+      "evidence": "轮换，回应紫阳花的紧张",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 181,
+      "speaker": "濑名紫阳花",
+      "text": "所以，那个……可能，会做出很奇怪的事，吓到小玲奈也不一定。如果吓到你了，就先跟你对不起哦。",
+      "confidence": 0.95,
+      "evidence": "前文「紫阳花同学...说出」；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 182,
+      "speaker": "甘织玲奈子",
+      "text": "这、这样啊……但是没关系的！因为，我已经习惯受到惊吓了！",
+      "confidence": 0.95,
+      "evidence": "轮换，安慰紫阳花；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 183,
+      "speaker": "甘织玲奈子",
+      "text": "没、没事吧？要不要让玲奈子姊姊跟你说好乖好乖～什么的……",
+      "confidence": 0.69,
+      "evidence": "前文「我发出...声音」；称呼负权重：台词称呼当前 speaker「玲奈子」，但未发现自称语境，待人工确认",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 184,
+      "speaker": "濑名紫阳花",
+      "text": "真是的……现在不该做那种事情啦。",
+      "confidence": 0.95,
+      "evidence": "轮换，回应玲奈子的捉弄；场景状态：甘织玲奈子 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 185,
+      "speaker": "甘织玲奈子",
+      "text": "对不起！",
+      "confidence": 0.95,
+      "evidence": "紧前文为旁白，轮换自紫阳花；场景状态：甘织玲奈子 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 186,
+      "speaker": "濑名紫阳花",
+      "text": "小、小玲奈……",
+      "confidence": 0.95,
+      "evidence": "紧前文为玲奈子内心独白，轮换",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 187,
+      "speaker": "甘织玲奈子",
+      "text": "是，那个……",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 濑名紫阳花→甘织玲奈子",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 188,
+      "speaker": "濑名紫阳花",
+      "text": "……我喜欢你。",
+      "confidence": 0.95,
+      "evidence": "紧前文为紫阳花台词，继续发言",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 189,
+      "speaker": "甘织玲奈子",
+      "text": "…………唔、嗯……",
+      "confidence": 0.95,
+      "evidence": "紧前文为紫阳花告白，轮换回应",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 190,
+      "speaker": "濑名紫阳花",
+      "text": "我……喜欢小玲奈喔……今天一天，很谢谢你。",
+      "confidence": 0.95,
+      "evidence": "紧前文为玲奈子回应，轮换继续",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 191,
+      "speaker": "甘织玲奈子",
+      "text": "不……我才是……",
+      "confidence": 0.95,
+      "evidence": "紧前文为紫阳花表白，轮换回应",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 192,
+      "speaker": "甘织玲奈子",
+      "text": "我很开心。",
+      "confidence": 0.95,
+      "evidence": "紧前文为紫阳花台词，轮换回应",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 193,
+      "speaker": "濑名紫阳花",
+      "text": "嗯，我也是。",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→濑名紫阳花",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 194,
+      "speaker": "濑名紫阳花",
+      "text": "唉…………讲出喜欢这句话，真的很需要勇气呢。小玲奈好厉害啊……",
+      "confidence": 0.98,
+      "evidence": "紧前文「紫阳花同学重重地叹了口气」；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：濑名紫阳花 由高置信说话人加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 195,
+      "speaker": "甘织玲奈子",
+      "text": "是、是吗？",
+      "confidence": 0.95,
+      "evidence": "紧前文「小玲奈好厉害啊」，被称呼者回应；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 196,
+      "speaker": "濑名紫阳花",
+      "text": "因为你平常总是一直喜欢喜欢的对我说个不停嘛。",
+      "confidence": 0.95,
+      "evidence": "紧前文「是、是吗？」，解释原因；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：濑名紫阳花 由高置信说话人加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 197,
+      "speaker": "甘织玲奈子",
+      "text": "呃……那个和可爱是一样的，全都是我的真心话……",
+      "confidence": 0.95,
+      "evidence": "紧前文「对我说个不停嘛」，澄清心意",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 198,
+      "speaker": "濑名紫阳花",
+      "text": "喜欢",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→濑名紫阳花",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 199,
+      "speaker": "濑名紫阳花",
+      "text": "啊哈。",
+      "confidence": 0.98,
+      "evidence": "紧前文「紫阳花同学笑了一声」；场景状态：濑名紫阳花 由高置信说话人加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 200,
+      "speaker": "濑名紫阳花",
+      "text": "不过，像这样并肩坐着摩天轮，两个人单独约会，必须要向学校的大家保密呢。",
+      "confidence": 0.98,
+      "evidence": "紧前文「紫阳花同学笑了一声」；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 201,
+      "speaker": "甘织玲奈子",
+      "text": "就、就是啊。",
+      "confidence": 0.95,
+      "evidence": "上句紫阳花，轮换；自称小玲奈；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 202,
+      "speaker": "濑名紫阳花",
+      "text": "是秘密哦。来，小玲奈也一起做。",
+      "confidence": 0.95,
+      "evidence": "前文「紫阳花同学用食指抵住嘴唇」；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 203,
+      "speaker": "甘织玲奈子",
+      "text": "嗯。",
+      "confidence": 0.95,
+      "evidence": "上句紫阳花，轮换；自称我；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 204,
+      "speaker": "甘织玲奈子",
+      "text": "是秘密──",
+      "confidence": 0.95,
+      "evidence": "上句紫阳花，轮换；自称我；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：甘织玲奈子 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 205,
+      "speaker": "甘织玲奈子",
+      "text": "咦──",
+      "confidence": 0.95,
+      "evidence": "上句紫阳花，轮换；自称我；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：甘织玲奈子 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 206,
+      "speaker": "濑名紫阳花",
+      "text": "啊哈……",
+      "confidence": 0.95,
+      "evidence": "前文「紫阳花同学把身体往后退」",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 207,
+      "speaker": "濑名紫阳花",
+      "text": "……好紧张啊。",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→濑名紫阳花",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 208,
+      "speaker": "甘织玲奈子",
+      "text": "紫……紫阳花同学……",
+      "confidence": 0.95,
+      "evidence": "上句紫阳花，轮换；称呼对方；场景状态：濑名紫阳花 由动作/登场语义加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 209,
+      "speaker": "濑名紫阳花",
+      "text": "嗯，那个啊。",
+      "confidence": 0.95,
+      "evidence": "紧前文「紫阳花同学...」，且后文描述其害羞表情",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 210,
+      "speaker": "濑名紫阳花",
+      "text": "因为，我和小玲奈还没有交往，所以不可以接吻。可是，我很想这么做……因为实在太想了，所以就隔着手指……接吻了。",
+      "confidence": 0.95,
+      "evidence": "紧前文「紫阳花同学露出害羞的表情」，且后文为叙述者心理活动",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 211,
+      "speaker": "濑名紫阳花",
+      "text": "那么，拜拜啰，小玲奈。",
+      "confidence": 0.95,
+      "evidence": "紧前文「紫阳花同学先下车了」，且称呼「小玲奈」",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 212,
+      "speaker": "甘织玲奈子",
+      "text": "嗯……回去的路上要小心哦，紫阳花同学。",
+      "confidence": 0.69,
+      "evidence": "紧前文「紫阳花同学先下车了」，且称呼「紫阳花同学」，轮换；仅叙述者锚点支持，场景含未命名人物",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 213,
+      "speaker": "濑名紫阳花",
+      "text": "小玲奈也是啦。因为你是个非常可爱的女孩子。",
+      "confidence": 0.95,
+      "evidence": "紧前文「紫阳花同学...」，且称呼「小玲奈」，轮换；场景状态：濑名紫阳花 由高置信说话人加入当前场景",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 214,
+      "speaker": "甘织玲奈子",
+      "text": "是、是吗？这样啊。",
+      "confidence": 0.69,
+      "evidence": "紧前文「紫阳花同学...」，且后文「我回了她」，轮换；仅叙述者锚点支持，场景含未命名人物",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 215,
+      "speaker": "濑名紫阳花",
+      "text": "那就，那个……晚安。",
+      "confidence": 0.69,
+      "evidence": "块级结构化复核：轮次归属 甘织玲奈子→濑名紫阳花",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 216,
+      "speaker": "甘织玲奈子",
+      "text": "好～晚安。",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 濑名紫阳花→甘织玲奈子",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 217,
+      "speaker": "濑名紫阳花",
+      "text": "下次，小真唯也要一起哦。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文描写紫阳花微笑，且称呼“小真唯”；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 218,
+      "speaker": "甘织玲奈子",
+      "text": "嗯……真唯也要一起。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文玲奈子表示不解，此处为真唯回应并挥手；场景状态：濑名紫阳花 由动作/登场语义加入当前场景；场景状态：王冢真唯 由动作/登场语义加入当前场景；称呼反推：真唯 在相邻同称呼块中指向 甘织玲奈子(0.93)，由 王冢真唯 修正为 甘织玲奈子；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 219,
+      "speaker": "甘织玲奈子",
+      "text": "……唉……",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文为玲奈子内心独白，叹气声符合其情绪；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 220,
+      "speaker": "甘织玲奈子",
+      "text": "下次，真唯和紫阳花同学来学校之后，到时，我一定要好好地……好好地……",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文为玲奈子内心独白，叙述者“我”即玲奈子；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 221,
+      "speaker": "小柳香穗",
+      "text": "我决定参加在幕张举办的Cosplay高峰会了。",
+      "confidence": 0.6499999999999999,
+      "evidence": "紧前文明确说明讯息是小香穗传来的；密集多人场景(3人同框)，自动转人工复核",
+      "attribution_type": "AttributionType.EXPLICIT_BEFORE"
+    },
+    {
+      "i": 222,
+      "speaker": "小柳香穗",
+      "text": "我果然……还是喜欢Cosplay。若是让其他人代替我出场的话，我一定，绝对，会后悔的。",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子表示理解，此处为香穗继续陈述",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 223,
+      "speaker": "小柳香穗",
+      "text": "所以呢，就算有许多人说我不配出现在那里……我还是想参加。因为那里是我憧憬的地方。",
+      "confidence": 0.95,
+      "evidence": "紧前文玲奈子回应“嗯”，此处为香穗继续发言",
+      "attribution_type": "AttributionType.IMPLICIT"
+    },
+    {
+      "i": 224,
+      "speaker": "甘织玲奈子",
+      "text": "喜欢",
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 小柳香穗→甘织玲奈子",
+      "attribution_type": "AttributionType.IMPLICIT"
+    }
+  ],
+  "stats": {
+    "total_segments": 225,
+    "elapsed_seconds": 310.068735,
+    "model": "agnes-2.0-flash",
+    "timestamp": "2026-06-09T13:14:51.824255"
+  }
+}

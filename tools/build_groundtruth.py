@@ -141,6 +141,21 @@ def main() -> None:
         transcript = args.transcript
 
     groundtruth, transcript_text = build(parse, review)
+
+    # 重建对照基线（reference_baseline）样本时，保留其基线标记与诚实的 parser 标签，
+    # 不让流水线默认标签覆盖掉。
+    if out.exists():
+        try:
+            prev = json.loads(out.read_text(encoding="utf-8"))
+        except Exception:
+            prev = {}
+        if prev.get("reference_baseline"):
+            groundtruth["reference_baseline"] = True
+            if "reference_note" in prev:
+                groundtruth["reference_note"] = prev["reference_note"]
+            if prev.get("source", {}).get("parser"):
+                groundtruth["source"]["parser"] = prev["source"]["parser"]
+
     out.write_text(json.dumps(groundtruth, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if not args.no_transcript and transcript:

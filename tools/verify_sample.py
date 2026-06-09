@@ -14,7 +14,10 @@
   4. 未修正段满足 speaker == model_speaker 且 corrected=False
   5. corrected_indices 字段 == 实际 corrected=True 的段
   6. crowd_segments / named_total / named_corrections / model_named_accuracy 口径自洽
-  7. sample.txt 存在；transcript.txt 与最终 parse 的模型口径一致（仅告警，不算失败）
+  7. 流水线溯源：parse 是 BookVoiceParser 完整流水线产物（stats 含 block_review 等阶段、
+     attribution_type 为小写 JSON 值、段含 quote_id/candidates 等字段），不是裸模型直出。
+     groundtruth 标了 reference_baseline=true 的对照基线豁免此项（降级为提示）。
+  8. sample.txt 存在；transcript.txt 与最终 parse 的模型口径一致（仅告警，不算失败）
 """
 from __future__ import annotations
 
@@ -50,7 +53,8 @@ def verify(seg: str) -> tuple[list[str], list[str]]:
         if not p.exists():
             return [f"缺少必需文件 {p.name}"], warns
 
-    psegs = json.loads(parse_p.read_text(encoding="utf-8"))["segments"]
+    parse = json.loads(parse_p.read_text(encoding="utf-8"))
+    psegs = parse["segments"]
     gt = json.loads(gt_p.read_text(encoding="utf-8"))
     gsegs = gt["segments"]
     corr = json.loads(review_p.read_text(encoding="utf-8")).get("corrections", {}) if review_p.exists() else {}
@@ -114,7 +118,31 @@ def verify(seg: str) -> tuple[list[str], list[str]]:
         if got != exp:
             errs.append(f"口径 {name} 字段={got} 计算={exp}")
 
-    # 7. companion files (warnings only)
+    # 7. 流水线溯源：parse 必须是 BookVoiceParser 完整流水线产物，而非裸模型单遍直出。
+    # reference_baseline=true 的对照样本豁免（降级为提示），但仍记录证据。
+    is_ref = bool(gt.get("reference_baseline"))
+    prov = []
+    stats = parse.get("stats") or {}
+    REQUIRED_STAGES = ("block_review", "address_term_backcheck", "scene_state")
+    missing = [s for s in REQUIRED_STAGES if s not in stats]
+    if missing:
+        prov.append(f"parse.stats 缺少流水线阶段 {missing}（疑似未跑完整 BookVoiceParser 流水线）")
+    # 枚举被错误序列化成 repr（如 "AttributionType.IMPLICIT"）而非 JSON 值（"implicit"）
+    bad_enum = [p.get("attribution_type") for p in psegs
+                if isinstance(p.get("attribution_type"), str) and "." in p.get("attribution_type")]
+    if bad_enum:
+        prov.append(f"attribution_type 为枚举 repr（如 {bad_enum[0]}），应是小写 JSON 值——序列化路径不对")
+    PIPELINE_FIELDS = ("quote_id", "candidates", "scene_characters")
+    if psegs and not any(f in psegs[0] for f in PIPELINE_FIELDS):
+        prov.append(f"parse 段缺少流水线字段 {PIPELINE_FIELDS}（疑似简化直出）")
+
+    if prov:
+        if is_ref:
+            warns.append("【对照基线】非流水线产物，已豁免溯源校验：" + "；".join(prov))
+        else:
+            errs.extend("流水线溯源：" + m for m in prov)
+
+    # 8. companion files (warnings only)
     if not sample_p.exists():
         warns.append(f"缺少 {sample_p.name}（评测可跑，但无法溯源原文切片）")
     if transcript_p.exists():
