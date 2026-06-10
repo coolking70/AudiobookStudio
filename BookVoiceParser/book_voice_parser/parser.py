@@ -1006,6 +1006,7 @@ def _parse_with_batch_llm(
     on_progress: Any | None = None,
     enable_block_review: bool = True,
     dense_scene_review_size: int = 3,
+    first_pass: str = "batch",
 ) -> list[SegmentEx] | ParseResult:
     """
     使用 BatchLLMAttributor 的完整归因路径。
@@ -1223,7 +1224,12 @@ def _parse_with_batch_llm(
         # P2：基于所有 quotes（含已预解决的）计算对话块，保留位置关系
         block_hints = _build_dialogue_blocks(quotes)
 
-        attributor = BatchLLMAttributor(batch_llm_config)
+        if first_pass == "single":
+            # 实验：单遍直出初判（整文阅读），下游 block_review 等不变
+            from .single_pass_attributor import SinglePassAttributor
+            attributor = SinglePassAttributor(batch_llm_config, full_text=cleaned)
+        else:
+            attributor = BatchLLMAttributor(batch_llm_config)
 
         # 将未解决台词按章节分组（保持文档顺序），各组独立重置 recent_speakers
         chapter_groups: dict[int, list[QuoteSpan]] = {}
@@ -1465,6 +1471,7 @@ def parse_novel(
     on_progress: Any | None = None,
     enable_block_review: bool = True,
     dense_scene_review_size: int = 3,
+    first_pass: str = "batch",
 ) -> list[SegmentEx] | ParseResult:
     """Parse Chinese novel text into speaker-attributed TTS segments.
 
@@ -1515,6 +1522,7 @@ def parse_novel(
             on_progress=on_progress,
             enable_block_review=enable_block_review,
             dense_scene_review_size=dense_scene_review_size,
+            first_pass=first_pass,
         )
 
     # ── 经典逐条路径（兼容旧接口）──────────────────────────────────────────────
