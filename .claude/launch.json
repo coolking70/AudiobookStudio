@@ -4,8 +4,11 @@
     {
       "name": "audiobookstudio",
       "runtimeExecutable": "/Users/coolking70/Documents/同步空间/aitts/AudiobookStudio/.venv/bin/python",
-      "runtimeArgs": ["start_local.py"],
-      "port": 8000
+      "runtimeArgs": [
+        "start_local.py"
+      ],
+      "port": 8000,
+      "autoPort": true
     }
   ]
 }

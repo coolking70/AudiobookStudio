@@ -2952,14 +2952,30 @@
     logs: [],
   };
 
-  const STEP_DEFS = [
-    { key: "prepare", title: "准备", desc: "检查参数与任务初始化" },
-    { key: "segment", title: "智能分段", desc: "调用 LLM 规划分析工作块" },
-    { key: "optimize", title: "语音适配", desc: "按 OmniVoice 规则优化文本" },
-    { key: "analyze", title: "角色分析", desc: "并发分析角色、情绪和风格" },
-    { key: "synthesize", title: "声音生成", desc: "逐段生成角色语音" },
-    { key: "merge", title: "音频拼接", desc: "合并分段并刷新试听" },
-  ];
+  // 任务面板阶段按任务类型动态匹配：旧 6 步只适用于自动旁白/音频生成；
+  // 结构化解析(parse)与机器审计(audit)使用各自的精简阶段，避免显示不相干步骤。
+  const STEP_DEFS_BY_MODE = {
+    default: [
+      { key: "prepare", title: "准备", desc: "检查参数与任务初始化" },
+      { key: "segment", title: "智能分段", desc: "调用 LLM 规划分析工作块" },
+      { key: "optimize", title: "语音适配", desc: "按 OmniVoice 规则优化文本" },
+      { key: "analyze", title: "角色分析", desc: "并发分析角色、情绪和风格" },
+      { key: "synthesize", title: "声音生成", desc: "逐段生成角色语音" },
+      { key: "merge", title: "音频拼接", desc: "合并分段并刷新试听" },
+    ],
+    parse: [
+      { key: "prepare", title: "准备", desc: "抽取台词、生成候选说话人" },
+      { key: "analyze", title: "结构化解析", desc: "BatchLLM 分批归因 + 块级复核纠错" },
+    ],
+    audit: [
+      { key: "prepare", title: "准备", desc: "定位每句对话的原文上下文" },
+      { key: "audit", title: "机器审计", desc: "逐句聚焦重问，分歧段标⚑·待人工复核" },
+    ],
+  };
+  const STEP_DEFS = STEP_DEFS_BY_MODE.default;
+  function getStepDefs() {
+    return STEP_DEFS_BY_MODE[progressState.mode] || STEP_DEFS_BY_MODE.default;
+  }
   const LLM_TEST_TEXT = '旁白：清晨的风吹过广场。李四说：”今天就开始行动吧。”张三点了点头。';
   const DEFAULT_EXTERNAL_ANALYSIS_PROMPT = `你是一个“小说/对白文本分析器”。
 请把用户提供的原文分析成适合 TTS 的 JSON 结构。
@@ -3203,12 +3219,13 @@ very high pitch, very low pitch, whisper, young adult
   }
 
   function computeStepClass(stepKey) {
-    const stageOrder = ["idle", "prepare", "segment", "optimize", "analyze", "synthesize", "merge", "done", "error"];
+    const stageOrder = ["idle", "prepare", "segment", "optimize", "analyze", "audit", "synthesize", "merge", "done", "error"];
     const currentIndex = stageOrder.indexOf(progressState.stage);
     const stepIndex = stageOrder.indexOf(stepKey);
 
     if (progressState.stage === "error") {
       if (progressState.mode === "parse" && stepKey === "analyze") return "error";
+      if (progressState.mode === "audit" && stepKey === "audit") return "error";
       if ((progressState.mode === "narrate" || progressState.mode === "auto") && (stepKey === "synthesize" || stepKey === "merge")) return "error";
       if (stepKey === "prepare") return "done";
       if (progressState.mode !== "parse" && stepKey === "analyze" && progressState.total > 0) return "done";
@@ -3230,7 +3247,7 @@ very high pitch, very low pitch, whisper, young adult
 
   function renderSteps() {
     const container = document.getElementById("steps");
-    container.innerHTML = STEP_DEFS.map((step, index) => {
+    container.innerHTML = getStepDefs().map((step, index) => {
       const stepClass = computeStepClass(step.key);
       const stateText = stepClass === "done" ? "✓" : stepClass === "error" ? "!" : index + 1;
       return `
@@ -9719,14 +9736,14 @@ very high pitch, very low pitch, whisper, young adult
     container.innerHTML = "";
     syncSegmentsPagerUI();
     if (!segmentsState.length) {
-      container.innerHTML = `<div class="analysis-empty">当前还没有可展示的分析结果。只有执行过“分析角色”后，这里才会填充内容，并允许前往音频生成。</div>`;
+      container.innerHTML = `<div class="analysis-empty">当前还没有可展示的分析结果。执行“自动分析角色”或 BookVoiceParser 结构化解析后，这里才会填充内容，并允许前往音频生成。</div>`;
       return;
     }
     const visibleSegments = getFilteredSegmentsForView();
     const totalPages = ensureSegmentsPagination(visibleSegments);
     if (!visibleSegments.length) {
       container.innerHTML = activeAnalysisSpecialFilter === "review"
-        ? `<div class="review-workbench-empty">当前没有待复核条目。手动确认过的低置信段不会再显示在这里。</div>`
+        ? `<div class="review-workbench-empty">当前没有待复核条目。可先点工具栏「机器审计」标出 ⚑ 分歧段，再用「复核工作台」对照原文批量修正。</div>`
         : `<div class="analysis-empty">当前筛选角色下没有可展示的分析结果。</div>`;
       syncSegmentsPagerUI(visibleSegments);
       return;
