@@ -2955,7 +2955,17 @@
   // 任务面板阶段按任务类型动态匹配：旧 6 步只适用于自动旁白/音频生成；
   // 结构化解析(parse)与机器审计(audit)使用各自的精简阶段，避免显示不相干步骤。
   const STEP_DEFS_BY_MODE = {
-    default: [
+    // 空闲时展示当前推荐的完整工作流总览（解析→审计→人工复核→合成）
+    idle: [
+      { key: "prepare", title: "准备", desc: "导入原文，配置文本模型" },
+      { key: "analyze", title: "结构化解析", desc: "BatchLLM 分批归因 + 块级复核纠错" },
+      { key: "audit", title: "机器审计", desc: "聚焦重问比对分歧，标 ⚑/· 两级" },
+      { key: "review", title: "人工复核", desc: "复核工作台对照原文修正角色" },
+      { key: "synthesize", title: "声音生成", desc: "逐段生成角色语音" },
+      { key: "merge", title: "音频拼接", desc: "合并分段并刷新试听" },
+    ],
+    // 旧 6 步流程仅在自动旁白/合成任务运行期间展示
+    legacy: [
       { key: "prepare", title: "准备", desc: "检查参数与任务初始化" },
       { key: "segment", title: "智能分段", desc: "调用 LLM 规划分析工作块" },
       { key: "optimize", title: "语音适配", desc: "按 OmniVoice 规则优化文本" },
@@ -2972,9 +2982,12 @@
       { key: "audit", title: "机器审计", desc: "逐句聚焦重问，分歧段标⚑·待人工复核" },
     ],
   };
-  const STEP_DEFS = STEP_DEFS_BY_MODE.default;
+  const STEP_DEFS = STEP_DEFS_BY_MODE.idle;
   function getStepDefs() {
-    return STEP_DEFS_BY_MODE[progressState.mode] || STEP_DEFS_BY_MODE.default;
+    if (progressState.mode === "auto" || progressState.mode === "narrate") {
+      return STEP_DEFS_BY_MODE.legacy;
+    }
+    return STEP_DEFS_BY_MODE[progressState.mode] || STEP_DEFS_BY_MODE.idle;
   }
   const LLM_TEST_TEXT = '旁白：清晨的风吹过广场。李四说：”今天就开始行动吧。”张三点了点头。';
   const DEFAULT_EXTERNAL_ANALYSIS_PROMPT = `你是一个“小说/对白文本分析器”。
