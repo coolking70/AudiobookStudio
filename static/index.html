@@ -1744,6 +1744,34 @@
       .timeline-item { grid-template-columns: 52px 1fr; }
       .workspace-tab-switch button { padding: 6px 12px; font-size: 13px; }
     }
+  
+    /* ===== 复核工作台（移植自 tools/review_server.py 本地复核工具）===== */
+    #rwModal{position:fixed;inset:0;z-index:9000;background:#1e1e22;color:#e6e6ea;display:none;flex-direction:column;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+    #rwModal.open{display:flex}
+    #rwHeader{padding:8px 14px;background:#26262c;border-bottom:1px solid #34343c;display:flex;gap:10px;align-items:center;flex:0 0 auto;flex-wrap:wrap}
+    #rwHeader b{color:#4ea1ff} #rwHeader .rw-muted{color:#9a9aa6}
+    #rwHeader input[type=text]{background:#1e1e22;border:1px solid #34343c;color:#e6e6ea;border-radius:6px;padding:3px 8px;width:80px}
+    .rw-btn{background:#1e1e22;border:1px solid #34343c;color:#e6e6ea;border-radius:6px;padding:3px 10px;cursor:pointer}
+    .rw-btn.on{background:#4ea1ff;color:#06121f}
+    #rwMain{flex:1;display:flex;min-height:0}
+    #rwList{flex:0 0 min(440px,45%);overflow:auto;border-right:1px solid #34343c;padding:6px}
+    #rwDoc{flex:1;overflow:auto;padding:20px 30px;white-space:pre-wrap;line-height:2.1}
+    .rw-row{display:grid;grid-template-columns:44px 140px 1fr;gap:6px;align-items:start;padding:5px 4px;border-bottom:1px solid #34343c;cursor:pointer;border-radius:6px}
+    .rw-row:hover{background:#2d2d35}
+    .rw-row.active{background:#33384a;outline:1px solid #4ea1ff}
+    .rw-row.edited{background:#3a3320}
+    .rw-idx{color:#9a9aa6;text-align:right;font-variant-numeric:tabular-nums}
+    .rw-idx .rw-f1{color:#ff6b6b} .rw-idx .rw-f2{color:#d9b44a}
+    .rw-row input.rw-sp{width:100%;background:#1e1e22;border:1px solid #34343c;color:#e6e6ea;border-radius:5px;padding:2px 6px;box-sizing:border-box}
+    .rw-row.edited input.rw-sp{border-color:#ffb454;color:#ffb454}
+    .rw-tx{color:#9a9aa6;font-size:12.5px;max-height:3.4em;overflow:hidden}
+    .rw-orig{font-size:11px;color:#ffb454} .rw-hint{font-size:11px;color:#7fb3d5}
+    .rw-q{border-bottom:2px solid #3a3a44;border-radius:3px;padding:0 1px;cursor:pointer}
+    .rw-q.active{background:#4ea1ff;color:#06121f;border-color:#4ea1ff}
+    .rw-q.edited{background:#5a4622;border-color:#ffb454}
+    .rw-q.f1{border-color:#ff6b6b}
+    .rw-q .rw-tag{font-size:10px;color:#9a9aa6;vertical-align:super}
+    .rw-q.active .rw-tag{color:#06121f}
   </style>
 </head>
 <body>
@@ -2602,6 +2630,7 @@
                 <button type="button" data-busy-lock onclick="addSegment()">新增一段</button>
                 <button type="button" data-busy-lock class="secondary" onclick="renderSegments(true)">刷新渲染</button>
                 <button type="button" data-busy-lock class="secondary" onclick="runMachineAudit()" title="聚焦重问两级分流：⚑必看/·顺带看，意见仅作提示，最终判断在人工（需先完成 BatchLLM 结构化解析）">机器审计</button>
+                <button type="button" data-busy-lock class="secondary" onclick="openReviewWorkbench()" title="双栏复核：中栏原文角标定位上下文，左栏快速替换角色名（需本会话执行过结构化解析）">复核工作台</button>
                 <button type="button" class="toggle-button" onclick="toggleSegmentsPanel()"><span id="segmentsToggleLabel">展开分析结果</span></button>
                 <button type="button" class="secondary" id="showSegmentContextButton" onclick="showSelectedSegmentContext()" disabled>显示前后文</button>
                 <button type="button" id="goToAudioButton" data-busy-lock onclick="goToAudioGeneration()" disabled>前往音频生成</button>
@@ -10860,6 +10889,182 @@ very high pitch, very low pitch, whisper, young adult
     return indices;
   }
 
+  // ===== 复核工作台：移植自 tools/review_server.py（中栏原文角标 + 左栏快速改名）=====
+  let rwState = null; // {raw, items:[{i,start,end,flag}], active, filter, edited:Set}
+
+  function rwAlign(raw, segments) {
+    // 对话内文字剥离索引：只在引号内匹配，短引文不会错配到叙述里的同字子串
+    const STRIP = new Set([..."「」『』《》〈〉 \t\r\n\u3000"]);
+    const sidx = []; const chars = []; let depth = 0;
+    for (let k = 0; k < raw.length; k++) {
+      const ch = raw[k];
+      if (ch === "「" || ch === "『") { depth++; continue; }
+      if (ch === "」" || ch === "』") { depth = Math.max(0, depth - 1); continue; }
+      if (depth === 0 || STRIP.has(ch)) continue;
+      chars.push(ch); sidx.push(k);
+    }
+    const sraw = chars.join("");
+    let cursor = 0;
+    return segments.map((seg, i) => {
+      const key = [...String(seg.text || "")].filter((c) => !STRIP.has(c)).join("");
+      let start = -1, end = -1;
+      if (key) {
+        let p = sraw.indexOf(key, cursor);
+        if (p < 0) p = sraw.indexOf(key);
+        if (p >= 0) { start = sidx[p]; end = sidx[p + key.length - 1] + 1; cursor = p + key.length; }
+      }
+      return { i, start, end };
+    });
+  }
+
+  function openReviewWorkbench() {
+    if (!segmentsState.length) { showToast("当前没有分析结果", "warn", 1800); return; }
+    if (!auditContextState || !auditContextState.text) {
+      showToast("缺少原文上下文：请先在本会话用结构化解析生成结果", "warn", 2600); return;
+    }
+    const raw = auditContextState.text;
+    const aligned = rwAlign(raw, segmentsState);
+    rwState = { raw, items: aligned, active: -1, filter: null, edited: new Set() };
+    // roster：当前所有说话人 + 角色档案
+    const roster = new Set(getSpeakerList());
+    document.getElementById("rwRoster").innerHTML =
+      [...roster].map((n) => `<option value="${escapeHtml(n)}">`).join("");
+    rwRenderDoc(); rwRenderList(); rwUpdateCounts(); rwSyncFilterUI();
+    document.getElementById("rwModal").classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeReviewWorkbench() {
+    document.getElementById("rwModal").classList.remove("open");
+    document.body.style.overflow = "";
+    if (rwState && rwState.edited.size) {
+      // 统一做一次全量刷新（与 applyReviewSegmentSpeaker 同套收尾）
+      renderRoles(); renderRoleAssignments(); renderSpeakerMergeList();
+      updateAnalysisFilterState(); updateSegmentsMeta(); renderContentFilterReviewPanel();
+      renderSegments(true);
+      setStatus(`复核工作台：本次共修正 ${rwState.edited.size} 段角色。`);
+    }
+    rwState = null;
+  }
+
+  function rwFlagOf(seg) {
+    if (seg._needs_review || seg._audit_tier === 1) return 1;
+    if (seg._audit_tier === 2) return 2;
+    return 0;
+  }
+
+  function rwRenderDoc() {
+    const { raw, items } = rwState;
+    const located = items.filter((it) => it.start >= 0).sort((a, b) => a.start - b.start);
+    let html = ""; let prev = 0;
+    for (const it of located) {
+      if (it.start < prev) continue;
+      const seg = segmentsState[it.i];
+      const flag = rwFlagOf(seg);
+      const cls = "rw-q" + (flag === 1 ? " f1" : "") + (rwState.edited.has(it.i) ? " edited" : "");
+      html += escapeHtml(raw.slice(prev, it.start));
+      html += `<span class="${cls}" id="rwq${it.i}" onclick="rwSelect(${it.i})">` +
+        escapeHtml(raw.slice(it.start, it.end)) +
+        `<span class="rw-tag" id="rwtag${it.i}">${escapeHtml(rwShort(seg.speaker))}</span></span>`;
+      prev = it.end;
+    }
+    html += escapeHtml(raw.slice(prev));
+    document.getElementById("rwDoc").innerHTML = html;
+  }
+
+  function rwShort(n) { n = String(n || ""); return n.length > 4 ? n.slice(0, 4) + "…" : n; }
+
+  function rwRowHtml(seg, i) {
+    const flag = rwFlagOf(seg);
+    const flagHtml = flag === 1 ? '<span class="rw-f1">⚑</span>' : (flag === 2 ? '<span class="rw-f2">·</span>' : "");
+    const edited = rwState.edited.has(i);
+    const hint = seg._audit_hint ? `<div class="rw-hint">审计: ${escapeHtml(seg._audit_hint)}</div>` : "";
+    const orig = edited && seg._rw_orig != null && seg._rw_orig !== seg.speaker
+      ? `<div class="rw-orig">原: ${escapeHtml(seg._rw_orig)}</div>` : "";
+    return `<div class="rw-idx">${flagHtml}${i}</div>
+      <div><input class="rw-sp" list="rwRoster" value="${escapeHtml(seg.speaker || "")}" data-i="${i}"
+        onfocus="rwSelect(${i})" onchange="rwSave(${i}, this.value)">${orig}${hint}</div>
+      <div class="rw-tx">「${escapeHtml(seg.text || "")}」</div>`;
+  }
+
+  function rwRenderList() {
+    const list = document.getElementById("rwList");
+    list.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    segmentsState.forEach((seg, i) => {
+      const flag = rwFlagOf(seg);
+      if (rwState.filter === "flag" && !flag) return;
+      if (rwState.filter === "edit" && !rwState.edited.has(i)) return;
+      const row = document.createElement("div");
+      row.className = "rw-row" + (rwState.edited.has(i) ? " edited" : "") + (i === rwState.active ? " active" : "");
+      row.id = "rwrow" + i;
+      row.onclick = (e) => { if (e.target.tagName !== "INPUT") rwSelect(i, true); };
+      row.innerHTML = rwRowHtml(seg, i);
+      frag.appendChild(row);
+    });
+    list.appendChild(frag);
+  }
+
+  function rwUpdateCounts() {
+    document.getElementById("rwTotal").textContent = segmentsState.length;
+    document.getElementById("rwFlag").textContent = segmentsState.filter((s) => rwFlagOf(s)).length;
+    document.getElementById("rwEdit").textContent = rwState.edited.size;
+  }
+
+  function rwSyncFilterUI() {
+    document.getElementById("rwFAll").classList.toggle("on", !rwState.filter);
+    document.getElementById("rwF1").classList.toggle("on", rwState.filter === "flag");
+    document.getElementById("rwF2").classList.toggle("on", rwState.filter === "edit");
+  }
+
+  function rwSetFilter(kind) {
+    rwState.filter = (rwState.filter === kind) ? null : kind;
+    rwSyncFilterUI(); rwRenderList();
+  }
+
+  function rwSelect(i, fromList = false) {
+    if (!rwState || !Number.isInteger(i) || i < 0 || i >= segmentsState.length) return;
+    const prevActive = rwState.active;
+    rwState.active = i;
+    if (prevActive >= 0) {
+      document.getElementById("rwq" + prevActive)?.classList.remove("active");
+      document.getElementById("rwrow" + prevActive)?.classList.remove("active");
+    }
+    const q = document.getElementById("rwq" + i);
+    const row = document.getElementById("rwrow" + i);
+    q?.classList.add("active"); row?.classList.add("active");
+    q?.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (!fromList) row?.scrollIntoView({ block: "nearest" });
+  }
+
+  function rwSave(i, value) {
+    const next = String(value || "").trim();
+    if (!next) { showToast("角色名不能为空", "warn", 1600); return; }
+    const seg = segmentsState[i];
+    if (next === seg.speaker) return;
+    if (seg._rw_orig == null) seg._rw_orig = seg.speaker; // 本次会话的"原"值
+    segmentsState[i] = { ...resolveSegmentManualReview(seg, next), _rw_orig: seg._rw_orig,
+      _audit_tier: seg._audit_tier, _audit_hint: seg._audit_hint };
+    rwState.edited.add(i);
+    ensureRoleProfile(next);
+    saveLastSegments(segmentsState);
+    // 局部刷新：行 + 中栏角标
+    const row = document.getElementById("rwrow" + i);
+    if (row) { row.classList.add("edited"); row.innerHTML = rwRowHtml(segmentsState[i], i); }
+    const q = document.getElementById("rwq" + i); const tag = document.getElementById("rwtag" + i);
+    q?.classList.add("edited");
+    if (tag) tag.textContent = rwShort(next);
+    // roster 补充新名字
+    const roster = document.getElementById("rwRoster");
+    if (roster && ![...roster.options].some((o) => o.value === next)) {
+      roster.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(next)}">`);
+    }
+    rwUpdateCounts();
+    const st = document.getElementById("rwStatus");
+    st.textContent = `已保存 #${i} → ${next}`;
+    clearTimeout(window._rwT); window._rwT = setTimeout(() => { st.textContent = ""; }, 1500);
+  }
+
   async function runMachineAudit() {
     // 机器审计：对当前 segmentsState 做聚焦重问两级分流（docs/flagging_audit_analysis_2026-06-10.md）。
     // tier1 ⚑ 必看（意见分歧/被块级复核改过），tier2 · 顺带看（±1 邻段）。只分流不裁决。
@@ -12541,5 +12746,21 @@ very high pitch, very low pitch, whisper, young adult
     }
   });
 </script>
+
+  <div id="rwModal">
+    <div id="rwHeader">
+      <b>复核工作台</b>
+      <span class="rw-muted">总 <span id="rwTotal">0</span> · ⚑待核 <span id="rwFlag">0</span> · 本次已改 <span id="rwEdit">0</span></span>
+      <button class="rw-btn" id="rwFAll" onclick="rwSetFilter(null)">全部</button>
+      <button class="rw-btn" id="rwF1" onclick="rwSetFilter('flag')">只看⚑/·</button>
+      <button class="rw-btn" id="rwF2" onclick="rwSetFilter('edit')">只看已改</button>
+      跳到 <input type="text" id="rwJump" placeholder="序号" onkeydown="if(event.key==='Enter'){rwSelect(parseInt(this.value),true)}">
+      <span class="rw-muted" id="rwStatus"></span>
+      <span style="flex:1"></span>
+      <button class="rw-btn" onclick="closeReviewWorkbench()">完成并关闭</button>
+    </div>
+    <div id="rwMain"><div id="rwList"></div><div id="rwDoc"></div></div>
+    <datalist id="rwRoster"></datalist>
+  </div>
 </body>
 </html>
