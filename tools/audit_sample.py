@@ -84,15 +84,22 @@ def build_locator(raw: str):
     return locate
 
 
-def call_api(prompt: str, api_key: str, retries: int = 6) -> str | None:
+TOKENHUB_URL = "https://tokenhub.tencentmaas.com/v1/chat/completions"
+TOKENHUB_MODEL = "glm-5-turbo"  # 异构第二意见（2026-06-10 验证：纠对81%/漏网捕获6/8/误标8%）
+
+
+def call_api(prompt: str, api_key: str, retries: int = 6, *, url: str = AGNES_URL,
+             model: str = AGNES_MODEL, max_tokens: int = 200, extra: dict | None = None) -> str | None:
+    payload = {"model": model, "messages": [{"role": "user", "content": prompt}],
+               "max_tokens": max_tokens, "temperature": 0.0}
+    if extra:
+        payload.update(extra)
     req = urllib.request.Request(
-        AGNES_URL,
-        data=json.dumps({"model": AGNES_MODEL, "messages": [{"role": "user", "content": prompt}],
-                         "max_tokens": 200, "temperature": 0.0}).encode(),
+        url, data=json.dumps(payload).encode(),
         headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"})
     for t in range(retries):
         try:
-            r = json.load(urllib.request.urlopen(req, timeout=90))
+            r = json.load(urllib.request.urlopen(req, timeout=150))
             return r["choices"][0]["message"]["content"]
         except Exception as e:  # noqa: BLE001
             if "429" in str(e) or "timed out" in str(e).lower():
@@ -127,6 +134,9 @@ def main() -> None:
                     help='第一人称叙述者；第三人称样本传 none')
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--context", type=int, default=800)
+    ap.add_argument("--hetero", action="store_true",
+                    help="异构第二轮：glm-5-turbo(tokenhub) 扫描 agnes 一致段，抓同构盲区"
+                         "（额度有限，只在固化前的最终审计用）")
     args = ap.parse_args()
     narrator = args.narrator if args.narrator and args.narrator.lower() != "none" else None
 
@@ -184,6 +194,42 @@ def main() -> None:
         if rs:
             tier1[i] = True
             reasons[i] = rs
+    # 异构第二轮（--hetero，省额度）：glm-5-turbo 只扫 agnes 各路意见一致的段
+    # （tier1 之外的具名段），分歧即补入 tier1——专抓同构模型的集体盲区。
+    hetero_used = 0
+    if args.hetero:
+        th_key = os.environ.get("TOKENHUB_API_KEY")
+        if not th_key:
+            raise SystemExit("--hetero 需要 TOKENHUB_API_KEY（见 .env）")
+        sweep = [i for i in targets if not tier1[i]]
+        print(f"异构第二轮: glm-5-turbo 扫描 {len(sweep)} 个一致段…", flush=True)
+
+        def ask_th(i: int):
+            text = parse[i].get("text", "")
+            st, en = locate(text)
+            if st < 0:
+                return i, None
+            prompt = make_prompt(roster, narrator,
+                                 raw[max(0, st - args.context):st], text, raw[en:en + args.context])
+            out = call_api(prompt, th_key, url=TOKENHUB_URL, model=TOKENHUB_MODEL,
+                           max_tokens=2000, extra={"chat_template_kwargs": {"enable_thinking": False}})
+            if not out:
+                return i, None
+            m = re.search(r"\{[^{}]*\}", out)
+            try:
+                return i, json.loads(m.group()) if m else None
+            except Exception:  # noqa: BLE001
+                return i, None
+
+        with ThreadPoolExecutor(args.workers) as ex:
+            for i, r in ex.map(ask_th, sweep):
+                hetero_used += 1
+                hk = canon(str(r.get("speaker", ""))) if r else None
+                if hk and hk != canon(parse[i]["speaker"]):
+                    tier1[i] = True
+                    reasons.setdefault(i, []).append(f"异构意见={hk}")
+                    reask.setdefault(i, r)
+
     tier2 = [False] * n
     for i, f in enumerate(tier1):
         if f:
@@ -194,7 +240,10 @@ def main() -> None:
     out = {
         "seg": args.seg,
         "generated": datetime.now().isoformat(timespec="seconds"),
-        "method": "focused-reask + bare-disagree + block-review-changed; tier2=±1邻段",
+        "method": "focused-reask + bare-disagree + block-review-changed"
+                  + (" + hetero(glm-5-turbo)一致段扫描" if args.hetero else "")
+                  + "; tier2=±1邻段",
+        "hetero_calls": hetero_used,
         "narrator": narrator,
         "reask_done": sum(1 for v in reask.values() if v),
         "tier1": [i for i, f in enumerate(tier1) if f],
