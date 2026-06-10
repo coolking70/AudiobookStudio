@@ -1,0 +1,174 @@
+{
+ "meta": {
+  "mode": "score",
+  "parse_dir": "/Users/coolking70/Documents/同步空间/aitts/AudiobookStudio/docs/samples",
+  "time": "2026-06-10T16:00:05"
+ },
+ "results": [
+  {
+   "seg": "muli4_seg1",
+   "named": 211,
+   "correct": 186,
+   "acc": 0.8815,
+   "simple": [
+    131,
+    137
+   ],
+   "dense": [
+    55,
+    74
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg2",
+   "named": 268,
+   "correct": 256,
+   "acc": 0.9552,
+   "simple": [
+    206,
+    211
+   ],
+   "dense": [
+    50,
+    57
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg3",
+   "named": 282,
+   "correct": 267,
+   "acc": 0.9468,
+   "simple": [
+    223,
+    231
+   ],
+   "dense": [
+    44,
+    51
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg4",
+   "named": 260,
+   "correct": 241,
+   "acc": 0.9269,
+   "simple": [
+    191,
+    207
+   ],
+   "dense": [
+    50,
+    53
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg5",
+   "named": 282,
+   "correct": 276,
+   "acc": 0.9787,
+   "simple": [
+    268,
+    273
+   ],
+   "dense": [
+    8,
+    9
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg6",
+   "named": 220,
+   "correct": 204,
+   "acc": 0.9273,
+   "simple": [
+    184,
+    198
+   ],
+   "dense": [
+    20,
+    22
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg7",
+   "named": 219,
+   "correct": 209,
+   "acc": 0.9543,
+   "simple": [
+    135,
+    141
+   ],
+   "dense": [
+    74,
+    78
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg7b_side_kaho",
+   "named": 4,
+   "correct": 4,
+   "acc": 1.0,
+   "simple": [
+    4,
+    4
+   ],
+   "dense": [
+    0,
+    0
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg8",
+   "named": 141,
+   "correct": 119,
+   "acc": 0.844,
+   "simple": [
+    15,
+    15
+   ],
+   "dense": [
+    104,
+    126
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg8b_side_mayu",
+   "named": 197,
+   "correct": 184,
+   "acc": 0.934,
+   "simple": [
+    165,
+    177
+   ],
+   "dense": [
+    19,
+    20
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg9",
+   "named": 157,
+   "correct": 135,
+   "acc": 0.8599,
+   "simple": [
+    38,
+    48
+   ],
+   "dense": [
+    97,
+    109
+   ],
+   "skipped_drift": 0
+  }
+ ]
+}
