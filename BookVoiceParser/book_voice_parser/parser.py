@@ -1007,6 +1007,7 @@ def _parse_with_batch_llm(
     enable_block_review: bool = True,
     dense_scene_review_size: int = 3,
     first_pass: str = "batch",
+    block_review_conservative: bool = False,
 ) -> list[SegmentEx] | ParseResult:
     """
     使用 BatchLLMAttributor 的完整归因路径。
@@ -1417,6 +1418,7 @@ def _parse_with_batch_llm(
                 # scenes, is circular vs the model's own output, and misses sparse speakers).
                 # Kept as an opt-in hook on apply_block_review for future use.
                 address_hints=None,
+                conservative=block_review_conservative,
             )
             block_review_stats["enabled"] = True
         except Exception as exc:  # noqa: BLE001 - never let review break the main path
@@ -1472,6 +1474,7 @@ def parse_novel(
     enable_block_review: bool = True,
     dense_scene_review_size: int = 3,
     first_pass: str = "batch",
+    block_review_conservative: bool = False,
 ) -> list[SegmentEx] | ParseResult:
     """Parse Chinese novel text into speaker-attributed TTS segments.
 
@@ -1523,6 +1526,7 @@ def parse_novel(
             enable_block_review=enable_block_review,
             dense_scene_review_size=dense_scene_review_size,
             first_pass=first_pass,
+            block_review_conservative=block_review_conservative,
         )
 
     # ── 经典逐条路径（兼容旧接口）──────────────────────────────────────────────

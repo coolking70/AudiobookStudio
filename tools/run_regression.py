@@ -189,7 +189,8 @@ def cmd_run(args) -> None:
                              narrator=MANIFEST[s], return_result=True,
                              include_narration=False, review_threshold=0.7,
                              enable_block_review=not args.no_block_review,
-                             first_pass=args.first_pass)
+                             first_pass=args.first_pass,
+                             block_review_conservative=args.conservative)
         pp = out_dir / f"{s}_parse.json"
         pp.write_text(json.dumps(
             {"segments": [x.model_dump(mode="json") for x in result.segments],
@@ -204,6 +205,7 @@ def cmd_run(args) -> None:
                   "no_block_review": args.no_block_review,
                   "context_chars": args.context_chars,
                   "first_pass": args.first_pass,
+                  "conservative": args.conservative,
                   "time": datetime.now().isoformat(timespec="seconds")})
 
 
@@ -249,6 +251,8 @@ def main() -> None:
     p.add_argument("--only", help="逗号分隔样本子集")
     p.add_argument("--no-block-review", action="store_true", help="关闭块级复核（消融实验）")
     p.add_argument("--context-chars", type=int, default=320, help="初判每句附带的上下文字数（默认320）")
+    p.add_argument("--conservative", action="store_true",
+                   help="块级复核用保守模式（看着当前判断、仅证据改判，针对轮换猜测翻转）")
     p.add_argument("--first-pass", default="batch", choices=["batch", "single"],
                    help="初判方式：batch=分批窗口（默认）/ single=单遍直出整文阅读（实验）")
     p.set_defaults(func=cmd_run)
