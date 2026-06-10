@@ -3,15 +3,15 @@
     "raw_file": "docs/samples/muli4_seg4_sample.txt",
     "parse_file": "docs/samples/muli4_seg4_parse.json",
     "parser": "agnes-2.0-flash + block_review + haiku密集复核",
-    "finalized": "2026-06-08T21:29:55",
+    "finalized": "2026-06-10T22:42:56",
     "human_reviewed": true,
     "crowd_convention": "群众·<群体名>，评分按 crowd:true 排除"
   },
   "total_segments": 268,
   "crowd_segments": 8,
-  "named_corrections": 21,
+  "named_corrections": 19,
   "named_total": 260,
-  "model_named_accuracy": 0.9192,
+  "model_named_accuracy": 0.9269,
   "corrected_indices": [
     32,
     45,
@@ -362,7 +362,6 @@
       "speaker": "群众·帕曼小姐等",
       "model_speaker": "帕曼小姐等",
       "text": "请多指教",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -377,7 +376,6 @@
       "speaker": "群众·女性们",
       "model_speaker": "女性们",
       "text": "喔～",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -1785,7 +1783,6 @@
       "speaker": "群众·摄影师们",
       "model_speaker": "甘织玲奈子",
       "text": "真可爱",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -1793,7 +1790,6 @@
       "speaker": "群众·摄影师们",
       "model_speaker": "未知临时人物",
       "text": "好可爱！",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -1801,7 +1797,6 @@
       "speaker": "群众·摄影师们",
       "model_speaker": "未知临时人物",
       "text": "哎呀，玲奈无尾熊小姐真可爱呢。完成度好高，简直就是莉娜兔本人！",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -1816,7 +1811,6 @@
       "speaker": "群众·摄影师们",
       "model_speaker": "未知临时人物",
       "text": "喔喔，那个姿势也好可爱！请把视线朝向这边！",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -1831,7 +1825,6 @@
       "speaker": "群众·摄影师们",
       "model_speaker": "未知临时人物",
       "text": "好可爱──！那台词也很像真正的莉娜兔──！",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -1839,7 +1832,6 @@
       "speaker": "群众·摄影师们",
       "model_speaker": "未知临时人物",
       "text": "那就脱一件怎么样啊，这样会更可爱喔",
-      "crowd": true,
       "corrected": true
     },
     {

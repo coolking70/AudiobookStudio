@@ -3,14 +3,12 @@
     "raw_file": "docs/samples/muli4_seg1_sample.txt",
     "parse_file": "docs/samples/muli4_seg1_parse.json",
     "parser": "agnes-2.0-flash + block_review",
-    "finalized": "2026-06-08T12:39:12",
+    "finalized": "2026-06-10T22:42:56",
     "human_reviewed": true,
-    "note": "crowd/temp groups marked with crowd:true; ambiguous interchangeable roles use acceptable[]",
-    "crowd_convention": "群众·<群体名> 前缀标记不可区分的临时群体；评分按 crowd:true 排除"
+    "crowd_convention": "群众·<群体名>，评分按 crowd:true 排除"
   },
   "total_segments": 224,
   "crowd_segments": 13,
-  "ambiguous_segments": 3,
   "named_corrections": 25,
   "named_total": 211,
   "model_named_accuracy": 0.8815,
@@ -45,7 +43,6 @@
     192,
     194,
     195,
-    196,
     197,
     206,
     209,
@@ -69,7 +66,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "好懒得来学校喔～可以永远放暑假吗～",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -77,7 +73,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "就是啊就是啊。",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -85,7 +80,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "话说，前阵子琢磨那家伙好像向王冢真唯告白了。",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -93,7 +87,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "唉～真假～？笑死。",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -101,7 +94,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "是说，新藤也向琴纱月告白了。",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -109,7 +101,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "咦？那家伙原来喜欢那种类型啊。",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -117,7 +108,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "不过是可以理解啦。",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -125,7 +115,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "濑名也相当高呢。",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -133,7 +122,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "啊──",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -141,7 +129,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "你说人气啊。",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -149,7 +136,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "果然。",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -157,7 +143,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "我就知道。",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -165,7 +150,6 @@
       "speaker": "群众·女生小团体",
       "model_speaker": "未知临时人物",
       "text": "大家就是喜欢那种型呢～",
-      "crowd": true,
       "corrected": true
     },
     {
@@ -1440,33 +1424,33 @@
       "speaker": "长谷川同学",
       "model_speaker": "平野同学",
       "text": "这样啊～毕竟最近季节转换，身体很容易出状况呢。",
+      "corrected": true,
       "acceptable": [
         "长谷川同学",
         "平野同学"
-      ],
-      "corrected": false
+      ]
     },
     {
       "i": 196,
       "speaker": "长谷川同学",
       "model_speaker": "长谷川同学",
       "text": "不过，甘织同学不在的话班上的华丽度就直接减半了，幸好你能恢复精神！",
+      "corrected": false,
       "acceptable": [
         "长谷川同学",
         "平野同学"
-      ],
-      "corrected": false
+      ]
     },
     {
       "i": 197,
       "speaker": "长谷川同学",
       "model_speaker": "甘织玲奈子",
       "text": "减半什么的太夸张了啦，顶多也就三分之一吧。",
+      "corrected": true,
       "acceptable": [
         "长谷川同学",
         "平野同学"
-      ],
-      "corrected": true
+      ]
     },
     {
       "i": 198,

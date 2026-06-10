@@ -215,8 +215,7 @@ MODEL_BASE_URL=https://omnitok.xyz/v1 MODEL_NAME=gpt-5.5 MODEL_API_KEY=sk-... \
 
 ## 6. 历史样本说明
 
-`seg1`~`seg4` 早于本固化工具，用的是手工记账：早期把群众写成裸名（如 `女生小团体`，
-groundtruth 里才补 `群众·` 前缀）、`named_corrections` 有 ±1~2 的人工漂移、seg2/seg3 没有口径字段。
-因此 `verify_sample.py --all` 只有 **seg5 通过**，其余报「口径不符」属预期，不是 bug。它们的
-groundtruth 段内容仍可用于评测；如需统一口径，可在保留其 acceptable-set / 群众标注后重新固化。
-**新样本（seg6+）一律按本文 seg5 约定生产。**
+`seg1`~`seg4` 原为手工记账（裸群众名、口径漂移），**已于 2026-06-10 按 seg5 约定重固化**
+（review 补「群众·」前缀、斜杠 acceptable-set、build_groundtruth 机械重建），现在
+`verify_sample.py --all` 全部 15 个样本 PASS。重建后指标与原手工值吻合（如 seg1
+88.15%），证明当年人工计数在 acceptable 语义下正确。全集口径自此完全统一。
