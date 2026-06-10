@@ -3,24 +3,23 @@
     "raw_file": "docs/samples/muli4_seg7_bareflash_sample.txt",
     "parse_file": "docs/samples/muli4_seg7_bareflash_parse.json",
     "parser": "agnes-2.0-flash 单遍直出（无 block_review / dense_scene_review_routing / address_term_backcheck 流水线复核）",
-    "finalized": "2026-06-09T16:42:20",
+    "finalized": "2026-06-10T11:28:46",
     "human_reviewed": true,
     "crowd_convention": "群众·<群体名>，评分按 crowd:true 排除"
   },
-  "reference_baseline": true,
-  "reference_note": "非生产流水线产物，仅作裸单遍模型对照基线保留。同一 sample 的流水线权威版见 muli4_seg7_*。",
   "total_segments": 226,
-  "crowd_segments": 6,
+  "crowd_segments": 7,
   "named_corrections": 6,
-  "named_total": 220,
-  "model_named_accuracy": 0.9727,
+  "named_total": 219,
+  "model_named_accuracy": 0.9726,
   "corrected_indices": [
     3,
     4,
     85,
     86,
     93,
-    102
+    102,
+    155
   ],
   "segments": [
     {
@@ -1110,10 +1109,10 @@
     },
     {
       "i": 155,
-      "speaker": "甘织玲奈子",
+      "speaker": "旁白",
       "model_speaker": "甘织玲奈子",
       "text": "Cosplay阳角",
-      "corrected": false
+      "corrected": true
     },
     {
       "i": 156,
@@ -1605,5 +1604,7 @@
       "text": "嗯……一起去创造只属于我们的特别回忆吧。",
       "corrected": false
     }
-  ]
+  ],
+  "reference_baseline": true,
+  "reference_note": "非生产流水线产物，仅作裸单遍模型对照基线保留。同一 sample 的流水线权威版见 muli4_seg7_*。"
 }

@@ -3,22 +3,25 @@
     "raw_file": "docs/samples/muli4_seg5_sample.txt",
     "parse_file": "docs/samples/muli4_seg5_parse.json",
     "parser": "agnes-2.0-flash + block_review + dense_scene_review_routing + address_term_backcheck",
-    "finalized": "2026-06-09T10:51:19",
+    "finalized": "2026-06-10T11:28:46",
     "human_reviewed": true,
     "crowd_convention": "群众·<群体名>，评分按 crowd:true 排除"
   },
   "total_segments": 285,
-  "crowd_segments": 0,
+  "crowd_segments": 3,
   "named_corrections": 6,
-  "named_total": 285,
-  "model_named_accuracy": 0.9789,
+  "named_total": 282,
+  "model_named_accuracy": 0.9787,
   "corrected_indices": [
     17,
     47,
     62,
     130,
     193,
-    216
+    216,
+    243,
+    255,
+    270
   ],
   "segments": [
     {
@@ -1724,10 +1727,10 @@
     },
     {
       "i": 243,
-      "speaker": "甘织玲奈子",
+      "speaker": "旁白",
       "model_speaker": "甘织玲奈子",
       "text": "格调",
-      "corrected": false
+      "corrected": true
     },
     {
       "i": 244,
@@ -1808,10 +1811,10 @@
     },
     {
       "i": 255,
-      "speaker": "甘织玲奈子",
+      "speaker": "旁白",
       "model_speaker": "甘织玲奈子",
       "text": "在高中改头换面",
-      "corrected": false
+      "corrected": true
     },
     {
       "i": 256,
@@ -1913,10 +1916,10 @@
     },
     {
       "i": 270,
-      "speaker": "甘织玲奈子",
+      "speaker": "旁白",
       "model_speaker": "甘织玲奈子",
       "text": "大色胚",
-      "corrected": false
+      "corrected": true
     },
     {
       "i": 271,

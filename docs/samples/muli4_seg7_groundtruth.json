@@ -3,15 +3,15 @@
     "raw_file": "docs/samples/muli4_seg7_sample.txt",
     "parse_file": "docs/samples/muli4_seg7_parse.json",
     "parser": "agnes-2.0-flash + block_review + dense_scene_review_routing + address_term_backcheck",
-    "finalized": "2026-06-09T21:21:36",
+    "finalized": "2026-06-10T11:28:46",
     "human_reviewed": true,
     "crowd_convention": "群众·<群体名>，评分按 crowd:true 排除"
   },
   "total_segments": 226,
-  "crowd_segments": 6,
+  "crowd_segments": 7,
   "named_corrections": 10,
-  "named_total": 220,
-  "model_named_accuracy": 0.9545,
+  "named_total": 219,
+  "model_named_accuracy": 0.9543,
   "corrected_indices": [
     1,
     2,
@@ -25,7 +25,8 @@
     90,
     93,
     97,
-    102
+    102,
+    155
   ],
   "segments": [
     {
@@ -1115,10 +1116,10 @@
     },
     {
       "i": 155,
-      "speaker": "甘织玲奈子",
+      "speaker": "旁白",
       "model_speaker": "甘织玲奈子",
       "text": "Cosplay阳角",
-      "corrected": false
+      "corrected": true
     },
     {
       "i": 156,

@@ -3,17 +3,18 @@
     "raw_file": "docs/samples/muli4_seg6_bareflash_sample.txt",
     "parse_file": "docs/samples/muli4_seg6_bareflash_parse.json",
     "parser": "agnes-2.0-flash 单遍直出（无 block_review / dense_scene_review_routing / address_term_backcheck 流水线复核）",
-    "finalized": "2026-06-09T14:50:13",
+    "finalized": "2026-06-10T11:28:46",
     "human_reviewed": true,
     "crowd_convention": "群众·<群体名>，评分按 crowd:true 排除"
   },
   "total_segments": 225,
-  "crowd_segments": 0,
+  "crowd_segments": 5,
   "named_corrections": 18,
-  "named_total": 225,
-  "model_named_accuracy": 0.92,
+  "named_total": 220,
+  "model_named_accuracy": 0.9182,
   "corrected_indices": [
     26,
+    41,
     81,
     92,
     93,
@@ -29,8 +30,12 @@
     119,
     120,
     123,
+    133,
+    134,
     145,
-    146
+    146,
+    198,
+    224
   ],
   "segments": [
     {
@@ -322,10 +327,10 @@
     },
     {
       "i": 41,
-      "speaker": "甘织玲奈子",
+      "speaker": "旁白",
       "model_speaker": "甘织玲奈子",
       "text": "承担对方的人生",
-      "corrected": false
+      "corrected": true
     },
     {
       "i": 42,
@@ -966,17 +971,17 @@
     },
     {
       "i": 133,
-      "speaker": "甘织玲奈子",
+      "speaker": "旁白",
       "model_speaker": "甘织玲奈子",
       "text": "砂糖很甜",
-      "corrected": false
+      "corrected": true
     },
     {
       "i": 134,
-      "speaker": "甘织玲奈子",
+      "speaker": "旁白",
       "model_speaker": "甘织玲奈子",
       "text": "夕阳很红",
-      "corrected": false
+      "corrected": true
     },
     {
       "i": 135,
@@ -1421,10 +1426,10 @@
     },
     {
       "i": 198,
-      "speaker": "濑名紫阳花",
+      "speaker": "旁白",
       "model_speaker": "濑名紫阳花",
       "text": "喜欢",
-      "corrected": false
+      "corrected": true
     },
     {
       "i": 199,
@@ -1603,10 +1608,10 @@
     },
     {
       "i": 224,
-      "speaker": "甘织玲奈子",
+      "speaker": "旁白",
       "model_speaker": "甘织玲奈子",
       "text": "喜欢",
-      "corrected": false
+      "corrected": true
     }
   ],
   "reference_baseline": true,
