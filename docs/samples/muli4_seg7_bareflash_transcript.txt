@@ -1,0 +1,452 @@
+[  0] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「──所以呢，玲奈亲。再帮我一次吧。和我一起参加幕张Cosplay高峰会！」
+[  1] 小柳香穗     (0.8) AttributionType.IMPLICIT
+      「搭档出场。」
+[  2] 甘织玲奈子    (0.9) AttributionType.IMPLICIT
+      「唉？嗯。」
+[  3] 甘织玲奈子    (0.8) AttributionType.IMPLICIT
+      「玲奈亲！？」
+[  4] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「一共有8组能够出场」
+[  5] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「不行……绝对不行啊……」
+[  6] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「既然这样，应该要拜托纱月同学……」
+[  7] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「我就是要玲奈亲一起嘛！」
+[  8] 小柳香穗     (0.95) AttributionType.EXPLICIT_BEFORE
+      「我想和玲奈亲一起。」
+[  9] 甘织玲奈子    (0.92) AttributionType.IMPLICIT
+      「只要是我能做到的，不论什么我都会帮你的！」
+[ 10] 甘织玲奈子    (0.9) AttributionType.IMPLICIT
+      「不，我只是随便讲一下，不负责任地煽动了小香穗而已哦。要克服这件事的是小香穗自己，跟我没关系喔笑」
+[ 11] 甘织玲奈子    (0.92) AttributionType.IMPLICIT
+      「是吗，这样啊，小香穗……」
+[ 12] 甘织玲奈子    (0.92) AttributionType.IMPLICIT
+      「说不定会给你添麻烦……不对，大概一定，绝对百分之百会给你添麻烦，这点我可以保证！」
+[ 13] 小柳香穗     (0.92) AttributionType.IMPLICIT
+      「为什么这种地方反而信心爆棚啊……」
+[ 14] 甘织玲奈子    (0.8) AttributionType.IMPLICIT
+      「但是，就算这样也可以的话，那个……请让我帮忙！」
+[ 15] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「为什么是玲奈亲来拜托我啊？反了喔。」
+[ 16] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「是、是这样没错……可是，会扯后腿的人明显是我……」
+[ 17] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「没事的，因为，我喜欢和玲奈亲一起做那个嘛。」
+[ 18] 小柳香穗     (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「而且，小纱说她那天有事。」
+[ 19] 濑名紫阳花    (0.6499999999999999) AttributionType.IMPLICIT
+      「那个，小玲奈，怎么了？你刚才好像受了很大的打击。」
+[ 20] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「没事～没事……紫阳花同学真温柔呢……」
+[ 21] 濑名紫阳花    (0.6499999999999999) AttributionType.IMPLICIT
+      「感、感觉你整个人都快干掉了！」
+[ 22] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「其实呢，紫阳花同学……」
+[ 23] 王冢真唯     (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「昨天很对不起」
+[ 24] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「我现在被卷进了有点麻烦的事情里面……那个感觉就是，就算耗尽我所有MP都不晓得能不能发动的大魔法……」
+[ 25] 濑名紫阳花    (0.6499999999999999) AttributionType.IMPLICIT
+      「嗯、嗯。」
+[ 26] 甘织玲奈子    (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「其实，如果没这件事的话，我本来打算在今天给紫阳花同学和真唯一个答覆的……对不起哦……」
+[ 27] 濑名紫阳花    (0.6499999999999999) AttributionType.IMPLICIT
+      「啊，嗯，原来是这样啊……唉！？唉唉！？」
+[ 28] 濑名紫阳花    (0.95) AttributionType.IMPLICIT
+      「今、今天要给答覆……唉唉……？原、原来是这样……吓死我了……」
+[ 29] 甘织玲奈子    (0.8) AttributionType.IMPLICIT
+      「唉？呃，嗯……我本来是想努力这么做的……」
+[ 30] 濑名紫阳花    (0.95) AttributionType.EXPLICIT_BEFORE
+      「……会、会不会太快了……？毕竟也还没经过一个月……」
+[ 31] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「哎呀，因为我让你们两个等了很久嘛，还是早点说会比较好吧！？」
+[ 32] 濑名紫阳花    (0.6499999999999999) AttributionType.IMPLICIT
+      「虽、虽然是这样没错～……是、是说。」
+[ 33] 濑名紫阳花    (0.6499999999999999) AttributionType.IMPLICIT
+      「知道你有好好在考虑这件事我就很开心了，如果你要我等，不论多久我都会等下去……可是在、在人这么多的学校，不应该一大早就讲这种事情啊……小玲奈……」
+[ 34] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「这……说得也是呢！对不起！」
+[ 35] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「表、表演……！？」
+[ 36] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「没错没错，每支队伍都要在舞台上表演3分钟！会根据表演的内容进行现场投票与网路投票来决定名次！」
+[ 37] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「就凭只是在班上稍微有了点地位的我这个平凡高一生！？」
+[ 38] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「所以从今天开始，每天都要特训！」
+[ 39] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「这是特训了就能做到的吗……？应该只是从「外行人表演」变成「外行人表演＋」吧……？」
+[ 40] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「就算是这样！只要能变好的话，怎么想都该试试吧！我们不是为了不丢脸而去的，而是为了表现对Cosplay的爱而去的！」
+[ 41] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「明明什么都没做，怎么一下子就从周五晚上到了周日深夜！？」
+[ 42] 甘织玲奈子    (0.92) AttributionType.EXPLICIT_BEFORE
+      「嗳，真的可以吗……？我不像纱月同学那样是超级美女，也不像真唯和紫阳花同学那样有吸引人的气场……」
+[ 43] 小柳香穗     (0.92) AttributionType.EXPLICIT_BEFORE
+      「我一直一直～都想再和玲奈亲一起玩，一起做点什么。」
+[ 44] 甘织玲奈子    (0.69) AttributionType.IMPLICIT
+      「小香穗……」
+[ 45] 小柳香穗     (0.92) AttributionType.EXPLICIT_BEFORE
+      「但是，玲奈亲已经完全变成了另一个世界的女孩子，我以为你一定忘了和我的那些回忆呢。」
+[ 46] 甘织玲奈子    (0.69) AttributionType.IMPLICIT
+      「怎么会……」
+[ 47] 小柳香穗     (0.92) AttributionType.EXPLICIT_BEFORE
+      「我想和玲奈亲一起。嗳，虽然我不确定玲奈亲会不会迷上Cosplay，但我希望玲奈亲能再稍微陪我一会儿。我们一起玩吧，在大舞台上，就我们两个人一起。」
+[ 48] 小柳香穗     (0.92) AttributionType.EXPLICIT_BEFORE
+      「让我们再像以前那样开心……不对，要比以前更开心，最最开心！」
+[ 49] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「被你这样热烈邀请的话……」
+[ 50] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「怎么可能拒绝嘛！小香穗！我的好朋友啊！」
+[ 51] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「耶──！玲奈亲──！」
+[ 52] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「呀吼──玲奈亲！真是个Cosplay的好天气呀！」
+[ 53] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「早安，小香穗。今天就麻烦你多多关照了！」
+[ 54] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「啊哈哈，我们就好好享受，好好享受吧！」
+[ 55] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「小香穗真了不起……你看起来一点也不紧张……」
+[ 56] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「那当然啦，因为身为派对咖的阳角无论在什么场面都不会紧张的。他们认为自己就是世界的中心。」
+[ 57] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「是这样吗！？虽然我也隐约有那种印象啦！」
+[ 58] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「不过，阴角模式的我肯定是受不了的。所以昨天为了不要把自己搞得睡眠不足，我坚持到了极限，到了觉得真的不行要昏睡的前一刻才拔下隐形眼镜睡觉。」
+[ 59] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「好强……我要是也能像小香穗一样，在适当的时机自我暗示就好了……像是只有在把浏海别上去时才会变成阳角之类的。」
+[ 60] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「玲奈亲不是有堪称压箱宝的催眠音档吗？」
+[ 61] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「听了那个，感觉就会涌起很奇怪的心情啊……」
+[ 62] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「奇怪的心情是……唉？」
+[ 63] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「唉？」
+[ 64] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「唉、唉！？哎呀，我是不知道小香穗在想像什么啦！」
+[ 65] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「不是啦～……该怎么说呢，该怎么说呢……从朋友口中听到那种话，总觉得……有点害羞呢～……喵哈哈……」
+[ 66] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「不是啦！只是因为会莫名其妙地想起小香穗的脸，或是想起自己在摄影会上的言行，恨不得在地上打滚而已！不是那样哦！？不是什么色色的感觉啦──！？」
+[ 67] 小柳香穗     (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「这边、这边」
+[ 68] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「咦？小香穗，那边？」
+[ 69] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「呵呵呵呵，没错。因为我们有相关人员通行证啊！前面是相关人员的入口喔！」
+[ 70] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「相关人员！」
+[ 71] 工作人员     (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「请在开始前三十分钟准备好过来集合哦～」
+[ 72] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「好啦，玲奈亲！我们稍微去会场绕一圈吧！」
+[ 73] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「咦？可以吗？不需要在这里等吗？」
+[ 74] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「当然没关系啦！我们要像个阳角一样享受现在啊！GOGO！」
+[ 75] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「哇、哇哇哇。」
+[ 76] 甘织玲奈子    (0.9) AttributionType.IMPLICIT
+      「总觉得好厉害……」
+[ 77] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「啊哈哈，真的好惊人呢！」
+[ 78] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「而且，我们也将成为这些惊人事物的一员！」
+[ 79] 甘织玲奈子    (0.85) AttributionType.IMPLICIT
+      「嗯！」
+[ 80] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「唔喔，连那么有名的人都来了！」
+[ 81] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「喜欢喜欢超喜欢～！」
+[ 82] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「舞台比看起来要狭窄多了呢，小香穗。」
+[ 83] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「嗯，在影片里面看起来明明那么宽啊～难道是用让舞台看起来比外观更广的技术吗？我是不太懂啦，不过好厉害啊～」
+[ 84] 星来       (0.6499999999999999) AttributionType.IMPLICIT
+      「──你又出现了呢！nagipo！」
+[ 85] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「唔唔唔！那个声音是！」
+[ 86] 星来       (0.6499999999999999) AttributionType.IMPLICIT
+      「你出现了啊！现役女国中生Coser！赛拉菈·赛菈菈菈菈！」
+[ 87] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「JC（女国中生）！？」
+[ 88] 群众·女性们   (0.8) AttributionType.IMPLICIT
+      「女国中生！？」
+[ 89] 群众·女性们   (0.8) AttributionType.IMPLICIT
+      「想不到会有这种人，太年轻了……！」
+[ 90] 群众·女性们   (0.8) AttributionType.IMPLICIT
+      「竟然用父母的钱玩Cosplay……！」
+[ 91] 星来       (0.41999999999999993) AttributionType.EXPLICIT_BEFORE
+      「那是谁啦！是赛菈菈！你毕生的劲敌喔！」
+[ 92] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「唉！？」
+[ 93] 甘织遥奈     (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「姊姊前辈！？」
+[ 94] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「唉………………」
+[ 95] 甘织玲奈子    (0.69) AttributionType.IMPLICIT
+      「你是妹妹的……」
+[ 96] 甘织玲奈子    (0.69) AttributionType.IMPLICIT
+      「为、为什么你会在这种地方……」
+[ 97] 星来       (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「这是我的台词啦！」
+[ 98] 星来       (0.6499999999999999) AttributionType.IMPLICIT
+      「你这样也太狡猾了吧！？为什么要把姊姊前辈带来啊──这等于是从外部请了一个超级不得了的佣兵啊！」
+[ 99] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「哼哼哼，这表示我也全力以赴了啦。想要赢就要不择手段的啦喵。」
+[100] 星来       (0.6499999999999999) AttributionType.IMPLICIT
+      「可恶，可恶～！」
+[101] 小柳香穗     (0.8) AttributionType.IMPLICIT
+      「咕哈！」
+[102] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「你也只有现在还能说出这种话了……如果看到我的搭档，一定会吓破胆哭着脱下假发对我下跪的～！」
+[103] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「你的搭档在哪里？」
+[104] 星来       (0.6499999999999999) AttributionType.IMPLICIT
+      「因为约好的时间还没到……」
+[105] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「原来如此……赶不上时间，丧失资格……背叛了支持自己的粉丝……在网路上炎上……遭到业界驱逐……然后引退……」
+[106] 星来       (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「你不需要那张只会满口胡言乱语的嘴巴了是吗～！？」
+[107] 星来       (0.6499999999999999) AttributionType.EXPLICIT_AFTER
+      「竟然敢这么做……我还以为你是个大美女，是个很帅气的人，没想到你竟然会成为我的敌人……你背叛了我的心啊……！」
+[108] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「唔。」
+[109] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「赛拉菈·赛菈菈菈菈，玲奈亲和我不一样。她只是做想做的事而已。谁都不应该责备她的。」
+[110] 星来       (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「不要像在叫阿母（注：原文是ボーボボ，为漫画「鼻毛真拳」的角色，中译阿母。香穗前面都在用类似的叫法叫赛菈菈。）那样叫我啊！」
+[111] 星来       (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「没关系～！我们就在舞台上一决高下吧！什么王冢真唯啊！我比她来得更可爱～！」
+[112] 小柳香穗     (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「刚才撂下的狠话，听起来就像是刚出场就被干掉的丧家之犬喵……」
+[113] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「……确实。」
+[114] 小柳香穗     (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「哎呀，Coser之间也有很多事情喵……像是嫉妒啦，怨恨啦之类的……」
+[115] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「是个比高中生活还险峻的世界呢……」
+[116] 小柳香穗     (0.8) AttributionType.IMPLICIT
+      「不过，我果然还是喜欢Cos，既然做好了在这行继续干下去的心理准备，就算有人找麻烦也只能坚持下去。用阳角的铠甲武装自己。」
+[117] 甘织玲奈子    (0.8) AttributionType.IMPLICIT
+      「这样不累吗？」
+[118] 小柳香穗     (0.8) AttributionType.IMPLICIT
+      「有时也会有那种感觉。毕竟我原本就不喜欢战斗什么的。」
+[119] 小柳香穗     (0.8) AttributionType.IMPLICIT
+      「不过，这就是我想做的事。如果连自己想做的事情都选择逃避，那我真的就一无所有了。」
+[120] 小柳香穗     (0.95) AttributionType.EXPLICIT_BEFORE
+      「所以，我才会鼓舞自己胆怯的灵魂，燃烧斗志努力加油。就算被视为眼中钉，最引人注目的也一定是我。不然，我干脆以夺冠为目标努力好了！」
+[121] 小柳香穗     (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「这次的活动当然也会在影片网站上发布，只要在这里提高知名度，关注人数也会一口气增加，进而抬高摄影费的单价，而且说不定还会有一些企业找我们业配喔。」
+[122] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「原来如此……」
+[123] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「呃……简而言之……大概就是一开始先在舞台上排成一排，之后移动到后台，然后一组一组进行表演吧。」
+[124] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「没错！终于快要正式演出了，我现在就像要上战场前那样激动呢！」
+[125] 主持人      (0.6499999999999999) AttributionType.IMPLICIT
+      「呃，那么诸位参赛者登场了。请各位依序向观众打招呼吧。请大家介绍一下自己的名字、这次Cos的角色、还有各种亮点──」
+[126] 甘织玲奈子    (0.69) AttributionType.EXPLICIT_AFTER
+      「我叫玲奈无尾熊──」
+[127] 琴纱月      (0.6499999999999999) AttributionType.EXPLICIT_AFTER
+      「我是moon。这次我扮演的角色是PEAK的幻影。」
+[128] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「为什么！？」
+[129] 星来       (0.6499999999999999) AttributionType.IMPLICIT
+      「哈哈！nagipo在此败北！」
+[130] 星来       (0.6499999999999999) AttributionType.IMPLICIT
+      「上次出Cos照的时候，我就立刻向她打了声招呼，把她挖角过来啰～我们是彼此彼此。你不也是有邀请她吗！？」
+[131] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「咕唔唔唔！小纱，为什么！？我们不是彼此相爱的吗！？为什么！」
+[132] 琴纱月      (0.6499999999999999) AttributionType.IMPLICIT
+      「我只要能拿到钱，其他根本无关紧要。我只是答应先邀请我的人而已。」
+[133] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「呜哇──！小纱这个笨蛋！」
+[134] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「根本是专业的佣兵嘛……」
+[135] 群众·参加者   (0.69) AttributionType.IMPLICIT
+      「那个人是怎样啊？」
+[136] 群众·参加者   (0.69) AttributionType.IMPLICIT
+      「八成是隶属于事务所的专业人士吧……」
+[137] 群众·参加者   (0.69) AttributionType.IMPLICIT
+      「正牌的杂志模特儿为什么会在这里啊……」
+[138] 琴纱月      (0.6499999999999999) AttributionType.IMPLICIT
+      「是说，你是不是把我误认为别人了？我们是初次见面吧。我是流浪的Coser，moon。除此之外没有别的名字。」
+[139] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「意思是你的身分证上写着moon吗……」
+[140] 琴纱月      (0.6499999999999999) AttributionType.IMPLICIT
+      「对。个人编号卡还有图书馆的会员证上都是这样写的。」
+[141] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「这样啊……」
+[142] 星来       (0.6499999999999999) AttributionType.IMPLICIT
+      「那么，我们的表演时间就快到了，先走啰──呵呵，我们走吧，moon姊姊～&#9825;啊，啊，moon姊姊，好快，你走太快了！别丢下我啊！」
+[143] 工作人员姊姊   (0.6499999999999999) AttributionType.EXPLICIT_BEFORE
+      「对不起，对不起，都是因为我撞到你……」
+[144] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「小香穗，你没事吧？」
+[145] 小柳香穗     (0.6499999999999999) AttributionType.IMPLICIT
+      「没、没事没事……不要紧啦，我知道你们在活动中很忙，而且我刚才自己也呆呆地站在那里。」
+[146] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「那个，nagipo……那个，就是，我……」
+[147] 甘织玲奈子    (0.6499999999999999) AttributionType.IMPLICIT
+      「……nagipo？」
+[148] 小柳香穗     (0.98) AttributionType.EXPLICIT_BEFORE
+      「不是啦……」
+[149] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「我正准备重新戴好……就撞到了……隐形眼镜，不知道掉到哪里了……」
+[150] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「只要去一趟更衣室，就能拿你备用的隐形眼镜。」
+[151] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「来不及啦。会场现在已经挤得满满都是人，会回不来的。」
+[152] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「找到掉下来的隐形眼镜！」
+[153] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「嗯……啊！可是衣服会脏掉的！」
+[154] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「小香穗，你现在应该很难受吧……」
+[155] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「Cosplay阳角」
+[156] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「没事啦、没事啦……还有一边，我还看得见……」
+[157] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「啊，呃……只要有一边就没关系吗？」
+[158] 小柳香穗     (0.8) AttributionType.IMPLICIT
+      「不，其实不行……」
+[159] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「原来不行啊！」
+[160] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「对啊……我这个人真的是好没用好没用，完蛋了……」
+[161] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「小香穗！？等等，不会吧，小香穗！？」
+[162] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「我为什么会来这种地方呢……我明明是一个资历平庸的底层Coser，也太得意忘形了吧……影片播出去之后，肯定会有一大堆酸民留言说我坏话吧……难受，想哭……」
+[163] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「我知道，可是！」
+[164] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「老实说，我对小香穗的心情瞭若指掌！可是连你都说这种话的话，被小香穗邀请过来的我又算什么！？我才是那个默默无名的人，肯定会被一堆酸民炮轰的耶！？」
+[165] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「我做的衣服，一点也不好看，应该说没有那个实力却喜欢卖弄吗……就是水准根本不到能秀给别人看那样……？穿的人如果是玲奈亲这样的话倒另当别论，像我这种丑女穿上去也只会让人觉得恶心而已……」
+[166] 甘织玲奈子    (0.92) AttributionType.IMPLICIT
+      「你这句话是认真的吗！？」
+[167] 小柳香穗     (0.9) AttributionType.IMPLICIT
+      「那、当然，嗯……」
+[168] 小柳香穗     (0.9) AttributionType.IMPLICIT
+      「我本来个性就很阴沉，就算开了个人摄影会也叫不到人，所以才请小纱和玲奈亲帮忙……可是，我好像起了个天大的误会？……自己的实力在哪，我其实是很清楚才对的……」
+[169] 小柳香穗     (0.9) AttributionType.IMPLICIT
+      「在Coser中也有类似阶级一样的概念……能参加大型活动或是收得到业配的人被称为神，这种事对我来说是遥不可及的梦想……举例来说，我就是教室里面在受欢迎的人身边转来转去的废物……」
+[170] 小柳香穗     (0.9) AttributionType.IMPLICIT
+      「真要说的话，邀请我这种人参加的官方就很残忍了……竟然故意让别人做了美梦，这样我不是会觉得自己很受欢迎嘛……可是我却还因为犹豫要不要出场而拖了一周……要是我有好好看清楚现实就好了……」
+[171] 小柳香穗     (0.9) AttributionType.IMPLICIT
+      「人必须要弄清自己的斤两才行呢……就算是很喜欢棒球的人，如果进入豪强名校之后，只能一直当个捡球的，肯定也会变得一点也不喜欢棒球……所以人还是得识相点……」
+[172] 小柳香穗     (0.9) AttributionType.IMPLICIT
+      「明明人气、实力、知名度什么的都不够，就算想实现梦想，也只是会伤害自己……阴角就要像个阴角，为了不碍到别人的视线，必须永远在角落生活……」
+[173] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「不要误会，不要自以为，不要得意忘形，要好好告诫自己……不管粉丝说再说多次喜欢自己，也绝不能忘记，我不过也只是像水蚤一样微不足道，我想成为这样的人……」
+[174] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「真的好丑，我好讨厌自己……想死……不仅是个矮冬瓜，又是个笨蛋，没有人喜欢我，也没有梦想和希望……真想悄悄地从大家的记忆中消失……想从国小重新开始……」
+[175] 甘织玲奈子    (0.92) AttributionType.EXPLICIT_BEFORE
+      「小香穗……」
+[176] 小柳香穗     (0.92) AttributionType.EXPLICIT_BEFORE
+      「玲奈亲。」
+[177] 甘织玲奈子    (0.92) AttributionType.EXPLICIT_BEFORE
+      「你这个家伙！」
+[178] 小柳香穗     (0.9) AttributionType.IMPLICIT
+      「──！？」
+[179] 小柳香穗     (0.92) AttributionType.EXPLICIT_BEFORE
+      「你、你做什么啊！？」
+[180] 甘织玲奈子    (0.92) AttributionType.EXPLICIT_BEFORE
+      「我一直默默听你说，你却从头到尾都讲些丧气话！我还以为胸口要裂开，内脏都要蹦出来了呢！」
+[181] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「但全都是事实啊。」
+[182] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「啊啊啊啊啊啊啊啊！」
+[183] 甘织玲奈子    (0.69) AttributionType.IMPLICIT
+      「在这个世上，有一件事情是我最不能原谅的……」
+[184] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「玲、玲奈亲……？」
+[185] 甘织玲奈子    (0.69) AttributionType.IMPLICIT
+      「那就是……每个人看到都觉得很幸福的家伙在那里自虐！」
+[186] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「什么丑女啊！你家里的镜子全碎了吗？？不管怎么客观来看，小香穗都是美少女吧！你现在连这种事都不知道吗！？」
+[187] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「不，可是。」
+[188] 甘织玲奈子    (0.69) AttributionType.IMPLICIT
+      「我知道了，我现在总算明白了！小香穗对我说过的话！为什么那天小香穗会真的发飙用头槌敲我！我完──全明白了！是说刚才那些话全都能回击到我自己身上，好想死！虽然还活着！」
+[189] 小柳香穗     (0.8) AttributionType.IMPLICIT
+      「你在说什……」
+[190] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「听好了，小香穗。小香穗比我可爱，比我聪明，在学校也比我受欢迎。可是那个小香穗现在却在我眼前自虐，那我到底有多可悲啊！？如果小香穗是水蚤的话，难道我是草履虫吗！？」
+[191] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「我不是这个意思……」
+[192] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「是啊！就算你不是那个意思，但事实就是这样吧！？阴角就要像个阴角，为了不碍到别人的视线，必须永远在角落生活！？好，我明白了！吵死了！」
+[193] 甘织玲奈子    (0.8) AttributionType.IMPLICIT
+      「是说，如果被真唯和小紫同时告白的女人是草履虫的话，那只有总统夫人这种First Lady才能当人了吧！？不要瞧不起人了！」
+[194] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「是啊，是啊，我感觉现在终于不是用心，而是用灵魂瞭解你了！也就是说，就是这么回事！」
+[195] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「不管别人该怎么说，小香穗都有资格站在这个舞台上。你一直努力到了现在吧？根本不需要在意其他人，就随他们怎么去酸吧。就算这样，你还是想体验最棒的瞬间吧？你喜欢Cosplay吧？」
+[196] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「就算你说这种话……」
+[197] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「其实，你很想上台吧。因为那是你的梦想吧。既然这样，来，不要再随便为自己找借口，来数一下有哪些想这么做的理由吧。小香穗，你应该也知道现在是大好机会吧？你也很清楚不能错过这个机会。」
+[198] 小柳香穗     (0.92) AttributionType.IMPLICIT
+      「这种事，我也知道啊，就算玲奈亲不说……我也知道啊……可是，我不想啊……不管是被人嘲笑，还是被人抨击，我不要那样啊……」
+[199] 甘织玲奈子    (0.9) AttributionType.IMPLICIT
+      「……那个，小香穗。」
+[200] 甘织玲奈子    (0.92) AttributionType.IMPLICIT
+      「走吧，小香穗。我也会一起上台的。」
+[201] 小柳香穗     (0.92) AttributionType.IMPLICIT
+      「那是因为，玲奈亲……没有什么可以失去的东西……」
+[202] 甘织玲奈子    (0.92) AttributionType.IMPLICIT
+      「是啊。」
+[203] 甘织玲奈子    (0.9) AttributionType.IMPLICIT
+      「但是，我能想像。」
+[204] 甘织玲奈子    (0.92) AttributionType.IMPLICIT
+      「没有做的那种后悔，会永远留在心底。自己其实能做到，要是做了就成功了，会一直用这种想法说服自己。我讨厌那样。不管失败得多么难看，我都不想逃避真正想做的事情。」
+[205] 小柳香穗     (0.8) AttributionType.IMPLICIT
+      「为什么？」
+[206] 小柳香穗     (0.98) AttributionType.EXPLICIT_BEFORE
+      「为什么你能那样想呢？」
+[207] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「那是因为……」
+[208] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「因为我喜欢。」
+[209] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「因为我喜欢。所以我不想背叛这份感情。」
+[210] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「玲奈亲……」
+[211] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「我的表演，可能会失败。」
+[212] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「嗯。」
+[213] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「练习过的事情几乎都从脑袋忘光，整个糟透了。」
+[214] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「嗯。」
+[215] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「可能会给你添很多麻烦。」
+[216] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「嗯。」
+[217] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「这些都是彼此彼此。」
+[218] 甘织玲奈子    (0.95) AttributionType.IMPLICIT
+      「我呢，虽然没告诉过小香穗，但我其实很害怕别人的视线。会觉得大家都在想着好无聊啊，快点结束吧。」
+[219] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「这样啊。」
+[220] 甘织玲奈子    (0.8) AttributionType.IMPLICIT
+      「我完全没有自信能够做好。应该说我连手都在抖，其实很想立刻逃离这里的。现在也很想吐。」
+[221] 小柳香穗     (0.8) AttributionType.IMPLICIT
+      「……可是，你没有逃跑，谢谢你。」
+[222] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「一起失败吧。然后再一起笑着说刚才表演得好烂。如果有玲奈亲陪着我，我就不再害怕了。」
+[223] 甘织玲奈子    (0.69) AttributionType.IMPLICIT
+      「嗯。」
+[224] 小柳香穗     (0.95) AttributionType.IMPLICIT
+      「我能和玲奈亲搭档，真的是太好了。」
+[225] 甘织玲奈子    (0.95) AttributionType.EXPLICIT_BEFORE
+      「嗯……一起去创造只属于我们的特别回忆吧。」
