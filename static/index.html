@@ -2601,6 +2601,7 @@
               <div class="analysis-editor-toolbar">
                 <button type="button" data-busy-lock onclick="addSegment()">新增一段</button>
                 <button type="button" data-busy-lock class="secondary" onclick="renderSegments(true)">刷新渲染</button>
+                <button type="button" data-busy-lock class="secondary" onclick="runMachineAudit()" title="聚焦重问两级分流：⚑必看/·顺带看，意见仅作提示，最终判断在人工（需先完成 BatchLLM 结构化解析）">机器审计</button>
                 <button type="button" class="toggle-button" onclick="toggleSegmentsPanel()"><span id="segmentsToggleLabel">展开分析结果</span></button>
                 <button type="button" class="secondary" id="showSegmentContextButton" onclick="showSelectedSegmentContext()" disabled>显示前后文</button>
                 <button type="button" id="goToAudioButton" data-busy-lock onclick="goToAudioGeneration()" disabled>前往音频生成</button>
@@ -2816,6 +2817,7 @@
 
 <script>
   let segmentsState = [];
+  let auditContextState = null; // 机器审计上下文：最近一次结构化解析的 {text, roleHints, narrator, llm}
   let roleProfilesState = {};
   let taskBusy = false;
   let segmentsPanelExpanded = false;
@@ -9657,6 +9659,7 @@ very high pitch, very low pitch, whisper, young adult
         ${seg.confidence != null ? `<span class="seg-flag seg-flag-bvp" title="BookVoiceParser 置信度">${(seg.confidence * 100).toFixed(0)}%</span>` : ""}
         ${seg._llm_skipped ? `<span class="seg-flag seg-flag-skipped">待补充</span>` : ""}
         ${isSuspiciousSegment(seg) ? `<span class="seg-flag seg-flag-suspicious" title="${escapeHtml(suspiciousReason || "speaker 归因存在风险，请核实")}">待核查</span>` : ""}
+        ${seg._audit_tier === 1 ? `<span class="seg-flag seg-flag-suspicious" title="${escapeHtml("机器审计⚑必看：" + (seg._audit_hint || ""))}">审计⚑</span>` : (seg._audit_tier === 2 ? `<span class="seg-flag" title="审计·邻段（话轮翻转易连锁，顺带核一眼）">审计·</span>` : "")}
       </div>
       <div class="review-workbench-context">
         <div class="review-context-box"><strong>上文</strong>${escapeHtml(before || "（无）")}</div>
@@ -9742,6 +9745,7 @@ very high pitch, very low pitch, whisper, young adult
           ${isContentFiltered ? `<span class="seg-flag seg-flag-filtered" title="这段曾触发远端内容过滤，建议人工确认角色归属">内容过滤</span>` : ""}
           ${isSkipped ? `<span class="seg-flag seg-flag-skipped" title="远端 LLM 未能处理该段，已保留原文并跳过，后续可用本地 LLM 补充">待补充</span>` : ""}
           ${isSuspicious ? `<span class="seg-flag seg-flag-suspicious" title="${escapeHtml(suspiciousReason || "speaker 归因存在风险，请核实")}">待核查</span>` : ""}
+          ${seg._audit_tier === 1 ? `<span class="seg-flag seg-flag-suspicious" title="${escapeHtml("机器审计⚑必看：" + (seg._audit_hint || ""))}">审计⚑</span>` : (seg._audit_tier === 2 ? `<span class="seg-flag" title="审计·邻段（话轮翻转易连锁，顺带核一眼）">审计·</span>` : "")}
           ${needsReview ? `<span class="seg-flag seg-flag-unknown" title="LLM 无法确定说话人，请人工复核">UNKNOWN</span>` : ""}
           ${isLowConf && !needsReview ? `<span class="seg-flag seg-flag-conf-low" title="LLM 对此处 speaker 置信度低，建议人工复核">低置信</span>` : ""}
           ${isMedConf ? `<span class="seg-flag seg-flag-conf-medium" title="LLM 对此处 speaker 置信度中等，从对话轮次推断">中置信</span>` : ""}
@@ -10856,6 +10860,64 @@ very high pitch, very low pitch, whisper, young adult
     return indices;
   }
 
+  async function runMachineAudit() {
+    // 机器审计：对当前 segmentsState 做聚焦重问两级分流（docs/flagging_audit_analysis_2026-06-10.md）。
+    // tier1 ⚑ 必看（意见分歧/被块级复核改过），tier2 · 顺带看（±1 邻段）。只分流不裁决。
+    if (!segmentsState.length) { alert("当前没有分析结果，请先执行结构化解析。"); return; }
+    if (!auditContextState || !auditContextState.llm) {
+      alert("缺少审计上下文（原文 + LLM 配置）。请先用 BatchLLM 模式完成一次结构化解析。"); return;
+    }
+    const { text, roleHints, narrator, llm } = auditContextState;
+    const payload = {
+      text,
+      segments: segmentsState.map((s) => ({
+        speaker: s.speaker || "", text: s.text || "", evidence: s.evidence || s._evidence || "",
+      })),
+      llm, narrator: narrator || null, role_hints: roleHints || null, workers: 2,
+    };
+    beginTask("audit", "机器审计中…", "对每句对话做聚焦重问，与当前归因比对分歧，标出值得人工复核的段。");
+    try {
+      const response = await fetch("/api/audit_segments/stream", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = ""; let result = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 2);
+          if (!line.startsWith("data:")) continue;
+          const evt = JSON.parse(line.slice(5));
+          if (evt.type === "progress") {
+            setProgress({ stage: "audit", summary: "机器审计中…",
+              detail: `已重问 ${evt.done}/${evt.total} 句`, done: evt.done, total: evt.total,
+              percent: Math.round((evt.done / Math.max(1, evt.total)) * 100) });
+          } else if (evt.type === "complete") { result = evt; }
+          else if (evt.type === "error") { throw new Error(evt.message); }
+        }
+      }
+      if (!result) throw new Error("审计未返回结果");
+      const t1 = new Set(result.tier1 || []); const t2 = new Set(result.tier2 || []);
+      segmentsState.forEach((seg, i) => {
+        const d = (result.details || {})[String(i)] || (result.details || {})[i] || {};
+        seg._audit_tier = t1.has(i) ? 1 : (t2.has(i) ? 2 : 0);
+        seg._audit_hint = (d.flags || []).join("；") || "";
+        if (t1.has(i)) seg._needs_review = true; // 进入待复核工作台
+      });
+      if (typeof persistSegmentsState === "function") persistSegmentsState();
+      renderSegments(true);
+      finishTask("机器审计完成",
+        `重问 ${result.audited} 句：⚑必看 ${t1.size} 段、·顺带看 ${t2.size} 段。审计意见仅作提示，请在待复核工作台人工裁决。`);
+    } catch (err) {
+      failTask("机器审计失败", err && err.message ? err.message : String(err));
+    }
+  }
+
   async function parseBatchLlmStream(payload, useLlmReview) {
     const response = await fetch("/api/parse_v2/stream", {
       method: "POST",
@@ -11013,6 +11075,7 @@ very high pitch, very low pitch, whisper, young adult
         ...(llm ? { llm } : {}),
       };
 
+      auditContextState = { text, roleHints, narrator, llm: llm || null }; // 供机器审计复用
       setStructuredParseStatus(`准备解析：已读取 ${text.length} 个字符，正在提交到 BookVoiceParser。`);
       setProgress({
         stage: "prepare",

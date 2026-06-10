@@ -37,11 +37,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 SAMP = REPO / "docs/samples"
 sys.path.insert(0, str(REPO / "tools"))
+sys.path.insert(0, str(REPO / "BookVoiceParser"))
 
 from evaluate_agnes_bookmark_review import ROLE_HINTS  # noqa: E402
+from book_voice_parser.audit import build_locator, make_audit_prompt as make_prompt  # noqa: E402  共享核心
 
 AGNES_URL = "https://apihub.agnes-ai.com/v1/chat/completions"
 AGNES_MODEL = "agnes-2.0-flash"
+TOKENHUB_URL = "https://tokenhub.tencentmaas.com/v1/chat/completions"
+TOKENHUB_MODEL = "glm-5-turbo"  # 异构第二意见（验证：纠对81%/漏网捕获6/8/误标8%）
 STRIP = set("「」『』《》〈〉 \t\r\n　")
 
 _A2C = {}
@@ -58,34 +62,6 @@ def canon(x: str) -> str:
 def is_crowd(x: str) -> bool:
     x = x or ""
     return x.startswith(("群众·", "厕所女生")) or x in {"未知", "未知临时人物", "旁白", "其他", ""}
-
-
-def build_locator(raw: str):
-    """对话内文字的剥离索引（与 review_server.align 同思路），供按文本定位原文偏移。"""
-    sidx, schars, depth = [], [], 0
-    for k, ch in enumerate(raw):
-        if ch in "「『":
-            depth += 1
-            continue
-        if ch in "」』":
-            depth = max(0, depth - 1)
-            continue
-        if depth == 0 or ch in STRIP:
-            continue
-        schars.append(ch)
-        sidx.append(k)
-    sraw = "".join(schars)
-
-    def locate(text: str):
-        key = "".join(c for c in text if c not in STRIP)
-        p = sraw.find(key)
-        return (sidx[p], sidx[p + len(key) - 1] + 1) if p >= 0 else (-1, -1)
-
-    return locate
-
-
-TOKENHUB_URL = "https://tokenhub.tencentmaas.com/v1/chat/completions"
-TOKENHUB_MODEL = "glm-5-turbo"  # 异构第二意见（2026-06-10 验证：纠对81%/漏网捕获6/8/误标8%）
 
 
 def call_api(prompt: str, api_key: str, retries: int = 6, *, url: str = AGNES_URL,
@@ -107,24 +83,6 @@ def call_api(prompt: str, api_key: str, retries: int = 6, *, url: str = AGNES_UR
                 continue
             return None
     return None
-
-
-def make_prompt(roster: str, narrator: str | None, ctx_b: str, text: str, ctx_a: str) -> str:
-    nar = (f'本书为{narrator}第一人称叙述（叙述中的"我"={narrator}）。' if narrator
-           else "本段为第三人称叙述，没有固定的第一人称叙述者。")
-    return f"""你是小说说话人标注专家。{nar}
-已知角色：{roster}
-
-下面是小说原文片段，其中用【【】】标出了一句对话，请判断这句话是谁说出口的。
-归属约定（务必遵守）：
-1. 分析前后对话轮换、称呼习惯、引述动词归属。
-2. 若是叙述者回忆/引用某人说过的话（如"想起X说的『…』"），说话人=被引用的人X，不是叙述者。
-3. 若是叙述者想象/假想某人会说的话，说话人=被想象的人。
-4. 若【【】】内只是叙述中引用的概念词/术语/书名（无人说出口），回答"旁白"。
-
-{ctx_b}【【「{text}」】】{ctx_a}
-
-只输出JSON：{{"speaker":"角色全名或旁白","reason":"15字内依据"}}"""
 
 
 def main() -> None:

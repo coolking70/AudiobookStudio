@@ -243,6 +243,17 @@ class ParseV2Request(BaseModel):
     implicit_strategy: str = "heuristic"
 
 
+class AuditSegmentsRequest(BaseModel):
+    """机器审计请求：对已归因的段做聚焦重问两级分流（见 book_voice_parser/audit.py）。"""
+    text: str
+    segments: List[Dict[str, Any]]  # [{speaker, text, evidence?}, ...] 与解析输出同序
+    llm: LLMConfig
+    narrator: Optional[str] = None
+    role_hints: Optional[Any] = None  # dict{角色:[别名]} 或 list[str]
+    hetero_llm: Optional[LLMConfig] = None  # 异构第二意见（可选，扫一致段）
+    workers: int = 2
+
+
 class ParseV2ReviewRequest(BaseModel):
     """BookVoiceParser 低置信度片段复核请求。"""
     segments: List[Dict[str, Any]]

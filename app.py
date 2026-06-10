@@ -86,6 +86,7 @@ from role_analyzer import (
 )
 from schemas import (
     AnalyzeChunksRequest,
+    AuditSegmentsRequest,
     AutoNarrateRequest,
     BatchImportVoiceLibraryRequest,
     CheckFilesRequest,
@@ -188,8 +189,10 @@ def _build_batch_llm_config(req: ParseV2Request, BatchConfig):
         batch_size = 3
         context_chars = 80
     else:
-        batch_size = 10
-        context_chars = 200
+        # 与评测验证的最优配置一致（docs/flagging_audit_analysis_2026-06-10.md：
+        # context 320 实测优于 200/960；batch 8 为全部基线/消融所用配置）
+        batch_size = 8
+        context_chars = 320
     return BatchConfig(
         base_url=str(req.llm.base_url),
         model=str(req.llm.model),
@@ -2874,6 +2877,72 @@ def parse_text_v2(req: ParseV2Request):
         }
     except Exception as exc:
         raise_api_error(exc)
+
+
+@app.post("/api/audit_segments/stream")
+async def audit_segments_stream(req: AuditSegmentsRequest):
+    """机器审计（SSE）：对已归因段做聚焦重问两级分流，返回 tier1/tier2/提示。
+
+    方法与实测指标见 docs/flagging_audit_analysis_2026-06-10.md。只分流不裁决：
+    重问意见仅作提示，最终判断交人工（前端复核工作台）。
+    """
+    import asyncio, json as _json
+
+    _load_book_voice_parser()  # 注入 BookVoiceParser 路径（兼容两种放置方式）
+    from book_voice_parser.audit import audit_segments
+
+    loop = asyncio.get_event_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def _sse(obj: dict) -> str:
+        return f"data: {_json.dumps(obj, ensure_ascii=False)}\n\n"
+
+    def on_progress(done: int, total: int):
+        asyncio.run_coroutine_threadsafe(
+            queue.put({"type": "progress", "done": done, "total": total}), loop)
+
+    def _llm_dict(cfg) -> dict:
+        return {"base_url": str(cfg.base_url), "api_key": str(cfg.api_key or ""),
+                "model": str(cfg.model), "max_tokens": 2000, "disable_thinking": True}
+
+    # roster/alias_map 来自 role_hints（dict{角色:[别名]} 或 list[str]）
+    roster = None
+    alias_map: dict[str, str] = {}
+    rh = req.role_hints
+    if isinstance(rh, dict):
+        roster = list(rh.keys())
+        for c, al in rh.items():
+            names = al if isinstance(al, (list, tuple)) else (al.get("aliases", []) if isinstance(al, dict) else [])
+            for a in names:
+                alias_map[str(a)] = str(c)
+    elif isinstance(rh, list):
+        roster = [str(x) for x in rh]
+
+    def run_audit():
+        try:
+            result = audit_segments(
+                req.text, req.segments, _llm_dict(req.llm),
+                narrator=req.narrator or None, roster=roster, alias_map=alias_map,
+                hetero_llm=_llm_dict(req.hetero_llm) if req.hetero_llm else None,
+                workers=max(1, min(4, req.workers)), on_progress=on_progress)
+            asyncio.run_coroutine_threadsafe(
+                queue.put({"type": "complete", **result}), loop)
+        except Exception as exc:  # noqa: BLE001
+            asyncio.run_coroutine_threadsafe(
+                queue.put({"type": "error", "message": str(exc)}), loop)
+
+    async def gen():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            loop.run_in_executor(pool, run_audit)
+            while True:
+                evt = await queue.get()
+                yield _sse(evt)
+                if evt["type"] in {"complete", "error"}:
+                    break
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @app.post("/api/parse_v2/stream")
