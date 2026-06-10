@@ -183,7 +183,7 @@ def cmd_run(args) -> None:
         print(f"[{s}] 解析 {len(raw)} 字（narrator={MANIFEST[s] or '无'}）…", flush=True)
         cfg = BatchConfig(base_url="https://apihub.agnes-ai.com/v1", api_key=api_key,
                           model="agnes-2.0-flash", batch_size=8, max_tokens=5000,
-                          temperature=0.0, timeout=240, context_chars=320,
+                          temperature=0.0, timeout=240, context_chars=args.context_chars,
                           output_mode="compact", disable_thinking=True)
         result = parse_novel(raw, role_hints=ROLE_HINTS, batch_llm_config=cfg,
                              narrator=MANIFEST[s], return_result=True,
@@ -201,6 +201,7 @@ def cmd_run(args) -> None:
     save_summary(results, out_dir / "summary.json",
                  {"mode": "run", "tag": args.tag,
                   "no_block_review": args.no_block_review,
+                  "context_chars": args.context_chars,
                   "time": datetime.now().isoformat(timespec="seconds")})
 
 
@@ -245,6 +246,7 @@ def main() -> None:
     p.add_argument("--tag", required=True, help="本次运行标签（输出目录名）")
     p.add_argument("--only", help="逗号分隔样本子集")
     p.add_argument("--no-block-review", action="store_true", help="关闭块级复核（消融实验）")
+    p.add_argument("--context-chars", type=int, default=320, help="初判每句附带的上下文字数（默认320）")
     p.set_defaults(func=cmd_run)
     p = sub.add_parser("compare", help="对比两份评分 JSON")
     p.add_argument("a")
