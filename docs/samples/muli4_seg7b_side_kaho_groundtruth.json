@@ -1,0 +1,63 @@
+{
+  "source": {
+    "raw_file": "docs/samples/muli4_seg7b_side_kaho_sample.txt",
+    "parse_file": "docs/samples/muli4_seg7b_side_kaho_parse.json",
+    "parser": "agnes-2.0-flash + block_review + dense_scene_review_routing + address_term_backcheck",
+    "finalized": "2026-06-10T10:39:57",
+    "human_reviewed": true,
+    "crowd_convention": "群众·<群体名>，评分按 crowd:true 排除"
+  },
+  "total_segments": 6,
+  "crowd_segments": 2,
+  "named_corrections": 0,
+  "named_total": 4,
+  "model_named_accuracy": 1.0,
+  "corrected_indices": [
+    4,
+    5
+  ],
+  "segments": [
+    {
+      "i": 0,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "啊，呃，要看吗？",
+      "corrected": false
+    },
+    {
+      "i": 1,
+      "speaker": "小柳香穗",
+      "model_speaker": "小柳香穗",
+      "text": "……我没有看过漫画。",
+      "corrected": false
+    },
+    {
+      "i": 2,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "唉唉──真的假的！？这样的话，我推荐你一部超厉害的作品……啊，可是这样要从中间开始看耶！怎么办？啊，干脆我下次直接把单行本拿来好了！",
+      "corrected": false
+    },
+    {
+      "i": 3,
+      "speaker": "甘织玲奈子",
+      "model_speaker": "甘织玲奈子",
+      "text": "然后呢，总之这个男生真的是，帅爆了……！你看，不觉得很帅吗！？长得这么帅还很为朋友着想，超注重友情的！",
+      "corrected": false
+    },
+    {
+      "i": 4,
+      "speaker": "旁白",
+      "model_speaker": "小柳香穗",
+      "text": "快乐",
+      "corrected": true
+    },
+    {
+      "i": 5,
+      "speaker": "旁白",
+      "model_speaker": "小柳香穗",
+      "text": "喜欢",
+      "corrected": true
+    }
+  ]
+}

@@ -1,0 +1,1458 @@
+{
+  "source": {
+    "raw_file": "docs/samples/muli4_seg8b_side_mayu_sample.txt",
+    "parse_file": "docs/samples/muli4_seg8b_side_mayu_parse.json",
+    "parser": "agnes-2.0-flash + block_review + dense_scene_review_routing + address_term_backcheck",
+    "finalized": "2026-06-10T11:03:09",
+    "human_reviewed": true,
+    "crowd_convention": "群众·<群体名>，评分按 crowd:true 排除"
+  },
+  "total_segments": 203,
+  "crowd_segments": 6,
+  "named_corrections": 13,
+  "named_total": 197,
+  "model_named_accuracy": 0.934,
+  "corrected_indices": [
+    0,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    14,
+    16,
+    17,
+    54,
+    80,
+    123,
+    133,
+    159,
+    189,
+    190
+  ],
+  "segments": [
+    {
+      "i": 0,
+      "speaker": "王冢芮妮",
+      "model_speaker": "王冢真唯",
+      "text": "为什么要做那种事？",
+      "corrected": true
+    },
+    {
+      "i": 1,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "这代表我也到这个年纪了。",
+      "corrected": false
+    },
+    {
+      "i": 2,
+      "speaker": "王冢芮妮",
+      "model_speaker": "王冢芮妮",
+      "text": "可别闹过头了，毕竟你还只是个学生。",
+      "corrected": false
+    },
+    {
+      "i": 3,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我知道。身为负责宣传女王玫瑰的模特儿，我自有分寸。下次我会尽量别那么乱来。",
+      "corrected": false
+    },
+    {
+      "i": 4,
+      "speaker": "王冢芮妮",
+      "model_speaker": "王冢芮妮",
+      "text": "如果你能说话算话，我也不用在巴黎的办公室里为了在东京发生的各种意外头疼了。",
+      "corrected": false
+    },
+    {
+      "i": 5,
+      "speaker": "王冢芮妮",
+      "model_speaker": "王冢真唯",
+      "text": "所以，就像我事前说过的那样，今年夏天开始会忙一段时间，详细行程我已经告诉了。",
+      "corrected": true
+    },
+    {
+      "i": 6,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢芮妮",
+      "text": "好。话说今年的业绩呢？",
+      "corrected": true
+    },
+    {
+      "i": 7,
+      "speaker": "王冢芮妮",
+      "model_speaker": "王冢真唯",
+      "text": "这个嘛。就业绩而言大致上还算不错。不过，设计方面就难说了。还远远称不上最高杰作。只是挪用了既有的点子而已。",
+      "corrected": true
+    },
+    {
+      "i": 8,
+      "speaker": "王冢芮妮",
+      "model_speaker": "玲奈子妈妈",
+      "text": "近年来，最能激发我灵感的是你的成长。女儿从我手中独立，逐渐转换成陌生的模样，对我来说是一种新鲜的体验。",
+      "corrected": true
+    },
+    {
+      "i": 9,
+      "speaker": "王冢真唯",
+      "model_speaker": "甘织玲奈子",
+      "text": "我和妈妈本来就是不同的人啦。",
+      "corrected": true
+    },
+    {
+      "i": 10,
+      "speaker": "王冢芮妮",
+      "model_speaker": "玲奈子妈妈",
+      "text": "我清楚地意识到这一点，是在你10岁对我造反的那个时候。",
+      "corrected": true
+    },
+    {
+      "i": 11,
+      "speaker": "王冢真唯",
+      "model_speaker": "甘织玲奈子",
+      "text": "说造反也太夸张了。",
+      "corrected": true
+    },
+    {
+      "i": 12,
+      "speaker": "王冢芮妮",
+      "model_speaker": "王冢芮妮",
+      "text": "所以呢，也就是说……",
+      "corrected": false
+    },
+    {
+      "i": 13,
+      "speaker": "王冢芮妮",
+      "model_speaker": "王冢芮妮",
+      "text": "On n&#039;a qu&#039;une vie.",
+      "corrected": false
+    },
+    {
+      "i": 14,
+      "speaker": "王冢芮妮",
+      "model_speaker": "玲奈子妈妈",
+      "text": "人生只有一次，我并不后悔，我也不希望你后悔。所以万事要三思而后行，亲爱的（ma chérie）。",
+      "corrected": true
+    },
+    {
+      "i": 15,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "……好。",
+      "corrected": false
+    },
+    {
+      "i": 16,
+      "speaker": "旁白",
+      "model_speaker": "王冢真唯",
+      "text": "不后悔的人生",
+      "corrected": true
+    },
+    {
+      "i": 17,
+      "speaker": "旁白",
+      "model_speaker": "叙述者",
+      "text": "造反",
+      "corrected": true
+    },
+    {
+      "i": 18,
+      "speaker": "王冢芮妮",
+      "model_speaker": "王冢芮妮",
+      "text": "如果你想早点稳定下来，跟我说一声我自然会帮你安排。不需要有任何顾虑，因为你是我最重要的女儿啊。",
+      "corrected": false
+    },
+    {
+      "i": 19,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "……谢谢你，妈妈。",
+      "corrected": false
+    },
+    {
+      "i": 20,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "输了，呵呵，输了……我是个失败的女人……",
+      "corrected": false
+    },
+    {
+      "i": 21,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "大小姐，我帮您拿点暖和的东西过来……",
+      "corrected": false
+    },
+    {
+      "i": 22,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "呵呵，谢谢你，花取小姐。",
+      "corrected": false
+    },
+    {
+      "i": 23,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "那个，恕我冒昧，大小姐……甘织小姐从以前就摸透了那款游戏对吧，所以您不必太在意……",
+      "corrected": false
+    },
+    {
+      "i": 24,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "不，花取小姐，这样就不对了。",
+      "corrected": false
+    },
+    {
+      "i": 25,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "无论是什么样的比赛，既然接受了挑战，我就会全力以赴。不能将其作为输了之后安慰自己的借口。",
+      "corrected": false
+    },
+    {
+      "i": 26,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "我、我竟然……对不起，大小姐……！",
+      "corrected": false
+    },
+    {
+      "i": 27,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "我竟然说出这种话，玷污了大小姐那高贵纯洁的精神……我、我愿意接受任何惩罚，请您吩咐吧，大小姐！",
+      "corrected": false
+    },
+    {
+      "i": 28,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "没关系的，花取小姐。我知道你只是想安慰我而已。你的善良总是拯救了我，所以说……今后你也要继续在我身边帮助我。这就是我的命令。",
+      "corrected": false
+    },
+    {
+      "i": 29,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "大小姐……！",
+      "corrected": false
+    },
+    {
+      "i": 30,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "这个嘛，我稍微说一说关于玲奈子的事情吧。",
+      "corrected": false
+    },
+    {
+      "i": 31,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "……是，我洗耳恭听。",
+      "corrected": false
+    },
+    {
+      "i": 32,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "呵呵，不要摆出那么为难的表情嘛，花取小姐。我当初因为妈妈的邀请，曾经犹豫过究竟要去法国的学校上学，还是留在日本的高中对吧？",
+      "corrected": false
+    },
+    {
+      "i": 33,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "是啊，当时您也有告诉我这件事。",
+      "corrected": false
+    },
+    {
+      "i": 34,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "真令人怀念，那时花取小姐以我的名字和头发在日本太显眼为由，推荐我去法国的学校。",
+      "corrected": false
+    },
+    {
+      "i": 35,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "是的。因为那样您就可以和家人一起生活了。",
+      "corrected": false
+    },
+    {
+      "i": 36,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "不过，我选择留在日本的高中。",
+      "corrected": false
+    },
+    {
+      "i": 37,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我在那里遇见了玲奈子。",
+      "corrected": false
+    },
+    {
+      "i": 38,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "……那位小姐。",
+      "corrected": false
+    },
+    {
+      "i": 39,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "新生活让我很兴奋，关于能不能适应新的学校……对，我也和其他人一样感到不安。再怎么说，我是拒绝了妈妈的邀请才留在日本，所以这种想法更是强烈。不过，我并不认为自己做出了一个错误的选择。",
+      "corrected": false
+    },
+    {
+      "i": 40,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "这……我理解您的心情。",
+      "corrected": false
+    },
+    {
+      "i": 41,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我已经习惯了在班上被其他人远远观察，把我当成异类一样对待。不过，我还是想和其他人一样享受身为一个高中生的乐趣。我那时的心情在这种些许的期待，以及很有可能不会如愿的巨大不安之间摇摆不定。",
+      "corrected": false
+    },
+    {
+      "i": 42,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "原来是这样……",
+      "corrected": false
+    },
+    {
+      "i": 43,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "但是，她帮我赶跑了这样的不安。",
+      "corrected": false
+    },
+    {
+      "i": 44,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "……那名少女？",
+      "corrected": false
+    },
+    {
+      "i": 45,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "──因为她对我说「可以和我交个朋友吗」。",
+      "corrected": false
+    },
+    {
+      "i": 46,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "这……",
+      "corrected": false
+    },
+    {
+      "i": 47,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "现在想想，说不定我在那时就已经坠入爱河了。",
+      "corrected": false
+    },
+    {
+      "i": 48,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "大小姐……",
+      "corrected": false
+    },
+    {
+      "i": 49,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "花取小姐，我一定会成为配得上她的女人。",
+      "corrected": false
+    },
+    {
+      "i": 50,
+      "speaker": "花取",
+      "model_speaker": "花取",
+      "text": "……这样啊，大小姐。",
+      "corrected": false
+    },
+    {
+      "i": 51,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "我回来了。",
+      "corrected": false
+    },
+    {
+      "i": 52,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "有个大孩子呢。",
+      "corrected": false
+    },
+    {
+      "i": 53,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "……",
+      "corrected": false
+    },
+    {
+      "i": 54,
+      "speaker": "旁白",
+      "model_speaker": "叙述者",
+      "text": "你不是已经不再依靠我了吗？",
+      "corrected": true
+    },
+    {
+      "i": 55,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "所以，怎么了？今晚发生了什么事？",
+      "corrected": false
+    },
+    {
+      "i": 56,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "……说不定，不是全世界的人都喜欢我。",
+      "corrected": false
+    },
+    {
+      "i": 57,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "………………",
+      "corrected": false
+    },
+    {
+      "i": 58,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "……所以呢？",
+      "corrected": false
+    },
+    {
+      "i": 59,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "不对，大家肯定都喜欢我吧。这样才对啊。毕竟就算我什么都不做，也会被所有人喜欢的……",
+      "corrected": false
+    },
+    {
+      "i": 60,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "……",
+      "corrected": false
+    },
+    {
+      "i": 61,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "只是，我不是她的第一。",
+      "corrected": false
+    },
+    {
+      "i": 62,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "……发生了什么事？说说看吧。",
+      "corrected": false
+    },
+    {
+      "i": 63,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "其实……",
+      "corrected": false
+    },
+    {
+      "i": 64,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "濑名……对甘织告白？唉唉……？",
+      "corrected": false
+    },
+    {
+      "i": 65,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "……原来如此，状况我瞭解了。",
+      "corrected": false
+    },
+    {
+      "i": 66,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "所以，不管是真唯和濑名，她两边都暂时不给出答覆？该怎么说呢，甘织……那女人真的是没救了。要是我当时在场，说不定会揍她一顿。",
+      "corrected": false
+    },
+    {
+      "i": 67,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "不过，这其实没关系的。因为决定要好好沟通，等她回答的人是我。",
+      "corrected": false
+    },
+    {
+      "i": 68,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "只是，该怎么说呢……当紫阳花同学对她说喜欢的时候，玲奈子当下的表情一直在我脑海挥之不去。",
+      "corrected": false
+    },
+    {
+      "i": 69,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "……表情？",
+      "corrected": false
+    },
+    {
+      "i": 70,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "嗯。",
+      "corrected": false
+    },
+    {
+      "i": 71,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我想──那正是一个人坠入情网的瞬间吧。",
+      "corrected": false
+    },
+    {
+      "i": 72,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "那是……",
+      "corrected": false
+    },
+    {
+      "i": 73,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "你……打算怎么做？",
+      "corrected": false
+    },
+    {
+      "i": 74,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我不知道。",
+      "corrected": false
+    },
+    {
+      "i": 75,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我一定会让玲奈子回心转意",
+      "corrected": false
+    },
+    {
+      "i": 76,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "我会让你忘掉那女人",
+      "corrected": false
+    },
+    {
+      "i": 77,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我现在只觉得，只要玲奈子能幸福就好了。",
+      "corrected": false
+    },
+    {
+      "i": 78,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "……什么东西啊。你是什么时候变成这种像圣母一样的女人了？",
+      "corrected": false
+    },
+    {
+      "i": 79,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "真的，没关系吗？",
+      "corrected": false
+    },
+    {
+      "i": 80,
+      "speaker": "王冢真唯",
+      "model_speaker": "琴纱月",
+      "text": "我……",
+      "corrected": true
+    },
+    {
+      "i": 81,
+      "speaker": "琴纱月",
+      "model_speaker": "琴纱月",
+      "text": "即使你不在她身边？",
+      "corrected": false
+    },
+    {
+      "i": 82,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "小真唯。",
+      "corrected": false
+    },
+    {
+      "i": 83,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "是紫阳花啊。",
+      "corrected": false
+    },
+    {
+      "i": 84,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那个，是关于昨天的事。",
+      "corrected": false
+    },
+    {
+      "i": 85,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "嗯，是啊。我也觉得有必要和你谈谈。感觉好像已经拖了很长一段时间了。",
+      "corrected": false
+    },
+    {
+      "i": 86,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "我们要不要找个像是水族馆那样，比较能静下来的地方聊聊？……不过，在学校感觉很困难呢。",
+      "corrected": false
+    },
+    {
+      "i": 87,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "有个好地方。",
+      "corrected": false
+    },
+    {
+      "i": 88,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "哇，屋顶不是禁止进入的吗？",
+      "corrected": false
+    },
+    {
+      "i": 89,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "当然是禁止进入的。所以，这是我们两个的秘密。",
+      "corrected": false
+    },
+    {
+      "i": 90,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "呵呵，原来是这样啊，我们真的很坏呢。",
+      "corrected": false
+    },
+    {
+      "i": 91,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "总觉得有点可怕呢。",
+      "corrected": false
+    },
+    {
+      "i": 92,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "记得别靠护栏太近。",
+      "corrected": false
+    },
+    {
+      "i": 93,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "因为现在的我，应该没办法在天空翱翔吧。",
+      "corrected": false
+    },
+    {
+      "i": 94,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "过来吧。",
+      "corrected": false
+    },
+    {
+      "i": 95,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那个，小真唯。",
+      "corrected": false
+    },
+    {
+      "i": 96,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "怎么了？",
+      "corrected": false
+    },
+    {
+      "i": 97,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "游乐园那天，其实一开始就是有工作的吧？",
+      "corrected": false
+    },
+    {
+      "i": 98,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "你之所以会邀我和小玲奈，是为了让我们两个人独处？",
+      "corrected": false
+    },
+    {
+      "i": 99,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "你为什么这么想呢？",
+      "corrected": false
+    },
+    {
+      "i": 100,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "嗯……只是直觉。",
+      "corrected": false
+    },
+    {
+      "i": 101,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我今天去不了了",
+      "corrected": false
+    },
+    {
+      "i": 102,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "答案嘛…………我不想说呢。",
+      "corrected": false
+    },
+    {
+      "i": 103,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "小真唯……",
+      "corrected": false
+    },
+    {
+      "i": 104,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "可以的话，我不想对你撒谎。因为你是我在这所学校遇到的朋友当中，为数不多会让我想对等交往的对象。",
+      "corrected": false
+    },
+    {
+      "i": 105,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "我的想法也和你一样啊。",
+      "corrected": false
+    },
+    {
+      "i": 106,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "因为有小真唯在背后推了我一把，所以才会有现在的我，我真的很感谢小真唯。我问你，小真唯，你为什么要让我们两个单独在一起？",
+      "corrected": false
+    },
+    {
+      "i": 107,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "……",
+      "corrected": false
+    },
+    {
+      "i": 108,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "我，亲了小玲奈喔。",
+      "corrected": false
+    },
+    {
+      "i": 109,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "我心跳得很厉害，非常紧张。那天我和小玲奈是两人牵着手一起回去的。那个，小真唯对我说过吧，要我别担心你……可是。",
+      "corrected": false
+    },
+    {
+      "i": 110,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "这样下去的话，我会赢的喔……？",
+      "corrected": false
+    },
+    {
+      "i": 111,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "小玲奈，会变成我的喔。小真唯……这样真的可以吗？",
+      "corrected": false
+    },
+    {
+      "i": 112,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "如果玲奈子幸福的话。",
+      "corrected": false
+    },
+    {
+      "i": 113,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "小真唯！",
+      "corrected": false
+    },
+    {
+      "i": 114,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "你为什么要说这种话！果然要都怪我向小玲奈告白──",
+      "corrected": false
+    },
+    {
+      "i": 115,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "不是的，紫阳花。你没有做错什么，一切都是我的错。",
+      "corrected": false
+    },
+    {
+      "i": 116,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "你说是你的错……？",
+      "corrected": false
+    },
+    {
+      "i": 117,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我最近一直在想。其实我很任性。以为只要我表现出自然的一面，这样不论做什么都会被接受。我还年轻。但是，世界比我想像得还要复杂了一些。",
+      "corrected": false
+    },
+    {
+      "i": 118,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "……告诉我吧。",
+      "corrected": false
+    },
+    {
+      "i": 119,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我没有自我。",
+      "corrected": false
+    },
+    {
+      "i": 120,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "无论何时，我都在扮演妈妈所期望的「王冢真唯」。这个人是一位配得上女王玫瑰明星模特儿的女性。她坚强聪明，受到这所学校的所有人喜爱。让我自己也觉得她是个了不起的人物。",
+      "corrected": false
+    },
+    {
+      "i": 121,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "只要我还是王冢真唯，我就能把一切都处理得很好，可以一直当一个好人。紫阳花，在背后推你一把的也是王冢真唯。那个人，并不是真正的我。",
+      "corrected": false
+    },
+    {
+      "i": 122,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "可是……不管是哪一个你，对我来说都是小真唯啊。其实我也是，我并非只是个好孩子，也有狡猾、任性的地方。只是因为被认同……所以我才能做到这一点，如果是小真唯，一定也──",
+      "corrected": false
+    },
+    {
+      "i": 123,
+      "speaker": "王冢真唯",
+      "model_speaker": "濑名紫阳花",
+      "text": "……我第一次恋爱了。",
+      "corrected": true
+    },
+    {
+      "i": 124,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我陶醉在令人煎熬的炽热情绪之中，迷上了她的一切。放任自己内心的冲动，令我感到非常开心。我以为这就是真正的自由。可是……",
+      "corrected": false
+    },
+    {
+      "i": 125,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我……伤害了那个女孩。",
+      "corrected": false
+    },
+    {
+      "i": 126,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "小真唯……",
+      "corrected": false
+    },
+    {
+      "i": 127,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我很明白。我心目中的喜欢并不是玲奈子所渴望的。只要我依然只是我，无论经过多久玲奈子都不可能爱上我。",
+      "corrected": false
+    },
+    {
+      "i": 128,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那种事情……",
+      "corrected": false
+    },
+    {
+      "i": 129,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "既然这样，至少要尽可能地对她温柔。纱月那次也好，你这次也是。可是我这样做之后，反而不知道该怎么缩短彼此的距离了。因为，大家心中的王冢真唯，是绝不会对某人情有独钟的。",
+      "corrected": false
+    },
+    {
+      "i": 130,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "即使如此，我还是喜欢玲奈子。我真的不想放弃，可是，可是……",
+      "corrected": false
+    },
+    {
+      "i": 131,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我很怕被她讨厌。",
+      "corrected": false
+    },
+    {
+      "i": 132,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我现在，已经不晓得该怎么办才好了。",
+      "corrected": false
+    },
+    {
+      "i": 133,
+      "speaker": "旁白",
+      "model_speaker": "叙述者",
+      "text": "不要紧的",
+      "corrected": true
+    },
+    {
+      "i": 134,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "……小真唯。",
+      "corrected": false
+    },
+    {
+      "i": 135,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "你为什么要哭呢，紫阳花？",
+      "corrected": false
+    },
+    {
+      "i": 136,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "对不起……因为我和真唯不一样，内心很脆弱……",
+      "corrected": false
+    },
+    {
+      "i": 137,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "不对，那肯定是因为你很温柔。这是我始终无法明白的情感。",
+      "corrected": false
+    },
+    {
+      "i": 138,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "如果你愿意让玲奈子幸福的话……紫阳花，那样我就……",
+      "corrected": false
+    },
+    {
+      "i": 139,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "不行，那样绝对不行。你不能因为那样就放弃自己的恋情。我是绝对不会原谅这种事情的。",
+      "corrected": false
+    },
+    {
+      "i": 140,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那样的话，我就真的会讨厌小真唯的。",
+      "corrected": false
+    },
+    {
+      "i": 141,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "那样……会很难受呢。",
+      "corrected": false
+    },
+    {
+      "i": 142,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "骗你的。其实不是这样。我根本就不会讨厌你。我喜欢小真唯，会一直喜欢你的。所以，不要让我讨厌你。",
+      "corrected": false
+    },
+    {
+      "i": 143,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那个，小真唯。下次和我约会吧。",
+      "corrected": false
+    },
+    {
+      "i": 144,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "……和你？",
+      "corrected": false
+    },
+    {
+      "i": 145,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "嗯。下次呢，就别约小玲奈，只有我们两个人。因为我有很多话想告诉小真唯。我也想尽自己的力量，帮助拯救过我的小真唯。不，请你让我这么做吧。",
+      "corrected": false
+    },
+    {
+      "i": 146,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "……让你说到这个地步，实在很不好意思。",
+      "corrected": false
+    },
+    {
+      "i": 147,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "看来我顽固又任性的一面，也让小真唯发现了呢。",
+      "corrected": false
+    },
+    {
+      "i": 148,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "嗯，紫阳花……可以先等我一下吗？",
+      "corrected": false
+    },
+    {
+      "i": 149,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "当然",
+      "corrected": false
+    },
+    {
+      "i": 150,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "暂时……不行，没有时间。",
+      "corrected": false
+    },
+    {
+      "i": 151,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "是吗……小真唯真的很忙呢……",
+      "corrected": false
+    },
+    {
+      "i": 152,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那么就像暑假的时候一样，等你的工作结束如何呢？",
+      "corrected": false
+    },
+    {
+      "i": 153,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "这样对你不好意思。",
+      "corrected": false
+    },
+    {
+      "i": 154,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "如果你觉得这样不好意思……那我希望你能快点陪我呢～",
+      "corrected": false
+    },
+    {
+      "i": 155,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "既然这样……我想想，呃，这个假日的下午只有一份登台的工作。所以，在那之前或是之后的话有空。不过可能得让你在会场等我一会儿。",
+      "corrected": false
+    },
+    {
+      "i": 156,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "不要紧啦，因为我喜欢看小真唯工作。",
+      "corrected": false
+    },
+    {
+      "i": 157,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "是吗，那就这样吧。",
+      "corrected": false
+    },
+    {
+      "i": 158,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "嗯。",
+      "corrected": false
+    },
+    {
+      "i": 159,
+      "speaker": "旁白",
+      "model_speaker": "叙述者",
+      "text": "自己想要的任性",
+      "corrected": true
+    },
+    {
+      "i": 160,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "对不起，紫阳花。",
+      "corrected": false
+    },
+    {
+      "i": 161,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "唉唉～……是没关系啦～……",
+      "corrected": false
+    },
+    {
+      "i": 162,
+      "speaker": "未知临时人物",
+      "model_speaker": "未知临时人物",
+      "text": "这女孩是王冢小姐的朋友？很不错耶！",
+      "corrected": false
+    },
+    {
+      "i": 163,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "真的好害羞喔……我明明不像小真唯是个美女啊……",
+      "corrected": false
+    },
+    {
+      "i": 164,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "哈哈，但很适合你喔。紫阳花，你真的很惹人怜爱。",
+      "corrected": false
+    },
+    {
+      "i": 165,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "如果是的话就好了……",
+      "corrected": false
+    },
+    {
+      "i": 166,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "不过，原来小真唯也会接这样的工作啊。",
+      "corrected": false
+    },
+    {
+      "i": 167,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "这次应该只是碰巧吧。因为女王玫瑰有部分赞助，所以才会因为这个缘分让我也一起登台。虽然我对动漫不太瞭解，但已经详细阅读了这次的资料，也回头去看了原作。我不打算做出会对粉丝失礼的举动。",
+      "corrected": false
+    },
+    {
+      "i": 168,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "喔喔～……",
+      "corrected": false
+    },
+    {
+      "i": 169,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "既然这样，我也要努力把这些知识学到最后一刻！",
+      "corrected": false
+    },
+    {
+      "i": 170,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "是吗？明明你是来帮我的，真的很抱歉……",
+      "corrected": false
+    },
+    {
+      "i": 171,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "不会啦，就算只是临时抱佛脚，也总比什么都不做来得好吧？",
+      "corrected": false
+    },
+    {
+      "i": 172,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "紫阳花，你是个好孩子。",
+      "corrected": false
+    },
+    {
+      "i": 173,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "怎么了？就算你突然夸我，我也只会害羞喔。",
+      "corrected": false
+    },
+    {
+      "i": 174,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "真是的，你从前阵子开始就一直在夸我……如果再继续说下去，我可是会喜欢上小真唯的哦。",
+      "corrected": false
+    },
+    {
+      "i": 175,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我喜欢紫阳花喔。",
+      "corrected": false
+    },
+    {
+      "i": 176,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "所以就说……",
+      "corrected": false
+    },
+    {
+      "i": 177,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我想过，若是没有玲奈子，而我又被紫阳花告白的话，我是否会接受呢？这样。",
+      "corrected": false
+    },
+    {
+      "i": 178,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "唉唉～……？所以，结果呢？",
+      "corrected": false
+    },
+    {
+      "i": 179,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "应该不会讨厌吧。根据时机而定，也相当有可能会答应。不过，是否会吻你又是另一回事了。",
+      "corrected": false
+    },
+    {
+      "i": 180,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "和小真唯接吻……",
+      "corrected": false
+    },
+    {
+      "i": 181,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "总、总觉得啊，明明我又没有告白，却感觉好像被甩了一样呢。",
+      "corrected": false
+    },
+    {
+      "i": 182,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "哈哈，对不起，不过，真是不可思议啊。只有玲奈子是特别的……害我不禁在想，「喜欢」究竟是什么呢？",
+      "corrected": false
+    },
+    {
+      "i": 183,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "嗯……喜欢这种感觉，到底是什么呢……为什么就是和别人不一样呢……",
+      "corrected": false
+    },
+    {
+      "i": 184,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "玲真挚友。",
+      "corrected": false
+    },
+    {
+      "i": 185,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "说不定，就像我喜欢紫阳花一样，玲奈子也曾经喜欢过我。如果真是那样，我果然做了坏事啊。",
+      "corrected": false
+    },
+    {
+      "i": 186,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "……小真唯。",
+      "corrected": false
+    },
+    {
+      "i": 187,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "最近呢，我有点害怕在愿意支持我的人面前抛头露面。",
+      "corrected": false
+    },
+    {
+      "i": 188,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我的身体，果然是为了女王玫瑰而存在的。可是，一旦混入了杂质，至今一直关注我的人会怎么想呢？我是真心喜欢上了玲奈子，正因为这样，反而担心这份感情会不会不自觉地流露出来。",
+      "corrected": false
+    },
+    {
+      "i": 189,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "甘织玲奈子",
+      "text": "……才不是什么杂质啦。",
+      "corrected": true
+    },
+    {
+      "i": 190,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "甘织玲奈子",
+      "text": "大家都很喜欢真唯，所以不要紧的。你想想，模特儿并不像偶像那样被禁止谈恋爱吧？",
+      "corrected": true
+    },
+    {
+      "i": 191,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "是啊，但如果导致我的表演能力因此下滑，大家想必会很失望吧。",
+      "corrected": false
+    },
+    {
+      "i": 192,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那么，也只能努力避免变成那样……",
+      "corrected": false
+    },
+    {
+      "i": 193,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "不过，这样做并不是说要放弃小玲奈哦？",
+      "corrected": false
+    },
+    {
+      "i": 194,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "嗯，谢谢你，紫阳花……哎啊，真讨厌啊……",
+      "corrected": false
+    },
+    {
+      "i": 195,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "我讨厌被你像这样鼓励的脆弱的自己。我讨厌不能堂堂正正、抬头挺胸地登上舞台的自己。我忍受不了自己可能会辜负大家的期待。这还是我第一次体会到这种心情。",
+      "corrected": false
+    },
+    {
+      "i": 196,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "自从爱上了玲奈子，我就不断地发现自己令人讨厌的一面。无论恐惧、胆怯、没出息等等，都是恋爱教给我的……我以前从不晓得恋爱会如此压垮我的心灵。我还以为……只有我，无论遇上任何事情依然能够处之泰然……",
+      "corrected": false
+    },
+    {
+      "i": 197,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "那个，小真唯，如果可以的话，我们稍微出去透透气吧。",
+      "corrected": false
+    },
+    {
+      "i": 198,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "哇、哇……小、小真唯，妆会沾到的……",
+      "corrected": false
+    },
+    {
+      "i": 199,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "在脆弱的时候被温柔对待，原来是真的会喜欢上对方呢。紫阳花，无论多少次我都要对你说一声──谢谢你。我真的很感谢你是我的朋友。",
+      "corrected": false
+    },
+    {
+      "i": 200,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "能稍微让我独处一会儿吗？没事的，我会在正式演出之前重新振作起来。你待会再过来舞台就行了。",
+      "corrected": false
+    },
+    {
+      "i": 201,
+      "speaker": "濑名紫阳花",
+      "model_speaker": "濑名紫阳花",
+      "text": "可是，小真唯……",
+      "corrected": false
+    },
+    {
+      "i": 202,
+      "speaker": "王冢真唯",
+      "model_speaker": "王冢真唯",
+      "text": "没事的，我可是专业人士。",
+      "corrected": false
+    }
+  ]
+}

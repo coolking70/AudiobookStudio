@@ -1,0 +1,342 @@
+{
+  "segments": [
+    {
+      "speaker": "甘织玲奈子",
+      "text": "啊，呃，要看吗？",
+      "emotion": "neutral",
+      "style": null,
+      "ref_audio": null,
+      "ref_text": null,
+      "voice_engine": null,
+      "voice_name": null,
+      "voice_locale": null,
+      "cfg_value": null,
+      "inference_timesteps": null,
+      "addressee": null,
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 女孩子→甘织玲奈子",
+      "attribution_type": "implicit",
+      "quote_id": "q0001",
+      "candidates": [
+        "女孩子",
+        "小柳香穗",
+        "旁白",
+        "未知"
+      ],
+      "candidate_sources": {
+        "女孩子": [
+          "temporary_scene",
+          "scene_semantic_mention",
+          "scene_active"
+        ],
+        "小柳香穗": [
+          "narrator_anchor"
+        ],
+        "旁白": [
+          "fallback"
+        ],
+        "未知": [
+          "fallback"
+        ]
+      },
+      "scene_characters": [
+        "女孩子",
+        "小柳香穗"
+      ],
+      "context_before": "看的书。每翻一页，女孩的心情都会随着剧情起伏，表情也是瞬息万变。 \n \n 最后，女孩啪一声合上了杂志，叹了口气。 \n \n 突然间，我与她四目相接。被她发现我因为觉得很有趣就一直盯着她看，这让我不禁有些难为情，把眼镜底下的眼睛移开。",
+      "context_after": "女孩把杂志递给我，我吓了一跳后，下意识就收下了。同时我也觉得很震撼，难道这女孩对谁都能像这样轻松搭话吗？ \n \n 「……我没有看过漫画。」 \n \n 「唉唉──真的假的！？这样的话，我推荐你一部超厉害的作品……啊，可是这样要从中间开"
+    },
+    {
+      "speaker": "小柳香穗",
+      "text": "……我没有看过漫画。",
+      "emotion": "neutral",
+      "style": null,
+      "ref_audio": null,
+      "ref_text": null,
+      "voice_engine": null,
+      "voice_name": null,
+      "voice_locale": null,
+      "cfg_value": null,
+      "inference_timesteps": null,
+      "addressee": null,
+      "confidence": 0.69,
+      "evidence": "紧前文「我吓了一跳」，后文「她的气势强到让我有点退缩」；仅叙述者锚点支持，场景含未命名人物",
+      "attribution_type": "explicit_after",
+      "quote_id": "q0002",
+      "candidates": [
+        "女孩子",
+        "小柳香穗",
+        "旁白",
+        "未知"
+      ],
+      "candidate_sources": {
+        "女孩子": [
+          "temporary_scene"
+        ],
+        "小柳香穗": [
+          "narrator_anchor",
+          "scene_active"
+        ],
+        "旁白": [
+          "fallback"
+        ],
+        "未知": [
+          "fallback"
+        ]
+      },
+      "scene_characters": [
+        "女孩子",
+        "小柳香穗"
+      ],
+      "context_before": "。被她发现我因为觉得很有趣就一直盯着她看，这让我不禁有些难为情，把眼镜底下的眼睛移开。 \n \n 「啊，呃，要看吗？」 \n \n 女孩把杂志递给我，我吓了一跳后，下意识就收下了。同时我也觉得很震撼，难道这女孩对谁都能像这样轻松搭话吗？",
+      "context_after": "「唉唉──真的假的！？这样的话，我推荐你一部超厉害的作品……啊，可是这样要从中间开始看耶！怎么办？啊，干脆我下次直接把单行本拿来好了！」 \n \n 唉唉……？她的气势强到让我有点退缩，但是那女孩却毫不在意。 \n \n 她把杂志翻回目录"
+    },
+    {
+      "speaker": "甘织玲奈子",
+      "text": "唉唉──真的假的！？这样的话，我推荐你一部超厉害的作品……啊，可是这样要从中间开始看耶！怎么办？啊，干脆我下次直接把单行本拿来好了！",
+      "emotion": "neutral",
+      "style": null,
+      "ref_audio": null,
+      "ref_text": null,
+      "voice_engine": null,
+      "voice_name": null,
+      "voice_locale": null,
+      "cfg_value": null,
+      "inference_timesteps": null,
+      "addressee": null,
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 女孩子→甘织玲奈子",
+      "attribution_type": "implicit",
+      "quote_id": "q0003",
+      "candidates": [
+        "女孩子",
+        "小柳香穗",
+        "旁白",
+        "未知"
+      ],
+      "candidate_sources": {
+        "女孩子": [
+          "temporary_scene",
+          "scene_active"
+        ],
+        "小柳香穗": [
+          "narrator_anchor"
+        ],
+        "旁白": [
+          "fallback"
+        ],
+        "未知": [
+          "fallback"
+        ]
+      },
+      "scene_characters": [
+        "女孩子",
+        "小柳香穗"
+      ],
+      "context_before": "着她看，这让我不禁有些难为情，把眼镜底下的眼睛移开。 \n \n 「啊，呃，要看吗？」 \n \n 女孩把杂志递给我，我吓了一跳后，下意识就收下了。同时我也觉得很震撼，难道这女孩对谁都能像这样轻松搭话吗？ \n \n 「……我没有看过漫画。」",
+      "context_after": "唉唉……？她的气势强到让我有点退缩，但是那女孩却毫不在意。 \n \n 她把杂志翻回目录页，开始讲述哪部漫画有多有趣。 \n \n 不过也好，反正坐在座位等上课的这段时间也很无聊…… \n \n 「然后呢，总之这个男生真的是，帅爆了……！你看"
+    },
+    {
+      "speaker": "甘织玲奈子",
+      "text": "然后呢，总之这个男生真的是，帅爆了……！你看，不觉得很帅吗！？长得这么帅还很为朋友着想，超注重友情的！",
+      "emotion": "neutral",
+      "style": null,
+      "ref_audio": null,
+      "ref_text": null,
+      "voice_engine": null,
+      "voice_name": null,
+      "voice_locale": null,
+      "cfg_value": null,
+      "inference_timesteps": null,
+      "addressee": null,
+      "confidence": 0.8,
+      "evidence": "块级结构化复核：轮次归属 女孩子→甘织玲奈子",
+      "attribution_type": "implicit",
+      "quote_id": "q0004",
+      "candidates": [
+        "少女",
+        "女孩子",
+        "小柳香穗",
+        "旁白",
+        "未知"
+      ],
+      "candidate_sources": {
+        "少女": [
+          "role_hints",
+          "temporary_scene"
+        ],
+        "女孩子": [
+          "temporary_scene",
+          "scene_active"
+        ],
+        "小柳香穗": [
+          "narrator_anchor"
+        ],
+        "旁白": [
+          "fallback"
+        ],
+        "未知": [
+          "fallback"
+        ]
+      },
+      "scene_characters": [
+        "少女",
+        "女孩子",
+        "小柳香穗"
+      ],
+      "context_before": "怎么办？啊，干脆我下次直接把单行本拿来好了！」 \n \n 唉唉……？她的气势强到让我有点退缩，但是那女孩却毫不在意。 \n \n 她把杂志翻回目录页，开始讲述哪部漫画有多有趣。 \n \n 不过也好，反正坐在座位等上课的这段时间也很无聊……",
+      "context_after": "说着这番话的她眼神就像是恋爱中的少女一样，我情不自禁地笑了出来，然后被她吸引了。 \n \n 那个女孩半年左右就不来补习班了。虽然见不到她很可惜，不过受到她的影响，我已经彻底养成了看漫画的习惯。 \n \n 像是会期待着每周一，或是画喜欢"
+    },
+    {
+      "speaker": "小柳香穗",
+      "text": "快乐",
+      "emotion": "neutral",
+      "style": null,
+      "ref_audio": null,
+      "ref_text": null,
+      "voice_engine": null,
+      "voice_name": null,
+      "voice_locale": null,
+      "cfg_value": null,
+      "inference_timesteps": null,
+      "addressee": null,
+      "confidence": 0.9,
+      "evidence": "紧前文「关注人数也不断增加」，后文「这让香穗热衷于...」，叙述者视角",
+      "attribution_type": "implicit",
+      "quote_id": "q0005",
+      "candidates": [
+        "小柳香穗",
+        "旁白",
+        "未知"
+      ],
+      "candidate_sources": {
+        "小柳香穗": [
+          "role_hints",
+          "scene_active"
+        ],
+        "旁白": [
+          "fallback"
+        ],
+        "未知": [
+          "fallback"
+        ]
+      },
+      "scene_characters": [
+        "小柳香穗"
+      ],
+      "context_before": "网站上传自拍，因此受到大家夸奖。 \n \n 由于可以表达对作品的爱，又可以获得他人的认同，这让香穗热衷于Cosplay活动。 \n \n 活动很顺利，就像喜欢的心情不断成长，关注人数也不断增加，透过参加活动也认识了更多人。 \n \n 刚开始的时候，",
+      "context_after": "与「喜欢」有着相同的含义。 \n \n 但是，每当参加的活动增加，每当关注人数增加，这两者的含义逐渐有了偏差。 \n \n 喜欢的事情变得不再只有快乐，而是变得更加辛苦，要注意的事情变多了，开始在意起周围的目光，也因为人际关系而烦恼。 \n \n 香穗"
+    },
+    {
+      "speaker": "小柳香穗",
+      "text": "喜欢",
+      "emotion": "neutral",
+      "style": null,
+      "ref_audio": null,
+      "ref_text": null,
+      "voice_engine": null,
+      "voice_name": null,
+      "voice_locale": null,
+      "cfg_value": null,
+      "inference_timesteps": null,
+      "addressee": null,
+      "confidence": 0.9,
+      "evidence": "紧前文「透过参加活动也认识了更多人」，后文「香穗本就觉得...」，叙述者视角",
+      "attribution_type": "implicit",
+      "quote_id": "q0006",
+      "candidates": [
+        "小柳香穗",
+        "旁白",
+        "未知"
+      ],
+      "candidate_sources": {
+        "小柳香穗": [
+          "role_hints",
+          "scene_active"
+        ],
+        "旁白": [
+          "fallback"
+        ],
+        "未知": [
+          "fallback"
+        ]
+      },
+      "scene_characters": [
+        "小柳香穗"
+      ],
+      "context_before": "拍，因此受到大家夸奖。 \n \n 由于可以表达对作品的爱，又可以获得他人的认同，这让香穗热衷于Cosplay活动。 \n \n 活动很顺利，就像喜欢的心情不断成长，关注人数也不断增加，透过参加活动也认识了更多人。 \n \n 刚开始的时候，「快乐」与",
+      "context_after": "有着相同的含义。 \n \n 但是，每当参加的活动增加，每当关注人数增加，这两者的含义逐渐有了偏差。 \n \n 喜欢的事情变得不再只有快乐，而是变得更加辛苦，要注意的事情变多了，开始在意起周围的目光，也因为人际关系而烦恼。 \n \n 香穗本就觉得自"
+    }
+  ],
+  "stats": {
+    "quote_count": 6,
+    "review_count": 1,
+    "pre_resolved": 0,
+    "llm_resolved": 6,
+    "batch_llm_enabled": true,
+    "uncertain_narrator_chapters": [],
+    "special_perspective_chapter": {
+      "mode": "special_perspective_chapter",
+      "sections": 0,
+      "detected": 0,
+      "locked": 0,
+      "skipped_meta": 0,
+      "stopped": 0,
+      "rejected": 0,
+      "profiles": []
+    },
+    "scene_state": {
+      "mode": "scene_state_soft_constraints",
+      "boundaries": 0,
+      "entered": 1,
+      "left": 0,
+      "active_hits": 5,
+      "scene_sources_added": 6,
+      "out_of_scene_marked": 0,
+      "confidence_boosted": 0
+    },
+    "address_term_backcheck": {
+      "mode": "address_term_backcheck",
+      "surface_aliases": {
+        "normalized": 0,
+        "aliases": {}
+      },
+      "learned_terms": 0,
+      "usable_terms": 0,
+      "scanned": 0,
+      "candidates_added": 0,
+      "corrected": 0,
+      "blocked": 0,
+      "neighbors_marked": 0,
+      "iterative_blocks_scanned": 0,
+      "iterative_corrected": 0,
+      "iterative_blocked": 0,
+      "iterative_stopped_clean": 0,
+      "context_corrected": 0,
+      "relation_vocative_corrected": 0,
+      "relation_vocative_blocked": 0,
+      "debug_events": [],
+      "terms": {},
+      "corrected_quote_ids": []
+    },
+    "block_review": {
+      "mode": "block_review",
+      "blocks": 1,
+      "subcalls": 1,
+      "reviewed": 4,
+      "corrected": 3,
+      "confirmed": 1,
+      "protected": 0,
+      "failed": 0,
+      "skipped_blocks": 1,
+      "enabled": true
+    },
+    "dense_scene_review_routing": {
+      "mode": "dense_scene_review_routing",
+      "min_scene_size": 3,
+      "window": 4,
+      "routed": 0,
+      "enabled": true
+    }
+  }
+}
