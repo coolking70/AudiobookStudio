@@ -96,9 +96,27 @@ disable_thinking=True, narrator="甘织玲奈子"`），跑完块级复核/密�
 
 `transcript.txt` 会在 Step 4 由 `build_groundtruth.py` 从最终 parse 再重生成一次，保持同步。
 
-### Step 3 — 人工/AI 复核 → `review.json`
+### Step 2.5 — 机器审计（强烈建议）→ `audit.json`
 
-启动复核工具（纯 stdlib 本地网页）：
+```bash
+.venv/bin/python tools/audit_sample.py --seg muli4_seg10   # 外传等第三人称加 --narrator none
+```
+
+对每个具名段做「聚焦重问」（宽上下文 ±800 字 + 归属约定），与流水线意见、裸单遍意见
+（若有 bareflash）、块级复核改动比对，产出两级标记写入 `*_audit.json`：
+
+- **tier1 ⚑（必看）**：任一意见与流水线不一致的段。实测只占 ~25% 段、覆盖 ~88% 错误
+  （旧 ⚑ 规则要标 47% 段、precision 仅 13%）。
+- **tier2 ·（顺带看）**：tier1 的 ±1 邻段——话轮翻转错误会连锁传染，邻段风险高；
+  复核 tier1 时它们就在上下文里。加上后错误覆盖 ~96%。
+
+⚠️ 审计**只分流不裁决**：实测同模型多数票的"建议答案"正确率很低（共享盲区），所以
+重问意见仅作为行内提示展示，最终判断永远交人工。
+
+### Step 3 — 人工复核 → `review.json`
+
+启动复核工具（纯 stdlib 本地网页，**自动加载同名 `_audit.json`**：⚑=tier1、·=tier2、
+行内显示审计意见）：
 
 ```bash
 .venv/bin/python tools/review_server.py \
@@ -108,7 +126,9 @@ disable_thinking=True, narrator="甘织玲奈子"`），跑完块级复核/密�
 # 打开 http://127.0.0.1:8765/ ，逐句核对，改动实时写盘
 ```
 
-界面会**自动用 ⚑ 标出需重点核对的句子**（置信度 <0.85 / 被块级复核改过 / 说话人是未知·其他）。
+有 `_audit.json` 时 ⚑/· 即审计两级标记（推荐，见 Step 2.5）；没有时退回旧启发式
+⚑（置信度 <0.85 / 被块级复核改过 / 说话人是未知·其他——注意旧规则会标约半数段，
+precision 仅 13%，尽量先跑审计）。
 密集多人场景可配合 `tools/mcp_review_server.py`（见 `docs/mcp_dense_review_guide.md`）。
 
 **`review.json` 取值约定（固化工具据此解析，务必遵守）：**

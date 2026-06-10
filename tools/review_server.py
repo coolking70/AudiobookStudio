@@ -121,6 +121,21 @@ class State:
         self.raw = raw_path.read_text(encoding="utf-8")
         segs = json.loads(parse_path.read_text(encoding="utf-8"))["segments"]
         self.segments = align(self.raw, segs)
+        # 机器审计结果（tools/audit_sample.py 产出）存在时，⚑ 改用 tier1（实测
+        # precision 13%→21%、标记量 47%→25%），tier2 邻段为弱提示，并附重问意见。
+        audit_path = Path(str(parse_path).replace("_parse.json", "_audit.json"))
+        if audit_path.exists():
+            audit = json.loads(audit_path.read_text(encoding="utf-8"))
+            t1, t2 = set(audit.get("tier1", [])), set(audit.get("tier2", []))
+            details = audit.get("segments", {})
+            for seg in self.segments:
+                i = seg["i"]
+                seg["flagged"] = i in t1
+                seg["tier2"] = i in t2
+                d = details.get(str(i)) or {}
+                if d.get("flags"):
+                    seg["hint"] = "；".join(d["flags"])
+            print(f"  已加载审计: {audit_path.name} (tier1={len(t1)} tier2={len(t2)})")
         # roster = known role hints + any speakers the parse actually produced (new chars)
         roster = list(load_roster())
         for seg in self.segments:
@@ -229,9 +244,10 @@ function render(){
     row.className='row'+(s.speaker!==s.orig_speaker?' edited':'');
     row.id='row'+s.i;
     row.onclick=e=>{if(e.target.tagName!=='INPUT')select(s.i,true);};
-    row.innerHTML=`<div class="idx">${s.flagged?'<span class="flag">⚑</span>':''}${s.i}</div>
+    row.innerHTML=`<div class="idx">${s.flagged?'<span class="flag">⚑</span>':(s.tier2?'<span class="flag" style="color:#d9b44a">·</span>':'')}${s.i}</div>
       <div><input class="sp" list="roster" value="${esc(s.speaker)}" data-i="${s.i}">
-        ${s.speaker!==s.orig_speaker?`<div class="orig">原: ${esc(s.orig_speaker)}</div>`:''}</div>
+        ${s.speaker!==s.orig_speaker?`<div class="orig">原: ${esc(s.orig_speaker)}</div>`:''}
+        ${s.hint?`<div class="orig" style="color:#7fb3d5">审计: ${esc(s.hint)}</div>`:''}</div>
       <div class="tx">「${esc(s.text)}」</div>`;
     list.appendChild(row);
   }

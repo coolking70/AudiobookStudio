@@ -37,6 +37,7 @@
 - [角色分析优化交接记录](docs/role-analysis-optimization-handoff.md)
 - [2026-06-07 模型评测记录](docs/model_evaluation_2026-06-07.md)
 - [权威样本生产流程（说话人评测集）](docs/samples/SAMPLE_WORKFLOW.md)
+- [2026-06-10 复核标记与机器审计方法分析](docs/flagging_audit_analysis_2026-06-10.md)
 
 ## 运行模式
 
