@@ -1,0 +1,174 @@
+{
+ "meta": {
+  "mode": "score",
+  "parse_dir": "outputs/regression/no-block-review",
+  "time": "2026-06-10T19:40:29"
+ },
+ "results": [
+  {
+   "seg": "muli4_seg1",
+   "named": 211,
+   "correct": 186,
+   "acc": 0.8815,
+   "simple": [
+    124,
+    137
+   ],
+   "dense": [
+    62,
+    74
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg2",
+   "named": 268,
+   "correct": 237,
+   "acc": 0.8843,
+   "simple": [
+    187,
+    211
+   ],
+   "dense": [
+    50,
+    57
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg3",
+   "named": 282,
+   "correct": 239,
+   "acc": 0.8475,
+   "simple": [
+    202,
+    231
+   ],
+   "dense": [
+    37,
+    51
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg4",
+   "named": 260,
+   "correct": 218,
+   "acc": 0.8385,
+   "simple": [
+    180,
+    207
+   ],
+   "dense": [
+    38,
+    53
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg5",
+   "named": 282,
+   "correct": 250,
+   "acc": 0.8865,
+   "simple": [
+    245,
+    273
+   ],
+   "dense": [
+    5,
+    9
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg6",
+   "named": 220,
+   "correct": 198,
+   "acc": 0.9,
+   "simple": [
+    180,
+    198
+   ],
+   "dense": [
+    18,
+    22
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg7",
+   "named": 219,
+   "correct": 195,
+   "acc": 0.8904,
+   "simple": [
+    125,
+    141
+   ],
+   "dense": [
+    70,
+    78
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg7b_side_kaho",
+   "named": 4,
+   "correct": 1,
+   "acc": 0.25,
+   "simple": [
+    1,
+    4
+   ],
+   "dense": [
+    0,
+    0
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg8",
+   "named": 141,
+   "correct": 93,
+   "acc": 0.6596,
+   "simple": [
+    13,
+    15
+   ],
+   "dense": [
+    80,
+    126
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg8b_side_mayu",
+   "named": 197,
+   "correct": 163,
+   "acc": 0.8274,
+   "simple": [
+    145,
+    177
+   ],
+   "dense": [
+    18,
+    20
+   ],
+   "skipped_drift": 0
+  },
+  {
+   "seg": "muli4_seg9",
+   "named": 157,
+   "correct": 128,
+   "acc": 0.8153,
+   "simple": [
+    34,
+    48
+   ],
+   "dense": [
+    94,
+    109
+   ],
+   "skipped_drift": 0
+  }
+ ]
+}
