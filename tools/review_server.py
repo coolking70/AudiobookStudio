@@ -38,24 +38,38 @@ def load_roster() -> list[str]:
         return []
 
 
-_MATCH_STRIP = set("「」『』") | set(" \t\r\n　")
+_MATCH_STRIP = set("「」『』《》〈〉") | set(" \t\r\n　")
 
 
 def _norm_key(t: str) -> str:
-    # ignore whitespace and quote-bracket VARIANTS (「」/『』) so nested-quote and
-    # bracket-normalized segments (e.g. 「会」 vs 『会』) still locate in the raw text
+    # ignore whitespace and quote/bracket VARIANTS (「」/『』 and book-title 《》/〈〉) so
+    # nested-quote and bracket-normalized segments still locate in the raw text — the
+    # parser sometimes rewrites a book title 《X》 inside a quote as 「X」, which otherwise
+    # fails the exact find (e.g. seg「…喜欢「动物女仆！」…」 vs raw「…喜欢《动物女仆！》…」)
     return "".join(ch for ch in str(t or "") if ch not in _MATCH_STRIP)
 
 
 def align(raw: str, segments: list[dict]) -> list[dict]:
     """Attach raw-text [start,end) offsets to each segment, robust to whitespace and
-    quote-bracket-variant differences (maps a stripped match back to real offsets)."""
-    # build a stripped index of the raw text -> original char positions
+    quote-bracket-variant differences (maps a stripped match back to real offsets).
+
+    Only DIALOGUE text (inside 「」/『』 quotes) is searchable — narration is masked out.
+    Otherwise a short quote (e.g. 「真唯。」) would mis-match an identical substring sitting
+    in narration ("…回望真唯。") that precedes the real bracketed line, pinning the tag to
+    the wrong spot. Brackets nest: 《》 inside 「」 stay dialogue (depth driven by 「」/『』)."""
+    # build a stripped index of the raw text -> original char positions, dialogue-only
     sidx: list[int] = []
     schars: list[str] = []
+    depth = 0
     for k, ch in enumerate(raw):
-        if ch in _MATCH_STRIP:
+        if ch in "「『":
+            depth += 1
             continue
+        if ch in "」』":
+            depth = max(0, depth - 1)
+            continue
+        if depth == 0 or ch in _MATCH_STRIP:
+            continue  # skip narration and whitespace
         schars.append(ch)
         sidx.append(k)
     sraw = "".join(schars)
