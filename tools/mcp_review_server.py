@@ -139,11 +139,18 @@ def list_samples() -> dict:
 
 
 @mcp.tool()
-def list_dense_scenes(sample: str) -> dict:
-    """返回某样本中【密集多人场景】（局部≥3具名说话人）的待复核片段。
+def list_dense_scenes(sample: str, batch: int = 0, batch_size: int = 8) -> dict:
+    """返回某样本中【密集多人场景】（局部≥3具名说话人）的待复核片段，支持分批读取。
 
     每段是原文（旁白+对话），每句对话前有 【sample_i】 标记。返回不含任何答案，
-    供智能体用自身模型按 method 重判。用 submit_attributions 回传结果。
+    供智能体用自身模型按 method 逐段重判，再用 submit_attributions 增量回传结果。
+
+    Args:
+        sample: 样本名
+        batch: 批次索引（从 0 开始）
+        batch_size: 每批返回的段落数（默认 8，建议不超过 10）
+
+    每次调用处理完当前批次后，递增 batch 继续调用，直到 batch >= total_batches。
     """
     stem, raw, parse, _ = _load(sample)
     sk = stem.replace("muli4_", "")
@@ -166,7 +173,8 @@ def list_dense_scenes(sample: str) -> dict:
             merged[-1] = (merged[-1][0], max(merged[-1][1], b))
         else:
             merged.append((a, b))
-    passages, dense_tags = [], []
+    all_passages, all_dense_tags = [], []
+    passage_tags: list[list[str]] = []
     for a, b in merged:
         if pos[a][0] < 0:
             continue
@@ -175,38 +183,90 @@ def list_dense_scenes(sample: str) -> dict:
         win = raw[ws:we]
         for p, k in sorted([(pos[k][0], k) for k in range(a, b) if pos[k][0] >= 0], reverse=True):
             win = win[: p - ws] + f"【{sk}_{k}】" + win[p - ws:]
+        ptags = []
         for k in range(a, b):
             if dflags[k] and not _crowd(parse[k]["speaker"]):
-                dense_tags.append(f"{sk}_{k}")
-        passages.append(win.strip())
+                tag = f"{sk}_{k}"
+                all_dense_tags.append(tag)
+                ptags.append(tag)
+        all_passages.append(win.strip())
+        passage_tags.append(ptags)
+
+    total = len(all_passages)
+    total_batches = max(1, (total + batch_size - 1) // batch_size)
+    batch = max(0, min(batch, total_batches - 1))
+    start = batch * batch_size
+    end = min(start + batch_size, total)
+
+    batch_passages = all_passages[start:end]
+    batch_dense_tags = [t for pts in passage_tags[start:end] for t in pts]
+
+    # progress: tags already submitted
+    out_path = _corrections_path()
+    done_count = 0
+    if out_path.exists():
+        try:
+            existing = json.loads(out_path.read_text(encoding="utf-8")).get("corrections", {})
+            done_count = sum(1 for t in all_dense_tags if t.split("_")[-1] in existing)
+        except Exception:
+            pass
+
     return {
         "sample": sk,
+        "batch": batch,
+        "total_batches": total_batches,
+        "passages_in_batch": len(batch_passages),
+        "total_passages": total,
+        "dense_tags_in_batch": len(batch_dense_tags),
+        "total_dense_tags": len(all_dense_tags),
+        "already_submitted": done_count,
         "method": METHOD,
         "roster": _roster(),
-        "passages": passages,
-        "dense_tags": dense_tags,
-        "note": "为每个出现的【tag】给出规范名说话人；dense_tags 是评分目标（密集场景具名句）。",
+        "passages": batch_passages,
+        "dense_tags": batch_dense_tags,
+        "note": (
+            "为当前批次每个出现的【tag】给出规范名说话人，调用 submit_attributions 提交后继续下一批次。"
+            f" 下一批次：batch={batch + 1}（共 {total_batches} 批）。"
+            " dense_tags 是评分目标（密集场景具名句），旁白/独白也请给出。"
+        ),
     }
 
 
 @mcp.tool()
 def submit_attributions(sample: str, attributions: dict) -> dict:
-    """回传 {标记: 说话人} 的归因结果。写入复核文件；若该样本有人工真值，则就密集场景句给出准确率。
+    """回传 {标记: 说话人} 的归因结果。**增量合并**写入复核文件（不覆盖已有条目）。
 
-    attributions: 形如 {"seg1_188": "小柳香穗", ...}。真值仅在服务器端用于打分，不外泄。
+    支持分批提交：每批处理完后调用一次，新结果与已有结果合并，可继续下一批。
+    若该样本有人工真值，则就密集场景句给出本次新增条目的准确率。
+
+    attributions: 形如 {"current_188": "小柳香穗", ...}。真值仅在服务器端用于打分，不外泄。
     """
     stem, raw, parse, gt = _load(sample)
     sk = stem.replace("muli4_", "")
-    # persist corrections (tag -> speaker), keyed by segment index
-    corrections = {}
+    # Parse new attributions
+    new_corrections: dict[str, str] = {}
     for tag, spk in attributions.items():
         m = re.match(rf"^{re.escape(sk)}_(\d+)$", str(tag))
         if m:
-            corrections[m.group(1)] = str(spk)
+            new_corrections[m.group(1)] = str(spk)
+    # Merge with existing (new entries override existing for same key)
     out_path = _corrections_path()
-    out_path.write_text(json.dumps({"source": "mcp_review", "corrections": corrections},
+    existing: dict[str, str] = {}
+    if out_path.exists():
+        try:
+            existing = json.loads(out_path.read_text(encoding="utf-8")).get("corrections", {})
+        except Exception:
+            existing = {}
+    merged = {**existing, **new_corrections}
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps({"source": "mcp_review", "corrections": merged},
                                    ensure_ascii=False, indent=2), encoding="utf-8")
-    result = {"sample": sk, "applied": len(corrections), "review_file": str(out_path.name)}
+    result = {
+        "sample": sk,
+        "new_entries": len(new_corrections),
+        "total_in_file": len(merged),
+        "review_file": str(out_path.name),
+    }
     if gt is not None:
         dflags = _dense_flags(parse)
         nc = nt = changed_right = changed_wrong = 0
