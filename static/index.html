@@ -2521,8 +2521,10 @@
                   </label>
                   <span class="mini-note" style="margin:0;">本地 4096 ctx 建议 1024-2048；大上下文/云端模型可调高</span>
                 </div>
-                <div style="display:flex;flex-direction:column;gap:4px;">
-                  <div class="mini-note" style="margin:0 0 2px 0;">低置信度片段复核方式（BatchLLM 完成后）：</div>
+                <!-- 低置信度逐条复核已隐藏：研究证明同模型自我纠错率低（blocked 70 / corrected 3），
+                     conf 阈值对错误无区分力；正式流程改用机器审计→异构扫描。DOM 保留以兼容持久化。 -->
+                <div hidden>
+                  <div class="mini-note">低置信度片段复核方式（BatchLLM 完成后）：</div>
                   <label class="structured-check">
                     <input type="radio" name="llmReviewMode" id="llmReviewNone" value="none" onchange="onReviewModeChange()" checked />
                     <span>不复核</span>
@@ -2535,22 +2537,40 @@
                     <input type="radio" name="llmReviewMode" id="llmReviewIndependent" value="independent" onchange="onReviewModeChange()" />
                     <span>使用独立复核模型（可避免内容过滤，适合本地宽松模型）</span>
                   </label>
-                  <div id="reviewLlmPanel" hidden class="sub-card" style="margin-top:6px;">
-                    <div class="mini-note" style="margin:0 0 8px 0;">独立复核模型同时用于"分析标记部分"功能，不影响主 BatchLLM 配置。</div>
+                  <div id="reviewLlmPanel" hidden class="sub-card">
+                    <div class="mini-note">独立复核模型同时用于"分析标记部分"功能，不影响主 BatchLLM 配置。</div>
+                    <div class="model-field-group" style="margin:0;">
+                      <label>Base URL<input id="reviewLlmBaseUrl" type="text" placeholder="http://localhost:11434/v1" /></label>
+                      <label>模型名<input id="reviewLlmModel" type="text" placeholder="qwen2.5:7b-instruct" /></label>
+                      <label>API Key（可选）<input id="reviewLlmApiKey" type="text" placeholder="ollama / lm-studio / sk-..." /></label>
+                    </div>
+                  </div>
+                </div>
+                <!-- 异构审计：用与主管线不同的模型做第二轮扫描，专抓同构盲区 -->
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                  <label class="structured-check" style="align-items:center;">
+                    <input type="checkbox" id="heteroAuditEnabled" onchange="onHeteroAuditChange()" />
+                    <span style="font-weight:500;">机器审计时启用异构第二意见</span>
+                  </label>
+                  <div id="heteroAuditPanel" hidden class="sub-card" style="margin-top:4px;">
+                    <div class="mini-note" style="margin:0 0 8px 0;">
+                      用与主管线（agnes）不同的模型对 agnes 各路一致段再扫一遍，专抓"三方同错"盲区。<br>
+                      实测：异构模型纠对率 81%，误标率 8%，可捕获约 75% 的同构漏网错误。<br>
+                      建议仅在固化前的最终审计时开启（每样本约 60–110 次额外调用）。
+                    </div>
                     <div class="model-field-group" style="margin:0;">
                       <label>Base URL
-                        <input id="reviewLlmBaseUrl" type="text" placeholder="http://localhost:11434/v1" />
+                        <input id="heteroLlmBaseUrl" type="text" placeholder="https://tokenhub.tencentmaas.com/v1" />
                       </label>
                       <label>模型名
-                        <input id="reviewLlmModel" type="text" placeholder="qwen2.5:7b-instruct" />
+                        <input id="heteroLlmModel" type="text" placeholder="glm-5-turbo" />
                       </label>
-                      <label>API Key（可选）
-                        <input id="reviewLlmApiKey" type="text" placeholder="ollama / lm-studio / sk-..." />
+                      <label>API Key
+                        <input id="heteroLlmApiKey" type="text" placeholder="sk-..." />
                       </label>
                     </div>
                   </div>
                 </div>
-                <div class="mini-note" style="margin:0;">BatchLLM 主管线同时处理所有台词，准确率更高；规则层速度更快，低置信度片段可事后 LLM 复核。</div>
               </div>
             </div>
 
@@ -5743,6 +5763,7 @@ very high pitch, very low pitch, whisper, young adult
     localStorage.setItem("ov_local_llm_config", JSON.stringify(getLocalLlmConfig()));
     localStorage.setItem("ov_llm_backend_mode", analysisSourceMode);
     saveReviewLlmConfig();
+    saveHeteroLlmConfig();
     localStorage.setItem(AUDIO_BACKEND_STORAGE_KEY, JSON.stringify(getAudioBackendConfig()));
     localStorage.setItem("ov_role_profiles", JSON.stringify(roleProfilesState));
     localStorage.setItem("ov_role_voice_assignments", JSON.stringify(roleVoiceAssignments));
@@ -11103,14 +11124,17 @@ very high pitch, very low pitch, whisper, young adult
       alert("缺少审计上下文（原文 + LLM 配置）。请先用 BatchLLM 模式完成一次结构化解析。"); return;
     }
     const { text, roleHints, narrator, llm } = auditContextState;
+    const heteroCfg = getHeteroLlmConfig();
     const payload = {
       text,
       segments: segmentsState.map((s) => ({
         speaker: s.speaker || "", text: s.text || "", evidence: s.evidence || s._evidence || "",
       })),
       llm, narrator: narrator || null, role_hints: roleHints || null, workers: 2,
+      ...(heteroCfg ? { hetero_llm: heteroCfg } : {}),
     };
-    beginTask("audit", "机器审计中…", "对每句对话做聚焦重问，与当前归因比对分歧，标出值得人工复核的段。");
+    const heteroNote = heteroCfg ? `，异构模型 ${heteroCfg.model}` : "";
+    beginTask("audit", "机器审计中…", `对每句对话做聚焦重问，与当前归因比对分歧，标出值得人工复核的段${heteroNote}。`);
     try {
       const response = await fetch("/api/audit_segments/stream", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -11222,6 +11246,22 @@ very high pitch, very low pitch, whisper, young adult
     if (panel) panel.hidden = (mode !== "independent");
   }
 
+  function onHeteroAuditChange() {
+    const enabled = document.getElementById("heteroAuditEnabled")?.checked;
+    const panel = document.getElementById("heteroAuditPanel");
+    if (panel) panel.hidden = !enabled;
+  }
+
+  /** 返回异构审计 LLM 配置；未启用或配置不完整时返回 null */
+  function getHeteroLlmConfig() {
+    if (!document.getElementById("heteroAuditEnabled")?.checked) return null;
+    const base_url = (document.getElementById("heteroLlmBaseUrl")?.value || "").trim();
+    const model    = (document.getElementById("heteroLlmModel")?.value || "").trim();
+    if (!base_url || !model) return null;
+    const api_key  = (document.getElementById("heteroLlmApiKey")?.value || "").trim() || "sk-placeholder";
+    return { base_url, model, api_key, max_tokens: 2000, disable_thinking: true };
+  }
+
   /** 是否启用任意形式的 LLM 复核 */
   function isLlmReviewEnabled() {
     return getReviewMode() !== "none";
@@ -11259,6 +11299,29 @@ very high pitch, very low pitch, whisper, young adult
       if (cfg.base_url) { const el = document.getElementById("reviewLlmBaseUrl"); if (el) el.value = cfg.base_url; }
       if (cfg.model)    { const el = document.getElementById("reviewLlmModel");    if (el) el.value = cfg.model; }
       if (cfg.api_key)  { const el = document.getElementById("reviewLlmApiKey");   if (el) el.value = cfg.api_key; }
+    } catch {}
+  }
+
+  function saveHeteroLlmConfig() {
+    const cfg = {
+      enabled:  document.getElementById("heteroAuditEnabled")?.checked || false,
+      base_url: document.getElementById("heteroLlmBaseUrl")?.value || "",
+      model:    document.getElementById("heteroLlmModel")?.value || "",
+      api_key:  document.getElementById("heteroLlmApiKey")?.value || "",
+    };
+    localStorage.setItem("ov_hetero_llm_config", JSON.stringify(cfg));
+  }
+
+  function loadHeteroLlmConfig() {
+    try {
+      const raw = localStorage.getItem("ov_hetero_llm_config");
+      if (!raw) return;
+      const cfg = JSON.parse(raw);
+      const chk = document.getElementById("heteroAuditEnabled");
+      if (chk) { chk.checked = !!cfg.enabled; onHeteroAuditChange(); }
+      if (cfg.base_url) { const el = document.getElementById("heteroLlmBaseUrl"); if (el) el.value = cfg.base_url; }
+      if (cfg.model)    { const el = document.getElementById("heteroLlmModel");    if (el) el.value = cfg.model; }
+      if (cfg.api_key)  { const el = document.getElementById("heteroLlmApiKey");   if (el) el.value = cfg.api_key; }
     } catch {}
   }
 
@@ -12757,6 +12820,7 @@ very high pitch, very low pitch, whisper, young adult
   updateSegmentsMeta();
   loadConfig();
   loadReviewLlmConfig();
+  loadHeteroLlmConfig();
   updateAnalysisFlowUI();
   initProgressPanelPrefs();
   // 固定使用 BatchLLM 主管线（旧分析方式已从 UI 隐藏）：初始化按钮标签与选项可见性
