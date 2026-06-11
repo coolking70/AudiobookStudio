@@ -121,21 +121,28 @@ class State:
         self.raw = raw_path.read_text(encoding="utf-8")
         segs = json.loads(parse_path.read_text(encoding="utf-8"))["segments"]
         self.segments = align(self.raw, segs)
-        # 机器审计结果（tools/audit_sample.py 产出）存在时，⚑ 改用 tier1（实测
-        # precision 13%→21%、标记量 47%→25%），tier2 邻段为弱提示，并附重问意见。
+        # 机器审计结果（tools/audit_sample.py 产出）存在时，⚑ 改用 tier1（场景感知
+        # 版：简单场景仅块复核触发降为 tier2），tier2 邻段为弱提示，附重问意见+优先级。
         audit_path = Path(str(parse_path).replace("_parse.json", "_audit.json"))
         if audit_path.exists():
             audit = json.loads(audit_path.read_text(encoding="utf-8"))
             t1, t2 = set(audit.get("tier1", [])), set(audit.get("tier2", []))
             details = audit.get("segments", {})
+            stats = audit.get("stats", {})
             for seg in self.segments:
                 i = seg["i"]
                 seg["flagged"] = i in t1
                 seg["tier2"] = i in t2
                 d = details.get(str(i)) or {}
                 if d.get("flags"):
-                    seg["hint"] = "；".join(d["flags"])
-            print(f"  已加载审计: {audit_path.name} (tier1={len(t1)} tier2={len(t2)})")
+                    p = d.get("priority")
+                    prefix = f"[P{p}] " if p else ""
+                    seg["hint"] = prefix + "；".join(d["flags"])
+                if d.get("priority") is not None:
+                    seg["priority"] = d["priority"]
+            saved = stats.get("downgraded_to_tier2", 0)
+            saved_str = f"，降级 {saved} 段" if saved else ""
+            print(f"  已加载审计: {audit_path.name} (tier1={len(t1)} tier2={len(t2)}{saved_str})")
         # roster = known role hints + any speakers the parse actually produced (new chars)
         roster = list(load_roster())
         for seg in self.segments:
@@ -219,6 +226,7 @@ header input[type=text]{background:var(--bg);border:1px solid var(--line);color:
 <datalist id="roster"></datalist>
 <script>
 let DATA=null, active=-1;
+const rows=[];
 const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 async function load(){DATA=await (await fetch('/data')).json();render();}
 function render(){
@@ -239,17 +247,23 @@ function render(){
   // left list
   const list=document.getElementById('list');
   list.innerHTML='';
+  rows.length=0;
   for(const s of DATA.segments){
     const row=document.createElement('div');
     row.className='row'+(s.speaker!==s.orig_speaker?' edited':'');
     row.id='row'+s.i;
+    row.dataset.idx=s.i;
+    row.dataset.pos=s.start>=0?s.start:999999;
+    row.dataset.priority=s.priority!=null?s.priority:99;
     row.onclick=e=>{if(e.target.tagName!=='INPUT')select(s.i,true);};
-    row.innerHTML=`<div class="idx">${s.flagged?'<span class="flag">⚑</span>':(s.tier2?'<span class="flag" style="color:#d9b44a">·</span>':'')}${s.i}</div>
+    const badge=s.flagged?(s.priority?`<sup style="font-size:9px;opacity:.8">${s.priority}</sup>`:''):'';
+    row.innerHTML=`<div class="idx">${s.flagged?`<span class="flag">⚑${badge}</span>`:(s.tier2?'<span class="flag" style="color:#d9b44a">·</span>':'')}${s.i}</div>
       <div><input class="sp" list="roster" value="${esc(s.speaker)}" data-i="${s.i}">
         ${s.speaker!==s.orig_speaker?`<div class="orig">原: ${esc(s.orig_speaker)}</div>`:''}
         ${s.hint?`<div class="orig" style="color:#7fb3d5">审计: ${esc(s.hint)}</div>`:''}</div>
       <div class="tx">「${esc(s.text)}」</div>`;
     list.appendChild(row);
+    rows.push(row);
   }
   list.querySelectorAll('input.sp').forEach(inp=>{
     inp.addEventListener('change',()=>save(+inp.dataset.i,inp.value.trim()));
@@ -294,8 +308,19 @@ function applyFilter(kind){
   flt=(flt===kind)?null:kind;
   document.getElementById('fFlag').classList.toggle('on',flt==='flag');
   document.getElementById('fEdit').classList.toggle('on',flt==='edit');
-  DATA.segments.forEach(s=>{
-    const row=document.getElementById('row'+s.i);
+  // 待核模式：按优先级（P1优先）重排；其他模式恢复文本顺序
+  const list=document.getElementById('list');
+  const sorted=[...rows].sort((a,b)=>{
+    if(flt==='flag'){
+      const pa=+a.dataset.priority,pb=+b.dataset.priority;
+      if(pa!==pb)return pa-pb;
+    }
+    return +a.dataset.pos - +b.dataset.pos;
+  });
+  sorted.forEach(r=>list.appendChild(r));
+  rows.length=0; sorted.forEach(r=>rows.push(r));
+  rows.forEach(row=>{
+    const s=DATA.segments[row.dataset.idx];
     let show=true;
     if(flt==='flag')show=s.flagged;
     if(flt==='edit')show=s.speaker!==s.orig_speaker;
