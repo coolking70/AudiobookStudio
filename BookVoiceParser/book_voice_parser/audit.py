@@ -23,6 +23,40 @@ _STRIP = set("「」『』《》〈〉 \t\r\n　")
 _NARRATION_SPEAKERS = {"旁白", "未知", "未知临时人物", "其他", "UNKNOWN", ""}
 
 
+def _scene_density(segments: list[dict], i: int, alias_map: dict[str, str], window: int = 4) -> int:
+    """Count unique named speakers in ±window around index i."""
+    canon = lambda x: alias_map.get(x or "", x or "")  # noqa: E731
+    speakers: set[str] = set()
+    for j in range(max(0, i - window), min(len(segments), i + window + 1)):
+        sp = canon(str(segments[j].get("speaker", "")))
+        if sp not in _NARRATION_SPEAKERS:
+            speakers.add(sp)
+    return len(speakers)
+
+
+def _signal_priority(flags: list[str], is_dense: bool) -> int:
+    """Tier-1 display priority: 1 = review first.
+      P1  dense + strong (bare/hetero)
+      P2  strong alone  |  dense + multi-signal
+      P3  dense + reask  |  multi-signal alone
+      P4  reask alone
+      P5  dense + block-review only
+    """
+    has_strong = any("裸单遍意见" in f or "异构意见" in f for f in flags)
+    has_reask = any("重问意见" in f for f in flags)
+    has_block = "被块级复核改过" in flags
+    multi = sum([has_strong, has_reask, has_block]) >= 2
+    if has_strong and is_dense:
+        return 1
+    if has_strong or (multi and is_dense):
+        return 2
+    if (has_reask and is_dense) or (multi and not is_dense):
+        return 3
+    if has_reask:
+        return 4
+    return 5  # block-only in dense
+
+
 def build_locator(raw: str) -> Callable[[str], tuple[int, int]]:
     """对话内文字剥离索引：只在引号内匹配，避免短引文错配到叙述里的同字子串。"""
     sidx: list[int] = []
@@ -153,6 +187,8 @@ def audit_segments(
 
     done = 0
     total = len(targets) + (len(targets) if hetero_llm else 0)  # 上界，异构实际更少
+    priorities: dict[int, int] = {}
+    downgraded: set[int] = set()  # 简单场景仅块复核 → 直接入 tier2
     with ThreadPoolExecutor(max(1, workers)) as ex:
         for i, r in ex.map(lambda i: ask(i, llm), targets):
             done += 1
@@ -165,9 +201,17 @@ def audit_segments(
             if "块级结构化复核" in str(segments[i].get("evidence") or ""):
                 flags.append("被块级复核改过")
             if flags:
-                tier1[i] = True
+                density = _scene_density(segments, i, a2c)
+                is_dense = density >= 3
+                if not is_dense and flags == ["被块级复核改过"]:
+                    # 简单场景（≤2人）仅块复核触发：基础错误率 3.3%，精度太低 → 降为 tier2
+                    downgraded.add(i)
+                else:
+                    tier1[i] = True
+                    priorities[i] = _signal_priority(flags, is_dense)
             details[i] = {"reask": (r or {}).get("speaker"),
-                          "reask_reason": (r or {}).get("reason"), "flags": flags}
+                          "reask_reason": (r or {}).get("reason"), "flags": flags,
+                          "priority": priorities.get(i)}
 
     if hetero_llm:
         sweep = [i for i in targets if not tier1[i]]
@@ -179,8 +223,13 @@ def audit_segments(
                 hk = canon(str(r.get("speaker", ""))) if r else None
                 if hk and hk != canon(segments[i].get("speaker", "")):
                     tier1[i] = True
+                    downgraded.discard(i)  # 异构信号优先级高，取消降级
                     details[i]["flags"].append(f"异构意见={hk}")
                     details[i]["hetero"] = r.get("speaker")
+                    density = _scene_density(segments, i, a2c)
+                    p = _signal_priority(details[i]["flags"], density >= 3)
+                    priorities[i] = p
+                    details[i]["priority"] = p
 
     tier2 = [False] * n
     for i, f in enumerate(tier1):
@@ -188,10 +237,23 @@ def audit_segments(
             for d in (-1, 1):
                 if 0 <= i + d < n and not tier1[i + d]:
                     tier2[i + d] = True
+    # 降级段直接入 tier2（不扩散邻段）
+    for i in downgraded:
+        if not tier1[i]:
+            tier2[i] = True
+
+    # tier1 按优先级排序（同级内按索引保持稳定）
+    tier1_sorted = sorted(
+        (i for i, f in enumerate(tier1) if f),
+        key=lambda i: (priorities.get(i, 99), i),
+    )
 
     return {
-        "tier1": [i for i, f in enumerate(tier1) if f],
+        "tier1": tier1_sorted,
         "tier2": [i for i, f in enumerate(tier2) if f],
         "details": {i: d for i, d in details.items() if d["flags"] or d.get("reask")},
         "audited": len(targets),
+        "stats": {
+            "downgraded_to_tier2": len(downgraded),
+        },
     }

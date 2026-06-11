@@ -11141,13 +11141,17 @@ very high pitch, very low pitch, whisper, young adult
       segmentsState.forEach((seg, i) => {
         const d = (result.details || {})[String(i)] || (result.details || {})[i] || {};
         seg._audit_tier = t1.has(i) ? 1 : (t2.has(i) ? 2 : 0);
-        seg._audit_hint = (d.flags || []).join("；") || "";
+        seg._audit_priority = d.priority != null ? d.priority : (t1.has(i) ? 99 : null);
+        const prefix = d.priority ? `[P${d.priority}] ` : "";
+        seg._audit_hint = prefix + (d.flags || []).join("；");
         if (t1.has(i)) seg._needs_review = true; // 进入待复核工作台
       });
+      const saved = (result.stats || {}).downgraded_to_tier2 || 0;
+      const savedStr = saved ? `（场景感知降级 ${saved} 段）` : "";
       if (typeof persistSegmentsState === "function") persistSegmentsState();
       renderSegments(true);
       finishTask("机器审计完成",
-        `重问 ${result.audited} 句：⚑必看 ${t1.size} 段、·顺带看 ${t2.size} 段。审计意见仅作提示，请在待复核工作台人工裁决。`);
+        `重问 ${result.audited} 句：⚑必看 ${t1.size} 段${savedStr}、·顺带看 ${t2.size} 段。审计意见仅作提示，请在待复核工作台人工裁决。`);
     } catch (err) {
       failTask("机器审计失败", err && err.message ? err.message : String(err));
     }
