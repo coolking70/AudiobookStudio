@@ -4062,8 +4062,9 @@ def mcp_status():
 def mcp_corrections():
     """读取 MCP 智能体写回的复核结果（按 segment 索引）。"""
     tf = _MCP_STATE.get("task_file")
+    # 若服务器由外部启动（_MCP_STATE 未记录），回退到固定默认路径
     if not tf:
-        return {"corrections": {}}
+        tf = str(OUTPUT_DIR / "_mcp" / "task_current.json")
     cpath = Path(tf).with_suffix(".corrections.json")
     if not cpath.exists():
         return {"corrections": {}}
@@ -4072,6 +4073,18 @@ def mcp_corrections():
     except Exception:
         return {"corrections": {}}
     return {"corrections": data.get("corrections", {})}
+
+
+@app.get("/api/mcp/source_text")
+def mcp_source_text():
+    """读取 MCP task 文件中的原文（供复核工作台在快照导入场景下使用）。"""
+    tf = _MCP_STATE.get("task_file") or str(OUTPUT_DIR / "_mcp" / "task_current.json")
+    try:
+        data = json.loads(Path(tf).read_text(encoding="utf-8"))
+        text = data.get("sourceText", "")
+        return {"text": text, "length": len(text)}
+    except Exception:
+        return {"text": "", "length": 0}
 
 
 @app.get("/file/{name:path}")

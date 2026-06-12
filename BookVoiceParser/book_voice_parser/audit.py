@@ -176,13 +176,18 @@ def audit_segments(
     tier1 = [False] * n
 
     def ask(i: int, cfg: dict):
-        st, en = locate(segments[i]["text"])
-        if st < 0:
-            return i, None
-        prompt = make_audit_prompt(
-            roster_str, narrator,
-            raw_text[max(0, st - context_chars):st], segments[i]["text"],
-            raw_text[en:en + context_chars])
+        seg = segments[i]
+        st, en = locate(seg["text"])
+        if st >= 0:
+            ctx_b = raw_text[max(0, st - context_chars):st]
+            ctx_a = raw_text[en:en + context_chars]
+        else:
+            # raw_text 缺失（如快照导入场景）：降级用段内嵌的上下文字段
+            ctx_b = str(seg.get("context_before") or "")[-context_chars:]
+            ctx_a = str(seg.get("context_after")  or "")[:context_chars]
+            if not ctx_b and not ctx_a:
+                return i, None  # 完全无上下文才跳过
+        prompt = make_audit_prompt(roster_str, narrator, ctx_b, seg["text"], ctx_a)
         return i, _parse_answer(_call_llm(prompt, cfg))
 
     done = 0

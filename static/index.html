@@ -10968,12 +10968,20 @@ very high pitch, very low pitch, whisper, young adult
     });
   }
 
-  function openReviewWorkbench() {
+  async function openReviewWorkbench() {
     if (!segmentsState.length) { showToast("当前没有分析结果", "warn", 1800); return; }
-    if (!auditContextState || !auditContextState.text) {
-      showToast("缺少原文上下文：请先在本会话用结构化解析生成结果", "warn", 2600); return;
+    let raw = auditContextState?.text || "";
+    if (!raw) {
+      // 快照导入场景：尝试从 MCP task 文件读取原文
+      try {
+        const d = await (await fetch("/api/mcp/source_text")).json();
+        raw = d.text || "";
+      } catch (_) {}
     }
-    const raw = auditContextState.text;
+    if (!raw) {
+      showToast("缺少原文上下文：请将原文粘贴到「输入原文」框后重试", "warn", 3000); return;
+    }
+    if (auditContextState && !auditContextState.text) auditContextState.text = raw;
     const aligned = rwAlign(raw, segmentsState);
     rwState = { raw, items: aligned, active: -1, filter: null, edited: new Set() };
     // roster：当前所有说话人 + 角色档案
@@ -11120,10 +11128,15 @@ very high pitch, very low pitch, whisper, young adult
     // 机器审计：对当前 segmentsState 做聚焦重问两级分流（docs/flagging_audit_analysis_2026-06-10.md）。
     // tier1 ⚑ 必看（意见分歧/被块级复核改过），tier2 · 顺带看（±1 邻段）。只分流不裁决。
     if (!segmentsState.length) { alert("当前没有分析结果，请先执行结构化解析。"); return; }
-    if (!auditContextState || !auditContextState.llm) {
-      alert("缺少审计上下文（原文 + LLM 配置）。请先用 BatchLLM 模式完成一次结构化解析。"); return;
+    // 若快照导入后 auditContextState 未设置，回退到当前 UI 配置
+    const fallbackLlm = getReviewLlmConfig() || validateLLMConfig();
+    if (!auditContextState?.llm && !fallbackLlm) {
+      alert("缺少 LLM 配置。请在「复核模型」或主模型配置中填写 API 地址和模型名。"); return;
     }
-    const { text, roleHints, narrator, llm } = auditContextState;
+    const text      = auditContextState?.text      || (document.getElementById("sourceText")?.value || "");
+    const roleHints = auditContextState?.roleHints  || null;
+    const narrator  = auditContextState?.narrator   || null;
+    const llm       = auditContextState?.llm        || fallbackLlm;
     const heteroCfg = getHeteroLlmConfig();
     const payload = {
       text,
@@ -11168,12 +11181,11 @@ very high pitch, very low pitch, whisper, young adult
         seg._audit_priority = d.priority != null ? d.priority : (t1.has(i) ? 99 : null);
         const prefix = d.priority ? `[P${d.priority}] ` : "";
         seg._audit_hint = prefix + (d.flags || []).join("；");
-        if (t1.has(i)) seg._needs_review = true; // 进入待复核工作台
+        seg._needs_review = t1.has(i); // 每轮审计全量刷新：tier1 标记，其余清除旧标记
       });
       const saved = (result.stats || {}).downgraded_to_tier2 || 0;
       const savedStr = saved ? `（场景感知降级 ${saved} 段）` : "";
-      if (typeof persistSegmentsState === "function") persistSegmentsState();
-      renderSegments(true);
+      applySegmentsState(segmentsState, { persist: true });
       finishTask("机器审计完成",
         `重问 ${result.audited} 句：⚑必看 ${t1.size} 段${savedStr}、·顺带看 ${t2.size} 段。审计意见仅作提示，请在待复核工作台人工裁决。`);
     } catch (err) {
@@ -12766,7 +12778,7 @@ very high pitch, very low pitch, whisper, young adult
     if (dot) { dot.textContent = running ? "● 运行中" : "● 未启动"; dot.style.color = running ? "#3ecf8e" : ""; }
     if (startBtn) startBtn.disabled = !!running;
     if (stopBtn) stopBtn.disabled = !running;
-    if (importBtn) importBtn.disabled = !running;
+    if (importBtn) importBtn.disabled = false;  // 始终可用，无论服务器是否由 UI 启动
     if (box) box.hidden = !running;
     if (running && url) {
       const u = document.getElementById("mcpSseUrl"); if (u) u.value = url;
@@ -12799,6 +12811,16 @@ very high pitch, very low pitch, whisper, young adult
     try {
       const d = await (await fetch("/api/mcp/corrections")).json();
       const corr = d.corrections || {};
+      const totalKeys = Object.keys(corr).length;
+      console.log("[MCP Import] corrections keys:", totalKeys, "segmentsState.length:", segmentsState.length);
+      if (totalKeys === 0) {
+        const msg = "MCP 复核暂无可导入的修正（智能体尚未提交）。";
+        setStatus(msg); showToast(msg, "info", 3000); return;
+      }
+      if (segmentsState.length === 0) {
+        const msg = "当前无已加载的分析结果，请先加载任务再导入 MCP 复核。";
+        setStatus(msg); showToast(msg, "info", 3500); return;
+      }
       let n = 0;
       Object.entries(corr).forEach(([idx, spk]) => {
         const i = parseInt(idx, 10);
@@ -12806,9 +12828,18 @@ very high pitch, very low pitch, whisper, young adult
           segmentsState[i].speaker = spk; n++;
         }
       });
+      console.log("[MCP Import] applied:", n, "changes");
       if (n > 0) applySegmentsState(segmentsState, { persist: true });
-      setStatus(n > 0 ? `已从 MCP 复核导入 ${n} 处修正并写回当前任务。` : "MCP 复核暂无可导入的修正（智能体尚未提交或无改动）。");
-    } catch (e) { setStatus("导入复核结果出错：" + e.message); }
+      const msg = n > 0
+        ? `已从 MCP 复核导入 ${n} 处修正并写回当前任务。`
+        : `MCP 复核无新修正（${totalKeys} 条与当前结果完全一致）。`;
+      setStatus(msg);
+      showToast(msg, n > 0 ? "success" : "info", 4000);
+    } catch (e) {
+      const msg = "导入复核结果出错：" + e.message;
+      setStatus(msg); showToast(msg, "error", 4000);
+      console.error("[MCP Import] error:", e);
+    }
   }
 
   initDesignPrompt();
