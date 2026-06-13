@@ -151,8 +151,23 @@ MIMO_TTS_MODEL = "mimo-v2.5-tts"
 MIMO_TTS_VOICE_DESIGN_MODEL = "mimo-v2.5-tts-voicedesign"
 MIMO_TTS_VOICE_CLONE_MODEL = "mimo-v2.5-tts-voiceclone"
 MIMO_TTS_BUILTIN_VOICES = {"mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"}
+INDEX_TTS_MODEL_NAME = "IndexTeam/IndexTTS-2"
+INDEX_TTS_RECOMMENDED_LOAD_OPTIONS = {
+    "use_fp16": True,
+    "use_cuda_kernel": False,
+    "use_deepspeed": False,
+    "use_torch_compile": True,
+}
+INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS = {
+    "num_beams": 1,
+    "temperature": 0.8,
+    "top_p": 0.8,
+    "top_k": 20,
+    "max_text_tokens_per_segment": 120,
+}
 DEFAULT_TTS_DURATION_MAX_RETRIES = 2
 VOXCPM_BRIDGE_SCRIPT = Path(__file__).resolve().parent / "voxcpm_bridge.py"
+INDEX_TTS_BRIDGE_SCRIPT = Path(__file__).resolve().parent / "index_tts_bridge.py"
 MAX_BATCH_LLM_COMPLETION_TOKENS = 131072
 MIN_BATCH_LLM_COMPLETION_TOKENS = 512
 
@@ -418,6 +433,105 @@ def get_voxcpm_bridge_status() -> dict[str, object]:
     }
 
 
+def get_index_tts_bridge_python_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    explicit = str(os.getenv("INDEX_TTS_PYTHON_EXE") or "").strip()
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+    index_tts_root = Path(os.getenv("INDEX_TTS_ROOT") or Path(__file__).resolve().parent.parent / "index-tts").expanduser()
+    candidates.extend(
+        [
+            index_tts_root / ".venv" / "Scripts" / "python.exe",
+            index_tts_root / ".venv" / "bin" / "python",
+            Path(r"I:\conda_envs\index-tts\python.exe"),
+            Path(r"I:\ProgramData\miniconda3\envs\index-tts\python.exe"),
+            Path(sys.executable).resolve(),
+        ]
+    )
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate).lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(candidate)
+    return deduped
+
+
+def find_index_tts_bridge_python() -> Path | None:
+    for candidate in get_index_tts_bridge_python_candidates():
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = str(os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = str(os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except Exception:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = str(os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except Exception:
+        return default
+
+
+def get_index_tts_effective_load_options() -> dict[str, bool]:
+    return {
+        "use_fp16": _env_bool("INDEX_TTS_USE_FP16", bool(INDEX_TTS_RECOMMENDED_LOAD_OPTIONS["use_fp16"])),
+        "use_cuda_kernel": _env_bool("INDEX_TTS_USE_CUDA_KERNEL", bool(INDEX_TTS_RECOMMENDED_LOAD_OPTIONS["use_cuda_kernel"])),
+        "use_deepspeed": _env_bool("INDEX_TTS_USE_DEEPSPEED", bool(INDEX_TTS_RECOMMENDED_LOAD_OPTIONS["use_deepspeed"])),
+        "use_torch_compile": _env_bool("INDEX_TTS_USE_TORCH_COMPILE", bool(INDEX_TTS_RECOMMENDED_LOAD_OPTIONS["use_torch_compile"])),
+    }
+
+
+def get_index_tts_effective_generation_options() -> dict[str, int | float]:
+    return {
+        "num_beams": _env_int("INDEX_TTS_NUM_BEAMS", int(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["num_beams"])),
+        "temperature": _env_float("INDEX_TTS_TEMPERATURE", float(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["temperature"])),
+        "top_p": _env_float("INDEX_TTS_TOP_P", float(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["top_p"])),
+        "top_k": _env_int("INDEX_TTS_TOP_K", int(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["top_k"])),
+        "max_text_tokens_per_segment": _env_int(
+            "INDEX_TTS_MAX_TEXT_TOKENS",
+            int(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["max_text_tokens_per_segment"]),
+        ),
+    }
+
+
+def get_index_tts_bridge_status() -> dict[str, object]:
+    python_exe = find_index_tts_bridge_python()
+    index_tts_root = Path(os.getenv("INDEX_TTS_ROOT") or Path(__file__).resolve().parent.parent / "index-tts").expanduser()
+    return {
+        "available": bool(python_exe and INDEX_TTS_BRIDGE_SCRIPT.exists() and index_tts_root.exists()),
+        "python_executable": str(python_exe) if python_exe else None,
+        "script_path": str(INDEX_TTS_BRIDGE_SCRIPT),
+        "index_tts_root": str(index_tts_root),
+        "model_dir": str(index_tts_root / "checkpoints"),
+        "load_options": get_index_tts_effective_load_options(),
+        "generation_options": get_index_tts_effective_generation_options(),
+        "recommended_load_options": INDEX_TTS_RECOMMENDED_LOAD_OPTIONS,
+        "recommended_generation_options": INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS,
+        "batch_strategy": "group_by_ref_audio",
+    }
+
+
 def _path_is_relative_to(path: Path, parent: Path) -> bool:
     try:
         path.resolve().relative_to(parent.resolve())
@@ -500,6 +614,25 @@ def build_voxcpm_bridge_env(python_exe: str | Path) -> dict[str, str]:
     return env
 
 
+def build_index_tts_bridge_env(python_exe: str | Path) -> dict[str, str]:
+    env = build_voxcpm_bridge_env(python_exe)
+    index_tts_root = Path(os.getenv("INDEX_TTS_ROOT") or Path(__file__).resolve().parent.parent / "index-tts").expanduser()
+    env["INDEX_TTS_ROOT"] = str(index_tts_root)
+    python_paths = [str(index_tts_root), str(index_tts_root / "indextts")]
+    existing = str(os.environ.get("PYTHONPATH") or "").strip()
+    if existing:
+        python_paths.append(existing)
+    env["PYTHONPATH"] = os.pathsep.join(python_paths)
+    bridge_temp_dir = Path(r"I:\tmp\index_tts_bridge")
+    try:
+        bridge_temp_dir.mkdir(parents=True, exist_ok=True)
+        env["TMP"] = str(bridge_temp_dir)
+        env["TEMP"] = str(bridge_temp_dir)
+    except Exception:
+        pass
+    return env
+
+
 def _load_voxcpm_bridge_result(path: Path) -> dict[str, object] | None:
     if not path.exists() or path.stat().st_size <= 0:
         return None
@@ -508,6 +641,25 @@ def _load_voxcpm_bridge_result(path: Path) -> dict[str, object] | None:
     except Exception:
         return None
     return data if isinstance(data, dict) else None
+
+
+def _load_bridge_result(path: Path) -> dict[str, object] | None:
+    return _load_voxcpm_bridge_result(path)
+
+
+def _parse_trailing_json_object(text: str) -> dict[str, object] | None:
+    raw = str(text or "").strip()
+    if not raw:
+        return None
+    decoder = json.JSONDecoder()
+    for start in [idx for idx, char in enumerate(raw) if char == "{"]:
+        try:
+            data, end = decoder.raw_decode(raw[start:])
+        except Exception:
+            continue
+        if isinstance(data, dict) and not raw[start + end :].strip():
+            return data
+    return None
 
 
 def _normalize_voxcpm_dtype(value: object) -> str:
@@ -658,6 +810,113 @@ def run_voxcpm_bridge_tts_with_fallback(payload: dict[str, object]) -> dict[str,
             f"VoxCPM CUDA/{initial_dtype} 专用环境发生原生崩溃，已自动回退到 CPU 生成。"
         )
         return result
+
+
+def run_index_tts_bridge(action: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+    status = get_index_tts_bridge_status()
+    python_exe = status.get("python_executable")
+    if not status.get("available") or not python_exe:
+        raise RuntimeError(
+            "未找到可用的 IndexTTS 专用 Python 环境。"
+            " 请确认上层目录 I:\\code\\aitts\\index-tts\\.venv\\Scripts\\python.exe 存在，"
+            "或设置环境变量 INDEX_TTS_PYTHON_EXE / INDEX_TTS_ROOT。"
+        )
+
+    bridge_payload = dict(payload or {})
+    bridge_result_path = build_temp_archive_path(f"index_tts_bridge_{uuid4().hex[:10]}.json", category="index_tts_bridge")
+    bridge_env = build_index_tts_bridge_env(python_exe)
+    bridge_env["INDEX_TTS_BRIDGE_RESULT_PATH"] = str(bridge_result_path)
+    completed = subprocess.run(
+        [str(python_exe), str(INDEX_TTS_BRIDGE_SCRIPT), action],
+        input=json.dumps(bridge_payload, ensure_ascii=False),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=str(Path(os.getenv("INDEX_TTS_ROOT") or Path(__file__).resolve().parent.parent / "index-tts").expanduser()),
+        env=bridge_env,
+        check=False,
+    )
+    stdout = str(completed.stdout or "").strip()
+    stderr = str(completed.stderr or "").strip()
+    data = _load_bridge_result(bridge_result_path)
+    if data is None:
+        if stdout:
+            try:
+                data = json.loads(stdout)
+            except Exception as exc:
+                data = _parse_trailing_json_object(stdout)
+                if data is None:
+                    raise RuntimeError(
+                        f"IndexTTS 专用环境返回了无法解析的内容：{stdout[:400]}"
+                        f" stderr={stderr[-800:] if stderr else '无'}"
+                    ) from exc
+        else:
+            output_path = Path(str(bridge_payload.get("output_path") or "")).expanduser()
+            if action == "tts" and output_path.exists() and output_path.stat().st_size > 0:
+                return {
+                    "ok": True,
+                    "file": str(output_path),
+                    "model_name": bridge_payload.get("model_name"),
+                    "python_executable": str(python_exe),
+                    "bridge_warning": (
+                        f"IndexTTS 专用环境未返回 JSON，但输出文件已生成。"
+                        f"returncode={completed.returncode}; stderr={stderr[-800:] if stderr else '无'}"
+                    ),
+                }
+            raise RuntimeError(
+                "IndexTTS 专用环境未返回结果。"
+                f"returncode={completed.returncode}; "
+                f"result_path={bridge_result_path}; "
+                f"stderr={stderr[-1200:] if stderr else '请检查专用环境日志。'}"
+            )
+
+    if completed.returncode != 0 or not data.get("ok"):
+        error = data.get("error") or stderr or "未知错误"
+        raise RuntimeError(
+            f"IndexTTS 专用环境执行失败：{error}; "
+            f"returncode={completed.returncode}; "
+            f"stderr={stderr[-1200:] if stderr else '无'}"
+        )
+    data.setdefault("python_executable", str(python_exe))
+    return data
+
+
+def synthesize_index_tts_request(
+    *,
+    text: str,
+    output_path: Path,
+    backend_data: dict | None,
+    inference_device: str | None,
+    instruct: str | None = None,
+    ref_audio: str | None = None,
+    ref_text: str | None = None,
+) -> tuple[dict, dict]:
+    bridge_result, duration_validation = synthesize_with_duration_retry(
+        text,
+        output_path,
+        lambda: run_index_tts_bridge(
+            "tts",
+            {
+                "device": normalize_inference_device(inference_device),
+                "model_name": resolve_local_audio_model_path(backend_data),
+                "text": text,
+                "output_path": str(output_path.resolve()),
+                "instruct": instruct,
+                "ref_audio": ref_audio,
+                "ref_text": ref_text,
+            },
+        ),
+    )
+    result = {
+        "device": bridge_result.get("device") or normalize_inference_device(inference_device),
+        "model_name": bridge_result.get("model_dir") or bridge_result.get("model_name"),
+        "bridge_python_executable": bridge_result.get("python_executable"),
+        "bridge_warning": bridge_result.get("bridge_warning"),
+        "load_options": bridge_result.get("load_options") or get_index_tts_effective_load_options(),
+        "generation_options": bridge_result.get("generation_options") or get_index_tts_effective_generation_options(),
+    }
+    return result, duration_validation
 
 
 def get_microsoft_tts_catalog() -> dict[str, object]:
@@ -1287,6 +1546,8 @@ def _infer_audio_model_family(model_ref: str | None) -> str | None:
         return None
 
     lowered = value.replace("\\", "/").lower()
+    if "index-tts" in lowered or "indextts" in lowered:
+        return "index-tts"
     if "voxcpm" in lowered:
         return "voxcpm"
     if "omnivoice" in lowered:
@@ -1331,6 +1592,8 @@ def resolve_local_audio_engine(req_backend) -> str:
         return "omnivoice"
     if value == "voxcpm":
         return "voxcpm"
+    if value in {"index-tts", "indextts", "index_tts"}:
+        return "index-tts"
     raise ValueError(f"不支持的本地语音引擎: {backend.get('local_audio_engine')}")
 
 
@@ -1377,6 +1640,12 @@ def build_local_path_preset_catalog() -> dict[str, dict[str, object]]:
     omnivoice_candidates = [root / "models--k2-fsa--OmniVoice" for root in hf_roots]
     whisper_candidates = [root / "models--openai--whisper-large-v3-turbo" for root in hf_roots]
     voxcpm_candidates = [root / "models--openbmb--VoxCPM2" for root in hf_roots]
+    index_tts_root = Path(os.getenv("INDEX_TTS_ROOT") or Path(__file__).resolve().parent.parent / "index-tts").expanduser()
+    index_tts_candidates = [
+        index_tts_root / "checkpoints",
+        workspace_models / "IndexTTS-2",
+        workspace_models / "index-tts",
+    ]
 
     return {
         "llm_root_lmstudio": build_entry(
@@ -1401,6 +1670,11 @@ def build_local_path_preset_catalog() -> dict[str, dict[str, object]]:
             "VoxCPM 缓存目录",
             voxcpm_candidates or [home / ".cache" / "huggingface" / "hub" / "models--openbmb--VoxCPM2"],
             "会按当前环境的 Hugging Face 缓存根目录自动检测 VoxCPM2 模型仓库。",
+        ),
+        "audio_index_tts_cache": build_entry(
+            "IndexTTS checkpoints 目录",
+            index_tts_candidates,
+            "优先使用上层 index-tts 项目的 checkpoints 目录。",
         ),
         "audio_whisper_cache": build_entry(
             "Whisper 缓存目录",
@@ -2025,6 +2299,98 @@ def synthesize_voxcpm_narration(
     }
 
 
+def synthesize_index_tts_narration(
+    *,
+    inference_device: str | None,
+    model_name: str | None,
+    segments: list[dict],
+    output_name: str,
+    silence_ms: int,
+    role_profiles: dict,
+) -> dict:
+    resolved_device = normalize_inference_device(inference_device)
+    jobs: list[dict[str, object]] = []
+    grouped_jobs: dict[str, list[dict[str, object]]] = {}
+    bridge_python_executable = None
+    bridge_warning = None
+    model_dir = None
+    generation_options = get_index_tts_effective_generation_options()
+    load_options = get_index_tts_effective_load_options()
+
+    for order, seg in enumerate(segments):
+        speaker = seg.get("speaker", "旁白")
+        text = str(seg.get("text") or "").strip()
+        if not text:
+            continue
+
+        profile = role_profiles.get(speaker) or {}
+        ref_audio = str(seg.get("ref_audio") or profile.get("ref_audio") or "").strip()
+        ref_text = str(seg.get("ref_text") or profile.get("ref_text") or "").strip()
+        instruct = str(seg.get("style") or profile.get("style") or "").strip()
+        output_path = build_segment_output_path(output_name, order + 1)
+        job = {
+            "order": order,
+            "speaker": speaker,
+            "text": text,
+            "output_path": output_path,
+            "instruct": instruct,
+            "ref_audio": ref_audio,
+            "ref_text": ref_text,
+        }
+        bucket_key = ref_audio or f"__missing_ref__:{speaker}"
+        grouped_jobs.setdefault(bucket_key, []).append(job)
+        jobs.append(job)
+
+    if not jobs:
+        raise RuntimeError("没有可用于 IndexTTS 合成的有效分段。")
+
+    for group in grouped_jobs.values():
+        for job in group:
+            output_path = job["output_path"]
+            if not isinstance(output_path, Path):
+                output_path = Path(str(output_path))
+
+            bridge_result, _duration_validation = synthesize_with_duration_retry(
+                str(job["text"]),
+                output_path,
+                lambda: run_index_tts_bridge(
+                    "tts",
+                    {
+                        "device": resolved_device,
+                        "model_name": model_name,
+                        "text": str(job["text"]),
+                        "output_path": str(output_path.resolve()),
+                        "instruct": job.get("instruct"),
+                        "ref_audio": job.get("ref_audio"),
+                        "ref_text": job.get("ref_text"),
+                    },
+                ),
+            )
+            bridge_python_executable = bridge_result.get("python_executable") or bridge_python_executable
+            bridge_warning = bridge_result.get("bridge_warning") or bridge_warning
+            model_dir = bridge_result.get("model_dir") or model_dir
+            generation_options = bridge_result.get("generation_options") or generation_options
+            load_options = bridge_result.get("load_options") or load_options
+
+    ordered_jobs = sorted(jobs, key=lambda item: int(item["order"]))
+    wav_paths = [str(job["output_path"]) for job in ordered_jobs]
+    final_path = resolve_named_output_path(output_name, ".wav", temp_category="preview_merge")
+    merge_result = join_wavs_auto(wav_paths, final_path, silence_ms=silence_ms)
+    merge_result["wav_paths"] = wav_paths
+    return {
+        "merge_result": merge_result,
+        "engine": "index-tts",
+        "device": resolved_device,
+        "model_name": model_dir or model_name,
+        "bridge_python_executable": bridge_python_executable,
+        "bridge_warning": bridge_warning,
+        "batch_strategy": "group_by_ref_audio",
+        "batch_group_count": len(grouped_jobs),
+        "load_options": load_options,
+        "generation_options": generation_options,
+    }
+
+
 def synthesize_mimo_narration(
     *,
     backend: dict | None,
@@ -2087,6 +2453,7 @@ def get_audio_model_status() -> dict:
         "runtime": get_runtime_dependency_status(),
         "voxcpm_runtime": get_voxcpm_runtime_dependency_status(),
         "voxcpm_bridge": get_voxcpm_bridge_status(),
+        "index_tts_bridge": get_index_tts_bridge_status(),
         "asr_runtime": get_asr_runtime_dependency_status(),
         "loaded_devices": loaded_devices,
         "cached_devices": cached_devices,
@@ -2397,6 +2764,30 @@ def tts(req: TTSRequest):
                 "original_device": result.get("original_device"),
                 "bridge_python_executable": result.get("bridge_python_executable"),
                 "bridge_warning": result.get("bridge_warning"),
+                "duration_validation": duration_validation,
+            }
+
+        if voice_engine == "index-tts":
+            result, duration_validation = synthesize_index_tts_request(
+                text=req.text,
+                output_path=output_path,
+                backend_data=backend_data,
+                inference_device=inference_device,
+                instruct=req.instruct,
+                ref_audio=req.ref_audio,
+                ref_text=req.ref_text,
+            )
+            return {
+                "ok": True,
+                "file": str(output_path),
+                "audio_url": build_output_file_url(output_path),
+                "engine": "index-tts",
+                "device": result.get("device"),
+                "model_name": result.get("model_name"),
+                "bridge_python_executable": result.get("bridge_python_executable"),
+                "bridge_warning": result.get("bridge_warning"),
+                "load_options": result.get("load_options"),
+                "generation_options": result.get("generation_options"),
                 "duration_validation": duration_validation,
             }
 
@@ -3347,6 +3738,35 @@ def narrate(req: NarrateRequest):
             response["bridge_warning"] = result.get("bridge_warning")
             return response
 
+        if mode == "local" and resolve_local_audio_engine(backend_data) == "index-tts":
+            result = synthesize_index_tts_narration(
+                inference_device=inference_device,
+                model_name=resolve_local_audio_model_path(backend_data),
+                segments=segments,
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+                role_profiles=role_profiles,
+            )
+            merge_result = result["merge_result"]
+            wav_paths = [Path(path) for path in merge_result.get("wav_paths", build_segment_wav_paths(output_name, len(segments)))]
+            response = build_merge_response_payload(
+                merge_result=merge_result,
+                wav_paths=wav_paths,
+                lyric_lines=build_lyric_lines(segments),
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+            )
+            response["engine"] = "index-tts"
+            response["device"] = result.get("device")
+            response["model_name"] = result.get("model_name")
+            response["bridge_python_executable"] = result.get("bridge_python_executable")
+            response["bridge_warning"] = result.get("bridge_warning")
+            response["batch_strategy"] = result.get("batch_strategy")
+            response["batch_group_count"] = result.get("batch_group_count")
+            response["load_options"] = result.get("load_options")
+            response["generation_options"] = result.get("generation_options")
+            return response
+
         if mode == "mimo":
             result = synthesize_mimo_narration(
                 backend=backend_data,
@@ -3448,6 +3868,36 @@ def auto_narrate(req: AutoNarrateRequest):
             response["original_device"] = result.get("original_device")
             response["bridge_python_executable"] = result.get("bridge_python_executable")
             response["bridge_warning"] = result.get("bridge_warning")
+            return response
+
+        if mode == "local" and resolve_local_audio_engine(backend_data) == "index-tts":
+            result = synthesize_index_tts_narration(
+                inference_device=inference_device,
+                model_name=resolve_local_audio_model_path(backend_data),
+                segments=segments,
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+                role_profiles=role_profiles,
+            )
+            merge_result = result["merge_result"]
+            wav_paths = [Path(path) for path in merge_result.get("wav_paths", build_segment_wav_paths(output_name, len(segments)))]
+            response = build_merge_response_payload(
+                merge_result=merge_result,
+                wav_paths=wav_paths,
+                lyric_lines=build_lyric_lines(segments),
+                output_name=output_name,
+                silence_ms=req.silence_ms,
+            )
+            response["segments"] = segments
+            response["engine"] = "index-tts"
+            response["device"] = result.get("device")
+            response["model_name"] = result.get("model_name")
+            response["bridge_python_executable"] = result.get("bridge_python_executable")
+            response["bridge_warning"] = result.get("bridge_warning")
+            response["batch_strategy"] = result.get("batch_strategy")
+            response["batch_group_count"] = result.get("batch_group_count")
+            response["load_options"] = result.get("load_options")
+            response["generation_options"] = result.get("generation_options")
             return response
 
         if mode == "mimo":
@@ -3807,6 +4257,27 @@ def load_audio_model(req: ModelLoadRequest):
                 "model_name": bridge_result.get("model_name"),
                 "bridge_python_executable": bridge_result.get("python_executable"),
                 "message": "当前主服务环境未直装 VoxCPM，已通过专用环境完成可用性检查。实际生成时也会自动走该专用环境。",
+            }
+
+        if local_audio_engine == "index-tts":
+            bridge_result = run_index_tts_bridge(
+                "load",
+                {
+                    "device": normalize_inference_device(inference_device),
+                    "model_name": resolve_local_audio_model_path(backend),
+                },
+            )
+            return {
+                "ok": True,
+                "mode": "local",
+                "engine": "index-tts",
+                "device": normalize_inference_device(inference_device),
+                "model_name": bridge_result.get("model_dir") or resolve_local_audio_model_path(backend) or INDEX_TTS_MODEL_NAME,
+                "bridge_python_executable": bridge_result.get("python_executable"),
+                "load_options": bridge_result.get("load_options") or get_index_tts_effective_load_options(),
+                "generation_options": bridge_result.get("generation_options") or get_index_tts_effective_generation_options(),
+                "batch_strategy": "group_by_ref_audio",
+                "message": "已通过 IndexTTS 专用环境完成可用性检查。实际生成时也会自动走该专用环境。",
             }
 
         pipeline = get_pipeline(

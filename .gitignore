@@ -8,6 +8,7 @@ venv/
 
 outputs/
 static/*.log
+bench_outputs/
 
 .DS_Store
 Thumbs.db
