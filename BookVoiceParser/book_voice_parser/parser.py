@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 from .alias_registry import AliasRegistry, clean_role_hint_name
 from .address_term_backcheck import apply_address_term_backcheck
 from .block_review import apply_block_review
+from .script_block import apply_script_block_split
 from .candidate_gen import generate_candidates
 from .cleaner import normalize_text
 from .consistency_fixer import fix_consistency
@@ -1433,6 +1434,10 @@ def _parse_with_batch_llm(
             logger.warning(f"[parser] block_review skipped due to error: {exc}")
             block_review_stats = {"mode": "block_review", "enabled": False, "error": repr(exc)}
 
+    # ── 群组聊天/剧本格式旁白段 → 逐行说话人段（行内显式标签，高精度）──────────
+    segments, script_block_stats = apply_script_block_split(
+        segments, canonicalize=aliases.canonicalize if aliases.has_hints() else None)
+
     # ── 密集多人场景 → 人工复核路由（最后一步）────────────────────────────────
     dense_scene_stats: dict[str, Any] = {"mode": "dense_scene_review_routing", "enabled": False}
     if dense_scene_review_size and int(dense_scene_review_size) >= 2:
@@ -1454,6 +1459,7 @@ def _parse_with_batch_llm(
             "scene_state": scene_state_stats,
             "address_term_backcheck": address_term_stats,
             "block_review": block_review_stats,
+            "script_block_split": script_block_stats,
             "dense_scene_review_routing": dense_scene_stats,
         },
     )
