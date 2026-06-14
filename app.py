@@ -1,13 +1,18 @@
 import base64
 import asyncio
+import atexit
+import itertools
 import json
 import mimetypes
 import os
 import platform
+import queue
 import re
 import socket
 import subprocess
 import sys
+import threading
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -154,12 +159,16 @@ MIMO_TTS_BUILTIN_VOICES = {"mimo_default", "冰糖", "茉莉", "苏打", "白桦
 INDEX_TTS_MODEL_NAME = "IndexTeam/IndexTTS-2"
 INDEX_TTS_RECOMMENDED_LOAD_OPTIONS = {
     "use_fp16": True,
+    "use_accel": True,
     "use_cuda_kernel": False,
     "use_deepspeed": False,
     "use_torch_compile": True,
 }
 INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS = {
     "num_beams": 1,
+    "do_sample": False,
+    "diffusion_steps": 16,
+    "inference_cfg_rate": 0.3,
     "temperature": 0.8,
     "top_p": 0.8,
     "top_k": 20,
@@ -496,15 +505,19 @@ def _env_float(name: str, default: float) -> float:
 def get_index_tts_effective_load_options() -> dict[str, bool]:
     return {
         "use_fp16": _env_bool("INDEX_TTS_USE_FP16", bool(INDEX_TTS_RECOMMENDED_LOAD_OPTIONS["use_fp16"])),
+        "use_accel": _env_bool("INDEX_TTS_USE_ACCEL", bool(INDEX_TTS_RECOMMENDED_LOAD_OPTIONS["use_accel"])),
         "use_cuda_kernel": _env_bool("INDEX_TTS_USE_CUDA_KERNEL", bool(INDEX_TTS_RECOMMENDED_LOAD_OPTIONS["use_cuda_kernel"])),
         "use_deepspeed": _env_bool("INDEX_TTS_USE_DEEPSPEED", bool(INDEX_TTS_RECOMMENDED_LOAD_OPTIONS["use_deepspeed"])),
         "use_torch_compile": _env_bool("INDEX_TTS_USE_TORCH_COMPILE", bool(INDEX_TTS_RECOMMENDED_LOAD_OPTIONS["use_torch_compile"])),
     }
 
 
-def get_index_tts_effective_generation_options() -> dict[str, int | float]:
+def get_index_tts_effective_generation_options() -> dict[str, int | float | bool]:
     return {
         "num_beams": _env_int("INDEX_TTS_NUM_BEAMS", int(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["num_beams"])),
+        "do_sample": _env_bool("INDEX_TTS_DO_SAMPLE", bool(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["do_sample"])),
+        "diffusion_steps": _env_int("INDEX_TTS_DIFFUSION_STEPS", int(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["diffusion_steps"])),
+        "inference_cfg_rate": _env_float("INDEX_TTS_INFERENCE_CFG_RATE", float(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["inference_cfg_rate"])),
         "temperature": _env_float("INDEX_TTS_TEMPERATURE", float(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["temperature"])),
         "top_p": _env_float("INDEX_TTS_TOP_P", float(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["top_p"])),
         "top_k": _env_int("INDEX_TTS_TOP_K", int(INDEX_TTS_RECOMMENDED_GENERATION_OPTIONS["top_k"])),
@@ -628,6 +641,38 @@ def build_index_tts_bridge_env(python_exe: str | Path) -> dict[str, str]:
         bridge_temp_dir.mkdir(parents=True, exist_ok=True)
         env["TMP"] = str(bridge_temp_dir)
         env["TEMP"] = str(bridge_temp_dir)
+    except Exception:
+        pass
+    # Make app.py the single source of truth: forward the effective load/generation
+    # options to the bridge as env vars (the bridge reads these as defaults).
+    try:
+        _opt_env = {
+            "INDEX_TTS_USE_FP16": "use_fp16",
+            "INDEX_TTS_USE_ACCEL": "use_accel",
+            "INDEX_TTS_USE_CUDA_KERNEL": "use_cuda_kernel",
+            "INDEX_TTS_USE_DEEPSPEED": "use_deepspeed",
+            "INDEX_TTS_USE_TORCH_COMPILE": "use_torch_compile",
+        }
+        load_opts = get_index_tts_effective_load_options()
+        for env_key, opt_key in _opt_env.items():
+            env[env_key] = "1" if bool(load_opts[opt_key]) else "0"
+        gen_opts = get_index_tts_effective_generation_options()
+        gen_env = {
+            "INDEX_TTS_NUM_BEAMS": "num_beams",
+            "INDEX_TTS_DO_SAMPLE": "do_sample",
+            "INDEX_TTS_DIFFUSION_STEPS": "diffusion_steps",
+            "INDEX_TTS_INFERENCE_CFG_RATE": "inference_cfg_rate",
+            "INDEX_TTS_TEMPERATURE": "temperature",
+            "INDEX_TTS_TOP_P": "top_p",
+            "INDEX_TTS_TOP_K": "top_k",
+            "INDEX_TTS_MAX_TEXT_TOKENS": "max_text_tokens_per_segment",
+        }
+        for env_key, opt_key in gen_env.items():
+            value = gen_opts[opt_key]
+            if isinstance(value, bool):
+                env[env_key] = "1" if value else "0"
+            else:
+                env[env_key] = str(value)
     except Exception:
         pass
     return env
@@ -882,6 +927,167 @@ def run_index_tts_bridge(action: str, payload: dict[str, object] | None = None) 
     return data
 
 
+# ---------------------------------------------------------------------------
+# Persistent IndexTTS bridge ("serve" mode)
+#
+# A cold per-call bridge subprocess reloads the ~6GB model + reruns torch.compile
+# / accel warmup every segment (~60s overhead each). For a multi-segment narration
+# that dwarfs the ~1.5s actual generation. The persistent server loads the model
+# once and serves all segments, so model load is paid once and IndexTTS2's
+# single-slot reference-audio cache survives across segments (making ref-audio
+# grouping effective). Controlled by INDEX_TTS_PERSISTENT (default on); any failure
+# falls back to the per-call path.
+# ---------------------------------------------------------------------------
+_INDEX_TTS_SERVER: dict | None = None
+_INDEX_TTS_SERVER_LOCK = threading.Lock()
+_INDEX_TTS_REQ_COUNTER = itertools.count(1)
+# First request pays model load + compile warmup; later ones are fast.
+_INDEX_TTS_FIRST_REQUEST_TIMEOUT = 600.0
+_INDEX_TTS_REQUEST_TIMEOUT = 240.0
+
+
+def index_tts_persistent_enabled() -> bool:
+    return _env_bool("INDEX_TTS_PERSISTENT", True)
+
+
+def _index_tts_server_alive(srv: dict | None) -> bool:
+    return bool(srv and srv.get("proc") and srv["proc"].poll() is None)
+
+
+def _start_index_tts_server() -> dict:
+    status = get_index_tts_bridge_status()
+    python_exe = status.get("python_executable")
+    if not status.get("available") or not python_exe:
+        raise RuntimeError("未找到可用的 IndexTTS 专用 Python 环境，无法启动常驻服务。")
+    env = build_index_tts_bridge_env(python_exe)
+    log_path = build_temp_archive_path(f"index_tts_serve_{uuid4().hex[:8]}.log", category="index_tts_bridge")
+    log_file = open(log_path, "w", encoding="utf-8", errors="replace")
+    proc = subprocess.Popen(
+        [str(python_exe), str(INDEX_TTS_BRIDGE_SCRIPT), "serve"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=log_file,  # model/torch chatter -> log file so the pipe never blocks
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=str(Path(os.getenv("INDEX_TTS_ROOT") or Path(__file__).resolve().parent.parent / "index-tts").expanduser()),
+        env=env,
+        bufsize=1,
+    )
+    responses: "queue.Queue" = queue.Queue()
+
+    def _reader() -> None:
+        try:
+            for line in proc.stdout:  # type: ignore[union-attr]
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    responses.put(json.loads(line))
+                except Exception:
+                    # stray non-JSON chatter leaked to stdout; ignore
+                    continue
+        finally:
+            responses.put(None)  # EOF sentinel
+
+    reader = threading.Thread(target=_reader, daemon=True)
+    reader.start()
+    return {
+        "proc": proc,
+        "responses": responses,
+        "reader": reader,
+        "log": log_file,
+        "log_path": str(log_path),
+        "warmed": False,
+    }
+
+
+def _stop_index_tts_server() -> None:
+    global _INDEX_TTS_SERVER
+    srv = _INDEX_TTS_SERVER
+    _INDEX_TTS_SERVER = None
+    if not srv:
+        return
+    proc = srv.get("proc")
+    try:
+        if proc and proc.poll() is None:
+            try:
+                proc.stdin.write(json.dumps({"_action": "shutdown"}) + "\n")  # type: ignore[union-attr]
+                proc.stdin.flush()  # type: ignore[union-attr]
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+    finally:
+        try:
+            srv.get("log") and srv["log"].close()
+        except Exception:
+            pass
+
+
+atexit.register(_stop_index_tts_server)
+
+
+def run_index_tts_bridge_serve(payload: dict[str, object] | None = None) -> dict[str, object]:
+    """Send one tts request to the persistent server and return its response.
+
+    Raises RuntimeError on any transport/process failure so the caller can fall
+    back to the per-call subprocess path.
+    """
+    global _INDEX_TTS_SERVER
+    with _INDEX_TTS_SERVER_LOCK:
+        if not _index_tts_server_alive(_INDEX_TTS_SERVER):
+            _INDEX_TTS_SERVER = _start_index_tts_server()
+        srv = _INDEX_TTS_SERVER
+        assert srv is not None
+        req_id = next(_INDEX_TTS_REQ_COUNTER)
+        request = {**dict(payload or {}), "_id": req_id, "_action": "tts"}
+        try:
+            srv["proc"].stdin.write(json.dumps(request, ensure_ascii=False) + "\n")
+            srv["proc"].stdin.flush()
+        except Exception as exc:
+            _stop_index_tts_server()
+            raise RuntimeError(f"index-tts 常驻服务写入失败：{exc}") from exc
+
+        timeout = _INDEX_TTS_REQUEST_TIMEOUT if srv.get("warmed") else _INDEX_TTS_FIRST_REQUEST_TIMEOUT
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _stop_index_tts_server()
+                raise RuntimeError(f"index-tts 常驻服务响应超时（>{timeout:.0f}s）。")
+            try:
+                msg = srv["responses"].get(timeout=remaining)
+            except queue.Empty:
+                _stop_index_tts_server()
+                raise RuntimeError("index-tts 常驻服务响应超时。")
+            if msg is None:
+                log_path = srv.get("log_path")
+                _stop_index_tts_server()
+                raise RuntimeError(f"index-tts 常驻服务进程已退出。日志：{log_path}")
+            if msg.get("_id") != req_id:
+                # stale response from a prior aborted request; skip
+                continue
+            srv["warmed"] = True
+            if not msg.get("ok"):
+                raise RuntimeError(f"index-tts 常驻服务执行失败：{msg.get('error') or '未知错误'}")
+            msg.setdefault("python_executable", srv.get("python_executable"))
+            return msg
+
+
+def run_index_tts_bridge_tts(payload: dict[str, object]) -> dict[str, object]:
+    """Unified IndexTTS tts entry: persistent server (default) with automatic
+    fallback to the per-call subprocess path."""
+    if index_tts_persistent_enabled():
+        try:
+            return run_index_tts_bridge_serve(payload)
+        except Exception as exc:
+            print(f">> index-tts 常驻服务不可用，回退到单次调用：{exc}", file=sys.stderr)
+    return run_index_tts_bridge("tts", payload)
+
+
 def synthesize_index_tts_request(
     *,
     text: str,
@@ -895,8 +1101,7 @@ def synthesize_index_tts_request(
     bridge_result, duration_validation = synthesize_with_duration_retry(
         text,
         output_path,
-        lambda: run_index_tts_bridge(
-            "tts",
+        lambda: run_index_tts_bridge_tts(
             {
                 "device": normalize_inference_device(inference_device),
                 "model_name": resolve_local_audio_model_path(backend_data),
@@ -2353,8 +2558,7 @@ def synthesize_index_tts_narration(
             bridge_result, _duration_validation = synthesize_with_duration_retry(
                 str(job["text"]),
                 output_path,
-                lambda: run_index_tts_bridge(
-                    "tts",
+                lambda: run_index_tts_bridge_tts(
                     {
                         "device": resolved_device,
                         "model_name": model_name,
