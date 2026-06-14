@@ -464,6 +464,39 @@ def _apply_narration_context_backcheck(
     return corrected
 
 
+# 「姐姐/哥哥」作为称呼（呼语）而非普通名词的判定。
+# 仅当确为"在喊对方"时，叙述者台词才可能其实是（向叙述者称呼者的）下位亲属在说话。
+_VOCATIVE_OPENERS = "，。！？、：；…「『 \t～~啊喂嗳呐哎嗯欸诶呀哦喔噢"
+_VOCATIVE_CLOSERS = "，。！？、：；…」』 \t～~你您啊呀哦喔噢"
+# 这些前缀说明是"扮演/作为/称呼/的…姐姐"等名词用法，绝不是在喊对方
+_VOCATIVE_BLOCK_PREFIX = (
+    "扮演", "作为", "成为", "当成", "装作", "称作", "叫我", "叫他", "叫她",
+    "当我", "当你", "的", "个", "像", "比", "这", "那", "当",
+)
+
+
+def _is_elder_vocative(text: str, term: str) -> bool:
+    """text 中的 term（姐姐/哥哥）是否以"呼语/称呼对方"的形态出现。
+
+    True 例：「姐姐，早安」「啊，姐姐。」「我说姐姐啊」
+    False 例：「玩扮演姐姐游戏」「当紫阳花同学的姐姐」「叫我姐姐」「作为姐姐」
+    """
+    text = str(text or "")
+    for m in re.finditer(re.escape(term), text):
+        i, j = m.start(), m.end()
+        prev2 = text[max(0, i - 2):i]
+        prev3 = text[max(0, i - 3):i]
+        if any(prev2.endswith(p) or prev3.endswith(p) for p in _VOCATIVE_BLOCK_PREFIX):
+            continue
+        after = text[j:j + 1]
+        if after and after not in _VOCATIVE_CLOSERS:
+            continue  # 后接非呼语字符（如「姐姐游戏/姐姐般」）→ 复合词，非呼语
+        before = text[i - 1] if i > 0 else ""
+        if i == 0 or before in _VOCATIVE_OPENERS or prev2 in ("我说", "跟你", "和你"):
+            return True
+    return False
+
+
 def _apply_relation_vocative_backcheck(
     segments: list[SegmentEx],
     stats: dict[str, object],
@@ -484,10 +517,24 @@ def _apply_relation_vocative_backcheck(
         terms = [term for term in GENERIC_RELATION_RE.findall(str(seg.text or "")) if term in elder_terms]
         if not terms:
             continue
+        # 闸①：必须是"在喊对方"的呼语用法，排除「扮演/作为/的…姐姐」等名词用法
+        vocative_terms = [t for t in terms if _is_elder_vocative(seg.text, t)]
+        if not vocative_terms:
+            stats["relation_vocative_blocked_nonvocative"] = int(stats.get("relation_vocative_blocked_nonvocative") or 0) + 1
+            continue
+        terms = vocative_terms
         target = _nearest_local_non_narrator(segments, index, narrator)
         if not target:
             stats["relation_vocative_blocked"] = int(stats.get("relation_vocative_blocked") or 0) + 1
             _append_evidence(seg, f"关系称谓负权重：主叙述者台词含「{terms[0]}」，但未找到可靠局部说话人")
+            continue
+        # 闸②：改判目标必须在当前场景（±2 段窗口的 scene_characters），否则不改
+        scene_window: set[str] = set()
+        for p in range(max(0, index - 2), min(len(segments), index + 3)):
+            scene_window.update(str(x or "").strip() for x in (segments[p].scene_characters or []))
+        if scene_window and target not in scene_window:
+            stats["relation_vocative_blocked_offscene"] = int(stats.get("relation_vocative_blocked_offscene") or 0) + 1
+            _append_evidence(seg, f"关系称谓负权重：「{terms[0]}」呼语，但候选改判目标 {target} 不在当前场景，保留原判")
             continue
         old = current
         seg.speaker = target

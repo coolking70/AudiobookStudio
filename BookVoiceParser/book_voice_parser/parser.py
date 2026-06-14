@@ -1241,6 +1241,13 @@ def _parse_with_batch_llm(
         total_unresolved = len(unresolved_quotes)
         completed_count = 0
 
+        # 规范名 → 别名列表，注入归因 prompt（压制称呼陷阱/别名不归一/新角色漏注册）
+        role_aliases_map: dict[str, list[str]] = {}
+        if aliases.has_hints():
+            for alias, canon in aliases.alias_map.items():
+                if alias and canon and alias != canon:
+                    role_aliases_map.setdefault(canon, []).append(alias)
+
         for ci in sorted(chapter_groups.keys()):
             group = chapter_groups[ci]
             offset = completed_count
@@ -1264,6 +1271,7 @@ def _parse_with_batch_llm(
                 narrator=ci_narrator,
                 narrator_hints=narrator_hint_quotes,
                 on_progress=_make_progress(offset, total, on_progress),
+                role_aliases=role_aliases_map or None,
             )
             llm_attributions.update(group_result)
             completed_count += len(group)

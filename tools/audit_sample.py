@@ -94,7 +94,7 @@ def signal_priority(signals: list[str], is_dense: bool) -> int:
       P4  重问非密集
       P5  密集+仅块复核
     """
-    has_strong = any("裸单遍意见" in s or "异构意见" in s for s in signals)
+    has_strong = any("裸单遍意见" in s or "异构意见" in s or "单遍意见" in s for s in signals)
     has_reask = any("重问意见" in s for s in signals)
     has_block = "被块级复核改过" in signals
     multi = sum([has_strong, has_reask, has_block]) >= 2
@@ -141,6 +141,9 @@ def main() -> None:
     ap.add_argument("--hetero", action="store_true",
                     help="异构第二轮：glm-5-turbo(tokenhub) 扫描 agnes 一致段，抓同构盲区"
                          "（额度有限，只在固化前的最终审计用）")
+    ap.add_argument("--singlepass", action="store_true",
+                    help="单遍直出第二意见：整文阅读+角色表注入，一次性归因；与流水线分歧入 tier1"
+                         "（强信号，suggest-only，绝不改写 parse）。专抓分批窄窗丢失的跨句轮换/在场错误")
     args = ap.parse_args()
     narrator = args.narrator if args.narrator and args.narrator.lower() != "none" else None
 
@@ -247,6 +250,45 @@ def main() -> None:
                     density = scene_density(parse, i)
                     priorities[i] = signal_priority(rs_h, density >= 3)
 
+    # 单遍直出第二意见（--singlepass）：整文阅读 + 角色表注入，一次性归因，
+    # 与流水线分歧即入 tier1（强信号）。suggest-only：只读 parse、绝不改写其 speaker。
+    sp_used = 0
+    if args.singlepass:
+        from book_voice_parser.single_pass_attributor import SinglePassAttributor
+        from book_voice_parser.batch_llm_attributor import BatchConfig
+        from book_voice_parser.schema import QuoteSpan
+        role_aliases = {
+            c: (al if isinstance(al, (list, tuple)) else al.get("aliases", []))
+            for c, al in ROLE_HINTS.items()
+        }
+        quotes, qid2idx = [], {}
+        for i in targets:
+            qid = str(parse[i].get("quote_id") or f"L{i}")
+            quotes.append(QuoteSpan(quote_id=qid, text=parse[i].get("text", ""),
+                                    start=0, end=len(parse[i].get("text", "")),
+                                    context_before="", context_after=""))
+            qid2idx[qid] = i
+        cfg = BatchConfig(base_url=AGNES_URL.rsplit("/chat/completions", 1)[0],
+                          api_key=api_key, model=AGNES_MODEL, timeout=300)
+        sp = SinglePassAttributor(cfg, full_text=raw, chunk_size=200)
+        print(f"单遍第二意见: 整文阅读归因 {len(quotes)} 个具名段…", flush=True)
+        sp_res = sp.attribute(quotes, role_hints=list(ROLE_HINTS.keys()),
+                              narrator=narrator, role_aliases=role_aliases)
+        for qid, a in sp_res.items():
+            i = qid2idx.get(qid)
+            if i is None:
+                continue
+            sp_used += 1
+            sk = canon(str(getattr(a, "speaker", "") or ""))
+            if sk and not is_crowd(sk) and sk != canon(parse[i]["speaker"]):
+                tier1[i] = True
+                downgraded.pop(i, None)  # 强信号优先级高，取消之前的降级
+                rs_s = reasons.setdefault(i, [])
+                if not any("单遍意见" in s for s in rs_s):
+                    rs_s.append(f"单遍意见={sk}")
+                reask.setdefault(i, {"speaker": sk, "reason": "单遍直出"})
+                priorities[i] = signal_priority(rs_s, scene_density(parse, i) >= 3)
+
     tier2 = [False] * n
     for i, f in enumerate(tier1):
         if f:
@@ -273,8 +315,10 @@ def main() -> None:
         "generated": datetime.now().isoformat(timespec="seconds"),
         "method": "focused-reask + bare-disagree + block-review-changed(scene-aware)"
                   + (" + hetero(glm-5-turbo)一致段扫描" if args.hetero else "")
+                  + (" + singlepass(整文+角色表)第二意见" if args.singlepass else "")
                   + "; tier2=±1邻段+简单场景降级段",
         "hetero_calls": hetero_used,
+        "singlepass_segments": sp_used,
         "narrator": narrator,
         "reask_done": sum(1 for v in reask.values() if v),
         "tier1": tier1_sorted,  # 按优先级排序，P1 在前

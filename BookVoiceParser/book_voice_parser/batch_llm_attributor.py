@@ -252,6 +252,7 @@ def _build_prompt(
     output_mode: str = "compact",
     narrator: str | None = None,
     narrator_hints: set[str] | None = None,
+    role_aliases: dict[str, list[str]] | None = None,
 ) -> tuple[str, str]:
     """返回 (system_prompt, user_prompt)
 
@@ -261,8 +262,27 @@ def _build_prompt(
         narrator:       主视角叙述者姓名，用于生成叙述者角色提示行。
         narrator_hints: 含「我」且 P1b 认为可能是叙述者的 quote_id 集合；
                         对应台词会在 prompt 中附加💡提示，由 LLM 最终确认。
+        role_aliases:   规范名 → 别名/称呼列表。注入「别名映射」与「称呼判定」规则，
+                        压制"称呼被当成说话人"和别名不归一两类系统性错误。
     """
     role_list = "、".join(role_hints) if role_hints else "（未指定，从上下文推断）"
+
+    # 别名映射 + 称呼判定规则（实验验证可显著修复称呼陷阱/新角色漏注册/别名不归一）
+    if role_aliases:
+        alias_lines = []
+        for canon, al in role_aliases.items():
+            al = [a for a in (al or []) if a and a != canon]
+            if al:
+                alias_lines.append(f"  {canon} ← {'、'.join(al)}")
+        if alias_lines:
+            role_list = (
+                role_list
+                + "\n【别名映射】（下列别名/称呼一律归到规范名输出）：\n"
+                + "\n".join(alias_lines)
+                + "\n【称呼判定】台词里出现「X同学/小X/X前辈/姐姐/妹妹/哥哥」等称呼时，"
+                "说的人通常**不是**被称呼者本人（在称呼对方）；"
+                "出现「我是X/我叫X」自我介绍时，说话人就是 X 本人（若候选缺 X 也要补上）。"
+            )
     prev_speakers = prev_speakers or []
     block_hints = block_hints or {}
     narrator_hints = narrator_hints or set()
@@ -876,6 +896,7 @@ class BatchLLMAttributor:
             output_mode=self.cfg.output_mode,
             narrator=narrator,
             narrator_hints=narrator_hints,
+            role_aliases=getattr(self, "_pending_role_aliases", None),
         )
         parse_fn = _parse_compact_response if self.cfg.output_mode == "compact" else _parse_llm_response
         last_empty = False
@@ -956,6 +977,7 @@ class BatchLLMAttributor:
         narrator: str | None = None,
         narrator_hints: set[str] | None = None,
         on_progress: Optional[Callable[[int, int], None]] = None,
+        role_aliases: dict[str, list[str]] | None = None,
     ) -> dict[str, Attribution]:
         """
         对所有台词批量归因，批次间传递说话人上下文。
@@ -974,6 +996,7 @@ class BatchLLMAttributor:
         """
         role_hints = role_hints or []
         block_hints = block_hints or {}
+        self._pending_role_aliases = role_aliases or None
         result: dict[str, Attribution] = {}
         total = len(quotes)
 

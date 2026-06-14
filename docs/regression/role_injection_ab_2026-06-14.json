@@ -1,0 +1,61 @@
+{
+  "date": "2026-06-14",
+  "model": "agnes-2.0-flash",
+  "sample": "第五卷 part_001",
+  "testset": {
+    "dialogue_lines": 185,
+    "known_errors": 40,
+    "note": "含实验暴露的554/558/560"
+  },
+  "results": {
+    "P_full_pipeline": {
+      "overall": 0.784,
+      "fixed": "0/40",
+      "broke": 0
+    },
+    "batched_no_roster": {
+      "overall": 0.703,
+      "fixed": "27/40",
+      "broke": 42
+    },
+    "batched_with_roster": {
+      "overall": 0.697,
+      "fixed": "26/40",
+      "broke": 42
+    },
+    "singlepass_no_roster": {
+      "overall": 0.762,
+      "fixed": "36/40",
+      "broke": 40
+    },
+    "singlepass_with_roster": {
+      "overall": 0.768,
+      "fixed": "36/40",
+      "broke": 39
+    }
+  },
+  "conclusions": [
+    "上下文宽度是主杠杆：单遍36/40 vs 分批27/40",
+    "角色表注入边际增益极小(27->26, 36->36)，属卫生性改进",
+    "从零重判+整体替换均劣于完整流水线(P78.4%)，只能作tier1第二意见",
+    "关系称谓反推加闸消除428/431/455/530四处纯回归(单测验证)"
+  ],
+  "followups_2026-06-14": {
+    "relation_vocative_gate_unittest": {
+      "file": "tools/test_relation_vocative_gate.py",
+      "result": "4/4 pass",
+      "no_api": true
+    },
+    "singlepass_secondopinion": {
+      "file": "tools/audit_sample.py --singlepass",
+      "validator": "tools/test_singlepass_secondopinion.py",
+      "recall_known_errors": "39/40=98%",
+      "precision_lower_bound": "39/77=51%",
+      "pipeline_speaker_modified": 0,
+      "missed": [
+        465
+      ],
+      "suggest_only": true
+    }
+  }
+}

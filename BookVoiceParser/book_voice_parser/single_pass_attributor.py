@@ -29,12 +29,13 @@ class SinglePassAttributor:
     def attribute(self, quotes: list[QuoteSpan], all_candidates: Any = None, *,
                   role_hints: list[str] | None = None, block_hints: Any = None,
                   narrator: str | None = None, narrator_hints: Any = None,
-                  on_progress: Any = None) -> dict[str, Attribution]:
+                  on_progress: Any = None,
+                  role_aliases: dict[str, list[str]] | None = None) -> dict[str, Attribution]:
         out: dict[str, Attribution] = {}
         done = 0
         for k in range(0, len(quotes), self.chunk_size):
             chunk = quotes[k:k + self.chunk_size]
-            ans = self._ask(chunk, role_hints or [], narrator)
+            ans = self._ask(chunk, role_hints or [], narrator, role_aliases)
             for q in chunk:
                 a = ans.get(q.quote_id)
                 out[q.quote_id] = Attribution(
@@ -49,8 +50,18 @@ class SinglePassAttributor:
                 on_progress(done, len(quotes))
         return out
 
-    def _ask(self, chunk: list[QuoteSpan], role_hints: list[str], narrator: str | None) -> dict[str, dict]:
+    def _ask(self, chunk: list[QuoteSpan], role_hints: list[str], narrator: str | None,
+             role_aliases: dict[str, list[str]] | None = None) -> dict[str, dict]:
         roster = "、".join(role_hints) if role_hints else "（无已知角色表）"
+        if role_aliases:
+            alias_lines = []
+            for canon, al in role_aliases.items():
+                al = [a for a in (al or []) if a and a != canon]
+                if al:
+                    alias_lines.append(f"  {canon} ← {'、'.join(al)}")
+            if alias_lines:
+                roster = (roster + "\n别名映射（别名/称呼一律归到规范名输出）：\n"
+                          + "\n".join(alias_lines))
         nar = (f'本文为{narrator}第一人称叙述（叙述中的"我"={narrator}）。' if narrator
                else "本文为第三人称叙述。")
         qlist = "\n".join(f'{q.quote_id}「{q.text[:40]}」' for q in chunk)
@@ -59,7 +70,9 @@ class SinglePassAttributor:
 
 请通读下面的完整原文，然后判断文末清单中每句对话是谁说出口的。
 归属约定：回忆/引用某人说过的话→说话人=被引用者；想象某人会说的话→被想象者；
-叙述中引用的概念词/书名（无人说出口）→"旁白"。
+叙述中引用的概念词/书名（无人说出口）→"旁白"；第一人称无引号叙述→"旁白"。
+称呼判定：台词含「X同学/小X/X前辈/姐姐/妹妹」是在称呼对方，说话人不是被称呼者本人；
+「我是X/我叫X」自我介绍→说话人就是 X。
 
 【原文】
 {self.full_text}
