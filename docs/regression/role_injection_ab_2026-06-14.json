@@ -56,6 +56,17 @@
         465
       ],
       "suggest_only": true
+    },
+    "script_block_split": {
+      "problem": "外传节『五女神的房间』群组聊天/剧本格式(说话人：台词,无引号)被吞成单个旁白段",
+      "fix": "book_voice_parser/script_block.py 接入 _parse_with_batch_llm",
+      "result": "该块 1段→27段, 26行正确归属: 高田卑弥呼x15/羽贺铃兰x6/根本美姬x5",
+      "alias_resolution": {
+        "女王": "高田卑弥呼",
+        "姬百合": "羽贺铃兰",
+        "miki": "根本美姬"
+      },
+      "unittest": "tools/test_script_block_split.py 4/4 pass (含散文/引用式/单冒号不误切)"
     }
   }
 }
