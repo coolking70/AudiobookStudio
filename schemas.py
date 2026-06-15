@@ -1,8 +1,24 @@
 from typing import Any, List, Optional, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
-class Segment(BaseModel):
+class _BlankNumericNone(BaseModel):
+    """共享前置校验：数值字段收到空字符串时视为未设置（None）。
+
+    前端常把未配置的 cfg_value/inference_timesteps 传成 ""，直接交给
+    Optional[float]/Optional[int] 会触发 pydantic parsing 错误
+    （表现为「保存项目」500）。在此统一把空串归一为 None。
+    """
+
+    @field_validator("cfg_value", "inference_timesteps", mode="before", check_fields=False)
+    @classmethod
+    def _blank_numeric_to_none(cls, v):
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
+
+
+class Segment(_BlankNumericNone):
     speaker: str = Field(default="旁白")
     text: str
     emotion: str = Field(default="neutral")
@@ -21,7 +37,7 @@ class Segment(BaseModel):
     attribution_type: Optional[str] = None    # explicit_before/after/implicit/latent/group
 
 
-class RoleProfile(BaseModel):
+class RoleProfile(_BlankNumericNone):
     speaker: str
     style: Optional[str] = None
     ref_audio: Optional[str] = None
@@ -277,7 +293,7 @@ class ParseV2ReviewOneRequest(BaseModel):
 PROJECT_SCHEMA_VERSION = 1
 
 
-class VoiceAssignment(BaseModel):
+class VoiceAssignment(_BlankNumericNone):
     """音色分配，字段对齐 RoleProfile，便于互转。"""
     voice_engine: Optional[str] = None
     ref_audio: Optional[str] = None
