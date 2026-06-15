@@ -281,6 +281,29 @@ def _estimate_pcm16_bytes(frames: int, channels: int) -> int:
     return max(0, int(frames)) * max(1, int(channels)) * PCM16_BYTES_PER_SAMPLE
 
 
+def _dominant_sample_rate(inspected: list[dict]) -> int:
+    """取片段中出现最多的采样率作为目标；同票时偏向第一个片段的采样率。"""
+    from collections import Counter
+
+    counts = Counter(int(it["sample_rate"]) for it in inspected)
+    first_sr = int(inspected[0]["sample_rate"])
+    return max(counts, key=lambda sr: (counts[sr], sr == first_sr))
+
+
+def _resample_audio(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
+    """把 (frames, channels) 音频从 orig_sr 重采样到 target_sr。"""
+    if int(orig_sr) == int(target_sr):
+        return audio
+    from math import gcd
+    from scipy.signal import resample_poly
+
+    g = gcd(int(orig_sr), int(target_sr)) or 1
+    up = int(target_sr) // g
+    down = int(orig_sr) // g
+    resampled = resample_poly(audio, up, down, axis=0)
+    return np.ascontiguousarray(resampled, dtype=np.float32)
+
+
 def split_wav_groups(
     wav_paths: list[str | Path],
     silence_ms: int = 350,
@@ -291,7 +314,8 @@ def split_wav_groups(
         raise ValueError("wav_paths 不能为空")
 
     inspected = [_inspect_wav(wav_path) for wav_path in wav_paths]
-    sample_rate = inspected[0]["sample_rate"]
+    # 采样率以"多数片段"为目标，少数片段在写出时自动重采样（不同引擎可能产出不同采样率）。
+    sample_rate = _dominant_sample_rate(inspected)
     channels = inspected[0]["channels"]
     silence_frames = int(sample_rate * max(0, silence_ms) / 1000)
     silence_bytes = _estimate_pcm16_bytes(silence_frames, channels)
@@ -301,12 +325,12 @@ def split_wav_groups(
     current_bytes = 0
 
     for item in inspected:
-        if item["sample_rate"] != sample_rate:
-            raise ValueError(f"采样率不一致: {item['path']} 是 {item['sample_rate']}, 预期 {sample_rate}")
         if item["channels"] != channels:
             raise ValueError(f"声道数不一致: {item['path']} 是 {item['channels']}, 预期 {channels}")
-
-        item_bytes = _estimate_pcm16_bytes(item["frames"], channels)
+        item["target_sample_rate"] = sample_rate
+        # 字节估算按重采样后的帧数（采样率不同的片段帧数会变）
+        est_frames = int(item["frames"]) * sample_rate / max(1, int(item["sample_rate"]))
+        item_bytes = _estimate_pcm16_bytes(est_frames, channels)
         projected_bytes = current_bytes + item_bytes + (silence_bytes if current_group else 0)
         should_split = (
             bool(current_group)
@@ -335,7 +359,8 @@ def _write_wav_group(group: list[dict], output_path: str | Path, silence_ms: int
         raise ValueError("group 不能为空")
 
     output_path = Path(output_path)
-    sample_rate = int(group[0]["sample_rate"])
+    # 目标采样率由 split_wav_groups 决定（多数片段），少数片段在此重采样统一。
+    sample_rate = int(group[0].get("target_sample_rate") or group[0]["sample_rate"])
     channels = int(group[0]["channels"])
     silence_samples = int(sample_rate * max(0, silence_ms) / 1000)
     silence = np.zeros((silence_samples, channels), dtype=np.float32) if silence_samples > 0 else None
@@ -351,17 +376,16 @@ def _write_wav_group(group: list[dict], output_path: str | Path, silence_ms: int
     ) as writer:
         for idx, item in enumerate(group):
             with sf.SoundFile(str(item["path"]), mode="r") as reader:
-                if reader.samplerate != sample_rate:
-                    raise ValueError(f"采样率不一致: {item['path']} 是 {reader.samplerate}, 预期 {sample_rate}")
                 if reader.channels != channels:
                     raise ValueError(f"声道数不一致: {item['path']} 是 {reader.channels}, 预期 {channels}")
+                orig_sr = int(reader.samplerate)
+                audio = reader.read(dtype="float32", always_2d=True)
 
-                while True:
-                    chunk = reader.read(65536, dtype="float32", always_2d=True)
-                    if len(chunk) == 0:
-                        break
-                    writer.write(chunk)
-                    total_frames += len(chunk)
+            if orig_sr != sample_rate:
+                audio = _resample_audio(audio, orig_sr, sample_rate)
+            if len(audio) > 0:
+                writer.write(audio)
+                total_frames += len(audio)
 
             if silence is not None and idx != len(group) - 1:
                 writer.write(silence)
