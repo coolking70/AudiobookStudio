@@ -67,6 +67,7 @@ from output_layout import (
     resolve_named_output_path,
 )
 from pipeline import ASR_MODEL_NAME, HF_CACHE_DIRS, MODEL_NAME, VOXCPM_MODEL_NAME, OmniVoicePipeline, VoxCPMPipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status, get_voxcpm_runtime_dependency_status
+import project_store
 from role_analyzer import (
     AnalyzeDiagnostics,
     CHARACTER_ALIAS_RESOLUTION_PROMPT,
@@ -1086,6 +1087,54 @@ def run_index_tts_bridge_tts(payload: dict[str, object]) -> dict[str, object]:
         except Exception as exc:
             print(f">> index-tts 常驻服务不可用，回退到单次调用：{exc}", file=sys.stderr)
     return run_index_tts_bridge("tts", payload)
+
+
+def generate_project_segments(
+    project: "project_store.Project",
+    selected: list,
+    *,
+    inference_device: str | None = None,
+) -> dict:
+    """对挑选出的段逐个生成（经常驻 bridge），把结果写回每段 gen 记录并保存项目。
+
+    selected 已由 project_store.select_to_generate 按 ref_audio 分组排序，配合常驻
+    服务让 IndexTTS2 单槽参考缓存跨段生效。MVP 仅支持 engine=index-tts。
+    """
+    engine, params = project_store.effective_engine_and_params(project)
+    device = normalize_inference_device(inference_device or "auto")
+    done = 0
+    errors: list[dict] = []
+    for seg in selected:
+        clip_path = project_store.clip_path_for(project, seg)
+        try:
+            if engine != "index-tts":
+                raise RuntimeError(f"项目生成 MVP 仅支持 index-tts，当前 engine={engine}")
+            voice = project_store.resolve_voice_for_segment(project, seg)
+            if not (voice.ref_audio or "").strip():
+                raise RuntimeError(f"段 {seg.seg_id}（{seg.speaker}）未分配参考音频（ref_audio）。")
+            payload = {
+                "device": device,
+                "text": seg.text,
+                "output_path": str(clip_path.resolve()),
+                "instruct": voice.style,
+                "ref_audio": voice.ref_audio,
+                "ref_text": voice.ref_text,
+                # 让生成参数与 content_hash 一致（bridge payload 优先于 env）
+                **(params or {}),
+            }
+            run_index_tts_bridge_tts(payload)
+            project_store.record_generation(
+                project, seg, clip_abs_path=clip_path, engine=engine, params=params, ok=True
+            )
+            done += 1
+        except Exception as exc:
+            project_store.record_generation(
+                project, seg, clip_abs_path=clip_path, engine=engine,
+                params=params, ok=False, error=f"{type(exc).__name__}: {exc}",
+            )
+            errors.append({"seg_id": seg.seg_id, "error": f"{type(exc).__name__}: {exc}"})
+    project_store.save_project(project)
+    return {"requested": len(selected), "done": done, "errors": errors}
 
 
 def synthesize_index_tts_request(
@@ -4653,6 +4702,188 @@ def check_files(req: CheckFilesRequest):
         except Exception:
             result[raw_path] = False
     return {"exists": result}
+
+
+# ── 统一项目文件（project.json）端点 ────────────────────────────────────────
+def _project_summary(project) -> dict:
+    counts: dict[str, int] = {}
+    for seg in project.segments:
+        counts[seg.gen.status] = counts.get(seg.gen.status, 0) + 1
+    return {
+        "project_id": project.project_id,
+        "title": project.title,
+        "series": project.series,
+        "segments": len(project.segments),
+        "cast": len(project.cast),
+        "status_counts": counts,
+        "updated_at": project.updated_at,
+    }
+
+
+@app.get("/api/project/list")
+def project_list():
+    try:
+        return {"ok": True, "projects": project_store.list_projects()}
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/project/create")
+def project_create(payload: dict):
+    try:
+        project_id = str(payload.get("project_id") or "").strip()
+        if not project_id:
+            raise ValueError("缺少 project_id")
+        defaults = {
+            "engine": "index-tts",
+            "load_options": get_index_tts_effective_load_options(),
+            "generation_options": get_index_tts_effective_generation_options(),
+        }
+        project = project_store.create_project(
+            project_id,
+            str(payload.get("title") or ""),
+            series=payload.get("series"),
+            from_project=(str(payload.get("from_project") or "").strip() or None),
+            defaults=defaults,
+            overwrite=bool(payload.get("overwrite")),
+        )
+        return {"ok": True, "project": _project_summary(project)}
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/project/from-segments")
+def project_from_segments(payload: dict):
+    """用当前 segments + role_profiles + 别名迁移建项目（导出当前工作为项目）。"""
+    try:
+        project_id = str(payload.get("project_id") or "").strip()
+        if not project_id:
+            raise ValueError("缺少 project_id")
+        segments = payload.get("segments") or []
+        if not isinstance(segments, list) or not segments:
+            raise ValueError("缺少 segments")
+        defaults = {
+            "engine": "index-tts",
+            "load_options": get_index_tts_effective_load_options(),
+            "generation_options": get_index_tts_effective_generation_options(),
+        }
+        project = project_store.build_project_from_state(
+            project_id,
+            str(payload.get("title") or ""),
+            segments,
+            role_profiles=payload.get("role_profiles") or {},
+            alias_map=payload.get("alias_map") or {},
+            series=payload.get("series"),
+            defaults=defaults,
+            overwrite=bool(payload.get("overwrite")),
+        )
+        return {"ok": True, "project": _project_summary(project)}
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.get("/api/project/{project_id}")
+def project_get(project_id: str):
+    try:
+        project = project_store.load_project(project_id)
+        project_store.recompute_status(project)
+        return {"ok": True, "project": project.model_dump()}
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/project/{project_id}/save")
+def project_save(project_id: str, payload: dict):
+    """整体保存（cast/segments/defaults/title）。payload 为完整 Project JSON。"""
+    try:
+        data = dict(payload or {})
+        data["project_id"] = project_store.normalize_project_id(project_id)
+        project = project_store.Project.model_validate(data)
+        project_store.recompute_status(project)
+        project_store.save_project(project)
+        return {"ok": True, "project": _project_summary(project)}
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/project/{project_id}/import-cast")
+def project_import_cast(project_id: str, payload: dict):
+    try:
+        from_project = str(payload.get("from_project") or "").strip()
+        if not from_project:
+            raise ValueError("缺少 from_project")
+        project = project_store.import_cast(
+            project_id, from_project, replace=bool(payload.get("replace", True))
+        )
+        return {"ok": True, "project": _project_summary(project), "cast": [m.model_dump() for m in project.cast]}
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/project/{project_id}/segment/{seg_id}")
+def project_edit_segment(project_id: str, seg_id: str, payload: dict):
+    """编辑单段（text/speaker/style/voice_override）→ 重算 hash 置 stale。"""
+    try:
+        project = project_store.load_project(project_id)
+        target = next((s for s in project.segments if s.seg_id == seg_id), None)
+        if target is None:
+            raise ValueError(f"段不存在：{seg_id}")
+        if "text" in payload:
+            target.text = str(payload.get("text") or "")
+        if "speaker" in payload:
+            target.speaker = str(payload.get("speaker") or "旁白").strip() or "旁白"
+        if "style" in payload:
+            target.style = payload.get("style")
+        if "emotion" in payload:
+            target.emotion = str(payload.get("emotion") or "neutral")
+        if "voice_override" in payload:
+            vo = payload.get("voice_override")
+            target.voice_override = project_store.VoiceAssignment(**vo) if vo else None
+        project_store.recompute_status(project)
+        project_store.save_project(project)
+        return {"ok": True, "segment": target.model_dump()}
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/project/{project_id}/generate")
+def project_generate(project_id: str, payload: dict):
+    """生成 pending/stale（或指定 seg_ids / force 全做），可选合并。"""
+    try:
+        project = project_store.load_project(project_id)
+        seg_ids = payload.get("seg_ids")
+        selected = project_store.select_to_generate(
+            project,
+            seg_ids=seg_ids if seg_ids else None,
+            force=bool(payload.get("force")),
+        )
+        result = generate_project_segments(
+            project, selected, inference_device=payload.get("inference_device")
+        )
+        merged = None
+        if payload.get("merge") and result["done"] > 0:
+            try:
+                merged = project_store.merge_project(project)
+            except Exception as exc:
+                merged = {"error": f"{type(exc).__name__}: {exc}"}
+        project = project_store.load_project(project_id)
+        return {"ok": True, "result": result, "merge": merged, "project": _project_summary(project)}
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/project/{project_id}/merge")
+def project_merge(project_id: str, payload: dict):
+    try:
+        project = project_store.load_project(project_id)
+        merged = project_store.merge_project(
+            project,
+            silence_ms=payload.get("silence_ms"),
+            write_lrc=bool(payload.get("write_lrc", True)),
+        )
+        return {"ok": True, "merge": merged}
+    except Exception as exc:
+        raise_api_error(exc)
 
 
 @app.get("/api/health")

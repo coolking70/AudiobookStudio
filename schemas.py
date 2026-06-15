@@ -273,6 +273,77 @@ class ParseV2ReviewOneRequest(BaseModel):
     review_mode: str = "spc"
 
 
+# ── 统一项目文件（project.json）模型 ────────────────────────────────────────
+PROJECT_SCHEMA_VERSION = 1
+
+
+class VoiceAssignment(BaseModel):
+    """音色分配，字段对齐 RoleProfile，便于互转。"""
+    voice_engine: Optional[str] = None
+    ref_audio: Optional[str] = None
+    ref_text: Optional[str] = None
+    style: Optional[str] = None
+    voice_name: Optional[str] = None
+    voice_locale: Optional[str] = None
+    cfg_value: Optional[float] = None
+    inference_timesteps: Optional[int] = None
+
+
+class CastMember(BaseModel):
+    """角色表条目：规范名 + 别名 + 音色分配。"""
+    canonical: str
+    aliases: List[str] = Field(default_factory=list)
+    voice: VoiceAssignment = Field(default_factory=VoiceAssignment)
+    notes: str = ""
+
+
+class GenerationRecord(BaseModel):
+    """单段生成记录。"""
+    status: str = "pending"  # pending | done | stale | error
+    clip: Optional[str] = None  # 相对项目目录的路径，如 clips/seg_000001.wav
+    duration: Optional[float] = None
+    content_hash: Optional[str] = None
+    engine: Optional[str] = None
+    params: Dict[str, Any] = Field(default_factory=dict)
+    generated_at: Optional[str] = None
+    error: Optional[str] = None
+
+
+class ProjectSegment(BaseModel):
+    """项目内的一段：分段内容 + 段级音色覆盖 + 生成记录。"""
+    seg_id: str
+    order: int
+    speaker: str = "旁白"
+    text: str
+    emotion: str = "neutral"
+    style: Optional[str] = None
+    voice_override: Optional[VoiceAssignment] = None
+    gen: GenerationRecord = Field(default_factory=GenerationRecord)
+
+
+class ProjectDefaults(BaseModel):
+    """项目级生成默认值。"""
+    engine: str = "index-tts"
+    silence_ms: int = 350
+    load_options: Dict[str, Any] = Field(default_factory=dict)
+    generation_options: Dict[str, Any] = Field(default_factory=dict)
+
+
+class Project(BaseModel):
+    """统一项目文件。"""
+    schema_version: int = PROJECT_SCHEMA_VERSION
+    project_id: str
+    title: str = ""
+    series: Optional[str] = None
+    source: Dict[str, Any] = Field(default_factory=dict)
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    next_seg_seq: int = 1
+    defaults: ProjectDefaults = Field(default_factory=ProjectDefaults)
+    cast: List[CastMember] = Field(default_factory=list)
+    segments: List[ProjectSegment] = Field(default_factory=list)
+
+
 TTSRequest.model_rebuild()
 NarrateRequest.model_rebuild()
 AutoNarrateRequest.model_rebuild()
