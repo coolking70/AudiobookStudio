@@ -123,6 +123,23 @@
     return {};
   }
 
+  // 从 narrationProgress 找出与当前分段匹配的已生成进度（每项 null 或 {file, wavFile}）。
+  function collectGeneratedClips(count) {
+    try {
+      const np = (typeof narrationProgress === "object" && narrationProgress) ? narrationProgress : null;
+      if (!np) return [];
+      const sig = (typeof getNarrationProgressSignature === "function") ? getNarrationProgressSignature() : null;
+      let exact = null, anyMatch = null;
+      for (const entry of Object.values(np)) {
+        if (!entry || entry.total !== count || !Array.isArray(entry.segments)) continue;
+        if (sig && entry.signature && entry.signature === sig) { exact = entry; break; }
+        if (!anyMatch) anyMatch = entry;
+      }
+      const chosen = exact || anyMatch;
+      return chosen ? (chosen.segments || []) : [];
+    } catch (e) { return []; }
+  }
+
   async function projectSaveCurrentAnalysis() {
     const segs = (typeof segmentsState !== "undefined" && Array.isArray(segmentsState)) ? segmentsState : [];
     if (!segs.length) { toast("当前没有分段。请先在「文本分析」完成分析。", "error"); return; }
@@ -130,16 +147,20 @@
     if (!pid) return;
     const title = prompt("项目标题：", pid) || pid;
     const roleProfiles = (typeof roleProfilesState === "object" && roleProfilesState) ? roleProfilesState : {};
+    // 收集当前分段「已生成」的片段路径（来自 narrationProgress），随保存一并导入项目
+    const progressSegs = collectGeneratedClips(segs.length);
     setBusy(true, "正在创建项目…");
     try {
       const payload = {
         project_id: pid.trim(), title: title.trim(),
-        segments: segs.map((s) => ({ speaker: s.speaker, text: s.text, emotion: s.emotion, style: s.style,
-          ref_audio: s.ref_audio, ref_text: s.ref_text, voice_engine: s.voice_engine, voice_name: s.voice_name })),
+        segments: segs.map((s, i) => ({ speaker: s.speaker, text: s.text, emotion: s.emotion, style: s.style,
+          ref_audio: s.ref_audio, ref_text: s.ref_text, voice_engine: s.voice_engine, voice_name: s.voice_name,
+          clip: (progressSegs[i] && progressSegs[i].file) || undefined })),
         role_profiles: roleProfiles, alias_map: collectAliasMap(), overwrite: false,
       };
       const data = await projectApi("POST", "/api/project/from-segments", payload);
-      toast("已存为项目", "success");
+      const done = (data.project && data.project.status_counts && data.project.status_counts.done) || 0;
+      toast(done ? `已存为项目（已导入 ${done} 段已生成音频）` : "已存为项目", "success");
       await projectOpen(data.project.project_id);
     } catch (e) { toast("保存失败：" + e.message, "error"); }
     finally { setBusy(false); }

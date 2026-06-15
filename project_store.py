@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
@@ -253,6 +254,30 @@ def _to_voice_assignment(profile: Optional[dict]) -> VoiceAssignment:
     return VoiceAssignment(**{k: profile.get(k) for k in keys if profile.get(k) is not None})
 
 
+def _resolve_existing_clip(clip: object) -> Optional[Path]:
+    """把前端传来的已生成片段路径解析为存在的文件（兼容绝对路径 / outputs 相对 / 纯文件名）。"""
+    raw = str(clip or "").strip()
+    if not raw:
+        return None
+    for cand in (Path(raw), OUTPUT_DIR / raw, OUTPUT_DIR / Path(raw).name):
+        try:
+            if cand.is_file():
+                return cand
+        except OSError:
+            continue
+    return None
+
+
+def _wav_duration(path: Path) -> Optional[float]:
+    try:
+        import soundfile as sf
+
+        info = sf.info(str(path))
+        return info.frames / info.samplerate if info.samplerate else None
+    except Exception:  # noqa: BLE001 - 时长仅作展示，失败不影响导入
+        return None
+
+
 def build_project_from_state(
     project_id: str,
     title: str,
@@ -301,6 +326,8 @@ def build_project_from_state(
     project.cast = cast
 
     # segments → ProjectSegment（分配稳定 seg_id）
+    engine, params = effective_engine_and_params(project)
+    imported = 0
     for order, seg in enumerate(segments):
         sp = str(seg.get("speaker") or "旁白").strip() or "旁白"
         text = str(seg.get("text") or "")
@@ -309,18 +336,32 @@ def build_project_from_state(
         seg_voice = _to_voice_assignment(seg)
         if seg_voice.model_dump(exclude_none=True):
             override = seg_voice
-        project.segments.append(
-            ProjectSegment(
-                seg_id=_next_seg_id(project),
-                order=order,
-                speaker=sp,
-                text=text,
-                emotion=str(seg.get("emotion") or "neutral"),
-                style=seg.get("style"),
-                voice_override=override,
-                gen=GenerationRecord(status="pending"),
-            )
+        ps = ProjectSegment(
+            seg_id=_next_seg_id(project),
+            order=order,
+            speaker=sp,
+            text=text,
+            emotion=str(seg.get("emotion") or "neutral"),
+            style=seg.get("style"),
+            voice_override=override,
+            gen=GenerationRecord(status="pending"),
         )
+        project.segments.append(ps)
+        # 迁移已生成片段：把外部（非项目流程）生成的 wav 导入项目，标记为 done。
+        src = _resolve_existing_clip(seg.get("clip"))
+        if src is not None:
+            try:
+                dest = clips_dir(pid) / f"{ps.seg_id}.wav"
+                shutil.copy2(src, dest)
+                ps.gen.status = "done"
+                ps.gen.clip = f"clips/{ps.seg_id}.wav"
+                ps.gen.content_hash = compute_content_hash(project, ps, engine=engine, params=params)
+                ps.gen.engine = engine
+                ps.gen.generated_at = _now()
+                ps.gen.duration = _wav_duration(dest)
+                imported += 1
+            except OSError:
+                ps.gen.status = "pending"
 
     recompute_status(project)
     save_project(project)
