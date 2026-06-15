@@ -16,8 +16,11 @@
 | `muli5_part001_bookmark_regression.json` | part_001 全片（750 段）听感书签 + 逐处归因纠错 |
 | `原文_part002.txt` | part_002 对应段（35,225 字，segments 751–1500，止于「得救了……！」） |
 | `muli_5_part_002_corrected_snapshot.json` | part_002 修正快照（777 段），用于重新生成音频，见下 |
-| `muli_5_part_002_review_flags.json` | part_002 单遍第二意见分歧（54 条），供人工复核，**未自动改写** |
-| `build_muli5_bookmark_regression.py`（在 `tools/`） | 由 LRC + 优化快照 + 书签 + 原文确定性重建本 JSON |
+| `muli_5_part_002_review_flags.json` | part_002 单遍第二意见分歧（54 条），供人工复核 |
+| `原文_part003.txt` | part_003 对应段（33,659 字，segments 1501–2250，含 seg2250「给我一个吻」） |
+| `muli_5_part_003_corrected_snapshot.json` | part_003 修正快照（776 段），用于重新生成音频，见下 |
+| `muli_5_part_003_review_flags.json` | part_003 单遍第二意见分歧（58 条）+ 人工复核 resolution |
+| `build_muli5_bookmark_regression.py` / `build_muli5_part002_snapshot.py` / `build_muli5_part003_snapshot.py`（在 `tools/`） | 各样本的确定性重建脚本 |
 
 ### part_002 修正快照（`muli_5_part_002_corrected_snapshot.json`）
 
@@ -41,7 +44,24 @@
 > 重新生成：corrected_snapshot 已含全部确定性修正（脚本块 28 段）+ 20 条人工改判，可直接喂回 TTS；
 > deferred 的 12 句若日后想定，再改对应段即可。
 
-重建：`python tools/build_muli5_bookmark_regression.py`
+重建：`python tools/build_muli5_part002_snapshot.py`
+
+### part_003 修正快照（`muli_5_part_003_corrected_snapshot.json`）
+
+同 part_002 流程（segments 1501–2250 为基线）：
+
+- **确定性修正**：群组/剧本格式节『五女神的房间 其之三』（seg 2068）切成 27 行并按角色清单归一
+  （**女王→高田卑弥呼、姬百合→羽贺铃兰、小鹤→龟崎千鹤、miki→根本美姬**）。750 段 → 776 段。
+- **人工复核**：单遍第二意见 58 段分歧 + 1 处称呼反推误判，逐条对原文核实后
+  **applied 41 / kept 16 / deferred 2**。已改入快照的典型：清水/玲奈子轮换错位
+  （8/42/49/50）、花取单衣讲家史被误判纱月（210/212/219）、星来被误判玲奈子（621/633/645/651）、
+  遥奈↔玲奈子姐妹戏（579/585/615/661/665）、`623`「姐姐前辈！」称呼反推误判遥奈→**星来**。
+  逐条状态见 `muli_5_part_003_review_flags.json` 的 `resolution` 字段。
+
+> part_003 错误明显多于 part_002（清水/花取/星来 多人新场景），41/58 旗为真错——再次说明
+> 单遍只作分流、人工裁决。重建：`python tools/build_muli5_part003_snapshot.py`
+
+重建（part_001 书签集）：`python tools/build_muli5_bookmark_regression.py`
 
 > `原文_part001.txt` 是评测/复核的**正文 ground truth**：书签只标到 45 处，而原文逐段比对
 > 能发现书签漏掉的错判（见下「补充审计」）。切割边界 = 全卷原文中 segment 750 台词
