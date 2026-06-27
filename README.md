@@ -9,6 +9,8 @@
 - 文本分析：调用 OpenAI 兼容接口，把原文切成 `speaker / text / emotion / style`
 - 长文本处理：支持分块分析、失败继续、导出已完成 JSON
 - 外部 Chat AI 工作流：生成固定提示词模板，把结果再导回系统
+- 离线强模型复核：对已完成分析或导入快照生成 Markdown 复核包，并把外部 AI 的裁决回写到当前项目
+- IndexTTS 语气描述：固定当前说话人结果后，批量生成可直接传给 IndexTTS 的段级 `style / instruct`
 - 角色整理：支持分段编辑、角色合并、角色声音分配
 - 声音库：管理 `name / style / ref_audio / ref_text`
 - 音频生成：逐段调用 OmniVoice 合成，合并 WAV，并生成 LRC
@@ -21,6 +23,8 @@
 ├─ pipeline.py         # OmniVoice 封装与逐段合成
 ├─ role_analyzer.py    # LLM 分析提示词与结果清洗
 ├─ llm_client.py       # OpenAI 兼容接口客户端
+├─ review_packet.py    # 离线强模型复核包生成与裁决回写
+├─ tts_style_service.py # IndexTTS 段级语气描述生成
 ├─ audio_utils.py      # wav 合并与 lrc 生成
 ├─ schemas.py          # Pydantic 请求模型
 ├─ static/index.html   # 单页前端
@@ -39,6 +43,7 @@
 - [权威样本生产流程（说话人评测集）](docs/samples/SAMPLE_WORKFLOW.md)
 - [2026-06-10 复核标记与机器审计方法分析](docs/flagging_audit_analysis_2026-06-10.md)
 - [2026-06-13 IndexTTS2 生成效率实践结论](docs/indextts2_generation_practice_2026-06-13.md)
+- [离线复核包与 IndexTTS 语气描述工作流](docs/review_packet_tts_style_workflow_2026-06-27.md)
 
 ## 运行模式
 
@@ -93,6 +98,7 @@ python start_local.py
 - `PORT`：监听端口，默认 `8000`
 - `RELOAD`：设置为 `1/true/yes/on` 时启用热重载
 - `AUDIOBOOKSTUDIO_PYTHON`：显式指定启动所用的 Python 解释器
+- `AGNES_API_KEY`：当“生成语气描述”没有使用前端当前 LLM 配置时，后端会用它作为免费的 Agnes 默认模型密钥；也可写入项目根目录 `.env`
 
 ### macOS / Linux
 
@@ -189,7 +195,14 @@ http://127.0.0.1:8000
 - 可按角色随机短句试听
 - 最后开始整段音频生成
 
-### 3. 声音库
+### 3. 复核包与语气描述
+
+- 分析完成或导入任务快照后，可先运行“机器审计”标出需要复核的段落
+- 在“离线复核包”面板生成 Markdown，发给外部强模型后，把裁决行粘贴或上传回来回写当前分析状态
+- 点击“生成语气描述”会固定当前 `speaker`，只为每段补齐 IndexTTS 需要的短 `style / instruct`
+- 若前端当前 LLM 配置为空，语气描述接口会回退到服务器环境中的 `AGNES_API_KEY`
+
+### 4. 声音库
 
 - 管理声音名称、style、ref_audio、ref_text
 - 支持本地音频文件上传
@@ -247,6 +260,18 @@ http://127.0.0.1:8000
 ### `POST /api/import-segments`
 
 导入已存在的 JSON 分段结果。
+
+### `POST /api/review-packet/generate`
+
+基于当前 segments、原文和角色提示生成离线 Markdown 复核包。前端会下载 `.md` 文件，并保留 `idmap` 供回写使用。
+
+### `POST /api/review-packet/apply`
+
+解析外部强模型返回的裁决行，把确认、改判、待定结果应用到当前 segments，并返回改判统计。
+
+### `POST /api/tts-style/stream`
+
+以 SSE 流式返回 IndexTTS 段级语气描述生成进度。该接口不重新判断说话人，只更新每段的 `style`，并在缺失时补 `emotion=neutral`。
 
 ### `POST /api/test-connectivity`
 

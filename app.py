@@ -68,6 +68,8 @@ from output_layout import (
 )
 from pipeline import ASR_MODEL_NAME, HF_CACHE_DIRS, MODEL_NAME, VOXCPM_MODEL_NAME, OmniVoicePipeline, VoxCPMPipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status, get_voxcpm_runtime_dependency_status
 import project_store
+from review_packet import apply_review_verdicts, build_review_packet
+from tts_style_service import build_style_items, generate_style_batch, resolve_style_llm_config
 from role_analyzer import (
     AnalyzeDiagnostics,
     CHARACTER_ALIAS_RESOLUTION_PROMPT,
@@ -108,9 +110,12 @@ from schemas import (
     ParseV2ReviewOneRequest,
     ParseV2Request,
     ParseV2ReviewRequest,
+    ReviewPacketApplyRequest,
+    ReviewPacketGenerateRequest,
     ScanLocalModelsRequest,
     SegmentPlanRequest,
     TTSRequest,
+    TTSStyleGenerateRequest,
     TranscribeRefAudioRequest,
     UploadRefAudioRequest,
     VerifySpeakersRequest,
@@ -136,6 +141,28 @@ def dump_request_debug(name: str, payload: dict[str, object]) -> None:
     except Exception:
         pass
 pipeline_lock = Lock()
+
+
+def get_env_or_dotenv_value(name: str) -> str:
+    value = os.environ.get(name)
+    if value:
+        return value
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.exists():
+        return ""
+    try:
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            key, val = line.split("=", 1)
+            if key.strip() == name:
+                return val.strip().strip('"').strip("'")
+    except Exception:
+        return ""
+    return ""
 
 ensure_output_dir()
 Path("static").mkdir(parents=True, exist_ok=True)
@@ -4221,6 +4248,126 @@ def import_segments(req: ImportSegmentsRequest):
         }
     except Exception as exc:
         raise_api_error(exc)
+
+
+@app.post("/api/review-packet/generate")
+def generate_review_packet(req: ReviewPacketGenerateRequest):
+    try:
+        packet = build_review_packet(
+            req.segments,
+            source_text=req.text or "",
+            role_hints=req.role_hints,
+            title=req.title or "说话人复核包",
+            window=max(1, min(8, int(req.window or 4))),
+            segment_chars=max(40, min(240, int(req.segment_chars or 120))),
+            source_context_chars=max(0, min(1000, int(req.source_context_chars or 360))),
+        )
+        return {
+            "ok": True,
+            "content": packet["content"],
+            "filename": packet["filename"],
+            "idmap": packet["idmap"],
+            "count": packet["count"],
+            "items": packet["items"],
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/review-packet/apply")
+def apply_review_packet(req: ReviewPacketApplyRequest):
+    try:
+        result = apply_review_verdicts(
+            req.segments,
+            req.verdicts,
+            role_hints=req.role_hints,
+            idmap=req.idmap or None,
+        )
+        return {
+            "ok": True,
+            "segments": result["segments"],
+            "summary": result["summary"],
+        }
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/tts-style/stream")
+async def generate_tts_style_stream(req: TTSStyleGenerateRequest):
+    import asyncio
+    import json as _json
+
+    segments = [dict(item) for item in (req.segments or [])]
+    if not segments:
+        raise HTTPException(status_code=400, detail="当前没有可生成语气描述的分析结果。")
+
+    batch_size = max(1, min(20, int(req.batch_size or 10)))
+    max_tokens = max(512, min(8000, int(req.max_tokens or 2500)))
+    llm_config = resolve_style_llm_config(req.llm, get_env_or_dotenv_value("AGNES_API_KEY"))
+    client = OpenAICompatibleClient(llm_config)
+
+    loop = asyncio.get_event_loop()
+    q: asyncio.Queue = asyncio.Queue()
+
+    def _sse(obj: dict) -> str:
+        return f"data: {_json.dumps(obj, ensure_ascii=False)}\n\n"
+
+    def run() -> None:
+        try:
+            total = len(segments)
+            generated = overwritten = 0
+            for start in range(0, total, batch_size):
+                end = min(total, start + batch_size)
+                items = build_style_items(segments, start, end)
+                styles = generate_style_batch(client, items, max_tokens=max_tokens)
+                for item in items:
+                    idx = int(item["index"])
+                    style = styles.get(int(item["n"])) or ""
+                    if not style:
+                        continue
+                    if segments[idx].get("style"):
+                        overwritten += 1
+                    else:
+                        generated += 1
+                    segments[idx]["style"] = style
+                    segments[idx]["emotion"] = segments[idx].get("emotion") or "neutral"
+                asyncio.run_coroutine_threadsafe(
+                    q.put({"type": "progress", "done": end, "total": total, "generated": generated, "overwritten": overwritten}),
+                    loop,
+                )
+            asyncio.run_coroutine_threadsafe(
+                q.put({
+                    "type": "complete",
+                    "segments": segments,
+                    "stats": {
+                        "total": len(segments),
+                        "generated": generated,
+                        "overwritten": overwritten,
+                        "model": llm_config.model,
+                        "base_url": llm_config.base_url,
+                    },
+                }),
+                loop,
+            )
+        except Exception as exc:  # noqa: BLE001
+            asyncio.run_coroutine_threadsafe(q.put({"type": "error", "message": str(exc)}), loop)
+
+    async def gen():
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(run)
+            while True:
+                event = await q.get()
+                yield _sse(event)
+                if event.get("type") in {"complete", "error"}:
+                    break
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/test-connectivity")

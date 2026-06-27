@@ -848,6 +848,21 @@
               </div>
             </div>
           </details>
+
+          <details class="mcp-review-panel" id="offlineReviewPacketPanel" style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;">
+            <summary>离线复核包 — 发给强模型后回传裁决</summary>
+            <div class="mcp-review-body" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+              <div class="mini-note" style="margin:0;">分析完成或导入任务快照后，先运行「机器审计」标出 ⚑ 分歧段，再生成 Markdown 复核包。把复核包发给 ChatGPT / Gemini 等强模型，让它只按包内格式返回裁决行；再把结果粘贴或上传回来应用到当前分析状态。</div>
+              <div class="actions" style="margin:0;">
+                <button type="button" id="reviewPacketGenerateBtn" class="secondary" onclick="generateOfflineReviewPacket()">生成并下载复核包</button>
+                <button type="button" id="reviewPacketUploadBtn" class="secondary" onclick="triggerOfflineReviewResultImport()">上传复核结果</button>
+                <button type="button" id="reviewPacketApplyBtn" onclick="applyOfflineReviewResult()">应用复核结果</button>
+                <span id="reviewPacketStatusText" class="section-meta" style="align-self:center;">尚未生成复核包</span>
+              </div>
+              <input id="reviewPacketResultFileInput" type="file" accept=".txt,.md,text/plain,text/markdown" style="display:none;" onchange="handleOfflineReviewResultImport(event)" />
+              <textarea id="reviewPacketResultText" rows="6" placeholder="在这里粘贴强模型返回的裁决行，例如：&#10;18 濑名紫阳花&#10;45 K&#10;76 D" style="font-family:monospace;font-size:12px;"></textarea>
+            </div>
+          </details>
         </div>
 
         <div class="card">
@@ -887,6 +902,7 @@
                 <button type="button" data-busy-lock class="secondary" onclick="renderSegments(true)">刷新渲染</button>
                 <button type="button" data-busy-lock class="secondary" onclick="runMachineAudit()" title="聚焦重问两级分流：⚑必看/·顺带看，意见仅作提示，最终判断在人工（需先完成 BatchLLM 结构化解析）">机器审计</button>
                 <button type="button" data-busy-lock class="secondary" onclick="openReviewWorkbench()" title="双栏复核：中栏原文角标定位上下文，左栏快速替换角色名（需本会话执行过结构化解析）">复核工作台</button>
+                <button type="button" data-busy-lock class="secondary" onclick="generateIndexTtsStyles()" title="固定当前 speaker，不重新归因；为每段生成可直接传给 IndexTTS 的短语气描述">生成语气描述</button>
                 <button type="button" class="toggle-button" onclick="toggleSegmentsPanel()"><span id="segmentsToggleLabel">展开分析结果</span></button>
                 <button type="button" class="secondary" id="showSegmentContextButton" onclick="showSelectedSegmentContext()" disabled>显示前后文</button>
                 <button type="button" id="goToAudioButton" data-busy-lock onclick="goToAudioGeneration()" disabled>前往音频生成</button>

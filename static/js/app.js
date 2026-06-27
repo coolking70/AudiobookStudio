@@ -34,6 +34,7 @@
   let plannedChunksState = [];
   let optimizedChunksState = [];
   let segmentationInfoState = null;
+  let offlineReviewPacketState = null; // {idmap, filename, count}
   let pendingVoiceLibraryFileIndex = -1;
   let editingVoiceLibraryIndex = -1;
   let voiceRecorderState = { stream: null, recorder: null, chunks: [], recording: false, deviceId: null, analyser: null, meterRAF: null };
@@ -307,6 +308,7 @@ very high pitch, very low pitch, whisper, young adult
       button.disabled = busy;
     });
     document.getElementById("cancelTaskButton").disabled = !busy;
+    updateOfflineReviewPacketUi();
   }
 
   function formatLyricDisplay(line) {
@@ -3455,6 +3457,7 @@ very high pitch, very low pitch, whisper, young adult
     renderAnalysisPipelineMeta();
     updateAnalysisResultActions();
     updateExportProgressButton();
+    updateOfflineReviewPacketUi();
     refreshNarrationResumeUI();
     return persistResult;
   }
@@ -8189,6 +8192,144 @@ very high pitch, very low pitch, whisper, young adult
     renderSegments(segmentsPanelExpanded);
   }
 
+  function parseCurrentRoleHintsInput() {
+    const roleHintsRaw = (document.getElementById("roleHintsInput")?.value || "").trim();
+    if (!roleHintsRaw) return null;
+    const trimmed = roleHintsRaw.trimStart();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try { return JSON.parse(roleHintsRaw); } catch (_) {}
+    }
+    return roleHintsRaw.split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
+  }
+
+  function getCurrentReviewPacketContext() {
+    const snapshot = _inMemoryResumeSnapshot || _inMemoryLatestSnapshot || getParseSnapshot();
+    return {
+      text: auditContextState?.text || document.getElementById("sourceText")?.value || snapshot?.sourceText || snapshot?.text || "",
+      roleHints: auditContextState?.roleHints || parseCurrentRoleHintsInput() || null,
+    };
+  }
+
+  function downloadTextFile(filename, content, mime = "text/plain;charset=utf-8") {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename || "review_packet.md";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function updateOfflineReviewPacketUi() {
+    const generateBtn = document.getElementById("reviewPacketGenerateBtn");
+    const uploadBtn = document.getElementById("reviewPacketUploadBtn");
+    const applyBtn = document.getElementById("reviewPacketApplyBtn");
+    const statusEl = document.getElementById("reviewPacketStatusText");
+    const hasSegments = segmentsState.length > 0;
+    if (generateBtn) generateBtn.disabled = taskBusy || !hasSegments;
+    if (uploadBtn) uploadBtn.disabled = taskBusy || !hasSegments;
+    if (applyBtn) applyBtn.disabled = taskBusy || !hasSegments;
+    if (statusEl) {
+      if (!hasSegments) statusEl.textContent = "需要先完成分析或导入任务快照";
+      else if (offlineReviewPacketState?.count) statusEl.textContent = `已生成 ${offlineReviewPacketState.count} 条待判：${offlineReviewPacketState.filename || ""}`;
+      else statusEl.textContent = "尚未生成复核包";
+    }
+  }
+
+  async function generateOfflineReviewPacket() {
+    if (taskBusy) return;
+    if (!segmentsState.length) {
+      showToast("当前没有分析结果，请先执行分析或导入任务快照。", "warn", 2500);
+      return;
+    }
+    const ctx = getCurrentReviewPacketContext();
+    try {
+      setStatus("正在生成离线复核包…");
+      const data = await fetchJson("/api/review-packet/generate", {
+        text: ctx.text,
+        segments: segmentsState,
+        role_hints: ctx.roleHints,
+        title: `${getOutputName("analysis")}_说话人复核包`,
+        window: 4,
+        segment_chars: 120,
+        source_context_chars: 360,
+      });
+      offlineReviewPacketState = { idmap: data.idmap || {}, filename: data.filename || "review_packet.md", count: data.count || 0 };
+      downloadTextFile(offlineReviewPacketState.filename, data.content || "", "text/markdown;charset=utf-8");
+      updateOfflineReviewPacketUi();
+      const msg = `已生成并下载复核包，共 ${offlineReviewPacketState.count} 条待判。把 Markdown 发给强模型后，将裁决行粘贴或上传回来再点“应用复核结果”。`;
+      setStatus(msg);
+      showToast(msg, "success", 4200);
+    } catch (err) {
+      const msg = `生成复核包失败：${err.message || String(err)}`;
+      setStatus(msg);
+      showToast(msg, "error", 4000);
+    }
+  }
+
+  function triggerOfflineReviewResultImport() {
+    if (taskBusy) return;
+    document.getElementById("reviewPacketResultFileInput")?.click();
+  }
+
+  async function handleOfflineReviewResultImport(event) {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    if (!file) return;
+    try {
+      const decoded = await readTextFileWithEncoding(file);
+      const textEl = document.getElementById("reviewPacketResultText");
+      if (textEl) textEl.value = decoded.text || "";
+      setStatus(`已读取复核结果文件：${file.name}，请确认后点击“应用复核结果”。`);
+      showToast("复核结果已载入。", "success", 2200);
+    } catch (err) {
+      setStatus(`读取复核结果失败：${err.message || String(err)}`);
+      showToast("读取复核结果失败", "error", 3000);
+    } finally {
+      input.value = "";
+    }
+  }
+
+  async function applyOfflineReviewResult() {
+    if (taskBusy) return;
+    if (!segmentsState.length) {
+      showToast("当前没有可回写的分析结果。", "warn", 2200);
+      return;
+    }
+    const verdicts = (document.getElementById("reviewPacketResultText")?.value || "").trim();
+    if (!verdicts) {
+      showToast("请先粘贴或上传强模型返回的裁决行。", "warn", 2600);
+      return;
+    }
+    const ctx = getCurrentReviewPacketContext();
+    try {
+      setStatus("正在应用离线复核结果…");
+      const data = await fetchJson("/api/review-packet/apply", {
+        segments: segmentsState,
+        verdicts,
+        role_hints: ctx.roleHints,
+        idmap: offlineReviewPacketState?.idmap || null,
+      });
+      if (!Array.isArray(data.segments)) throw new Error("接口未返回更新后的 segments");
+      applySegmentsState(data.segments, { persist: true });
+      if (ctx.text || ctx.roleHints) {
+        auditContextState = { ...(auditContextState || {}), text: ctx.text, roleHints: ctx.roleHints };
+      }
+      const snapshot = _inMemoryLatestSnapshot || getParseSnapshot() || _inMemoryResumeSnapshot || {};
+      saveAnalysisFlowSnapshot(ctx.text || "", snapshot.llm || null, snapshot.combo || getAnalysisComboValue(), "segments", 0, { segments: segmentsState });
+      const s = data.summary || {};
+      const msg = `复核结果已应用：改判 ${s.applied || 0}，维持 ${s.kept || 0}，待定 ${s.deferred || 0}，同名确认 ${s.unchanged || 0}，未命中 ${s.missing || 0}。`;
+      setStatus(msg);
+      showToast(msg, "success", 4500);
+    } catch (err) {
+      const msg = `应用复核结果失败：${err.message || String(err)}`;
+      setStatus(msg);
+      showToast(msg, "error", 4200);
+    }
+  }
+
   function getBvpReviewIndices(segments, reviewThreshold = 0.7) {
     const indices = [];
     segments.forEach((seg, index) => {
@@ -8213,6 +8354,114 @@ very high pitch, very low pitch, whisper, young adult
       }
     });
     return indices;
+  }
+
+  function getOptionalTtsStyleLlmConfig() {
+    try {
+      const llm = getLLMConfig();
+      if (llm.local_runtime === "direct") {
+        return (llm.local_model_path || llm.model) ? { ...llm, temperature: 0.0, max_tokens: Math.max(2500, Number(llm.max_tokens || 0)) } : null;
+      }
+      return (llm.base_url && llm.model) ? { ...llm, temperature: 0.0, max_tokens: Math.max(2500, Number(llm.max_tokens || 0)) } : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function generateIndexTtsStyles() {
+    if (taskBusy) return;
+    if (!segmentsState.length) {
+      showToast("当前没有分析结果，请先执行分析或导入任务快照。", "warn", 2600);
+      return;
+    }
+    const llm = getOptionalTtsStyleLlmConfig();
+    const fallbackNote = llm
+      ? `将使用当前文本模型 ${llm.model || llm.local_model_path || ""}。`
+      : "将使用服务器环境中的 Agnes 默认配置。";
+    beginTask("parse", "正在生成 IndexTTS 语气描述", `固定当前 speaker，不重新归因；只为每段生成可直接传给 IndexTTS 的短 style/instruct。${fallbackNote}`);
+    setProgress({
+      stage: "style",
+      summary: "准备生成语气描述",
+      detail: fallbackNote,
+      percent: 3,
+      total: segmentsState.length,
+      done: 0,
+      indeterminate: false,
+    }, { log: "已开始生成 IndexTTS 语气描述" });
+
+    activeAbortController = new AbortController();
+    try {
+      const response = await fetch("/api/tts-style/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          segments: segmentsState,
+          llm,
+          batch_size: 10,
+          max_tokens: 2500,
+        }),
+        signal: activeAbortController.signal,
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || `HTTP ${response.status}`);
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let finalEvent = null;
+      while (true) {
+        if (taskCancelled) throw new Error("任务已取消");
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 2);
+          if (!line.startsWith("data:")) continue;
+          const event = JSON.parse(line.slice(5));
+          if (event.type === "progress") {
+            const doneCount = Number(event.done || 0);
+            const total = Number(event.total || segmentsState.length || 1);
+            setProgress({
+              stage: "style",
+              summary: `语气描述生成中 ${doneCount} / ${total}`,
+              detail: `已生成 ${event.generated || 0} 条新描述，覆盖 ${event.overwritten || 0} 条已有描述。`,
+              percent: Math.round((doneCount / Math.max(1, total)) * 100),
+              total,
+              done: doneCount,
+              indeterminate: false,
+            }, { log: `语气描述进度 ${doneCount}/${total}` });
+          } else if (event.type === "complete") {
+            finalEvent = event;
+          } else if (event.type === "error") {
+            throw new Error(event.message || "语气描述生成失败");
+          }
+        }
+      }
+      if (!finalEvent || !Array.isArray(finalEvent.segments)) {
+        throw new Error("语气描述生成未返回更新后的 segments");
+      }
+      applySegmentsState(finalEvent.segments, { persist: true });
+      const ctx = getCurrentReviewPacketContext();
+      const snapshot = _inMemoryLatestSnapshot || getParseSnapshot() || _inMemoryResumeSnapshot || {};
+      saveAnalysisFlowSnapshot(ctx.text || snapshot.text || snapshot.sourceText || "", snapshot.llm || llm || null, snapshot.combo || getAnalysisComboValue(), "segments", 0, { segments: segmentsState });
+      const stats = finalEvent.stats || {};
+      const msg = `语气描述生成完成：新增 ${stats.generated || 0} 条，覆盖 ${stats.overwritten || 0} 条。`;
+      finishTask(msg, "当前分析结果已写入段级 style，可直接前往音频生成使用 IndexTTS。", {
+        total: segmentsState.length,
+        done: segmentsState.length,
+      });
+      setStatus(msg);
+      showToast(msg, "success", 3600);
+    } catch (err) {
+      if (isTaskCancelledError(err)) return;
+      failTask("语气描述生成失败", err.message || String(err));
+      setStatus(`语气描述生成失败：${err.message || String(err)}`);
+    } finally {
+      activeAbortController = null;
+    }
   }
 
   // ===== 复核工作台：移植自 tools/review_server.py（中栏原文角标 + 左栏快速改名）=====
@@ -10254,6 +10503,7 @@ very high pitch, very low pitch, whisper, young adult
   loadReviewLlmConfig();
   loadHeteroLlmConfig();
   updateAnalysisFlowUI();
+  updateOfflineReviewPacketUi();
   initProgressPanelPrefs();
   // 固定使用 BatchLLM 主管线（旧分析方式已从 UI 隐藏）：初始化按钮标签与选项可见性
   setParseMode("structured");

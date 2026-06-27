@@ -289,6 +289,33 @@ class ParseV2ReviewOneRequest(BaseModel):
     review_mode: str = "spc"
 
 
+class ReviewPacketGenerateRequest(BaseModel):
+    """离线强模型复核包生成请求。"""
+    text: str = ""
+    segments: List[Dict[str, Any]]
+    role_hints: Optional[Any] = None
+    title: str = "说话人复核包"
+    window: int = 4
+    segment_chars: int = 120
+    source_context_chars: int = 360
+
+
+class ReviewPacketApplyRequest(BaseModel):
+    """离线强模型复核结果回写请求。"""
+    segments: List[Dict[str, Any]]
+    verdicts: str
+    role_hints: Optional[Any] = None
+    idmap: Optional[Dict[str, int]] = None
+
+
+class TTSStyleGenerateRequest(BaseModel):
+    """固定 speaker 后，为 IndexTTS 生成段级 style/instruct。"""
+    segments: List[Dict[str, Any]]
+    llm: Optional[LLMConfig] = None
+    batch_size: int = 10
+    max_tokens: int = 2500
+
+
 # ── 统一项目文件（project.json）模型 ────────────────────────────────────────
 PROJECT_SCHEMA_VERSION = 1
 
