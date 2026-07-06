@@ -45,6 +45,7 @@
 - [2026-06-13 IndexTTS2 生成效率实践结论](docs/indextts2_generation_practice_2026-06-13.md)
 - [离线复核包与 IndexTTS 语气描述工作流](docs/review_packet_tts_style_workflow_2026-06-27.md)
 - [2026-07-01 多 API 模型主流水线与复核交叉评测](docs/model_review_api_evaluation_2026-07-01.md)
+- [2026-07-06 审计型安全复核实验](docs/evidence_audit_safe_review_2026-07-06.md)
 
 ## 运行模式
 

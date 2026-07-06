@@ -56,6 +56,59 @@ SYSTEM_PROMPT = """\
 """
 
 
+AUDIT_SAFE_SYSTEM_PROMPT = """\
+你是中文小说有声书说话人证据审计专家。
+
+你的任务不是用强模型替代基线重判，而是判断“是否有足够证据安全推翻当前 speaker”。
+
+必须逐项检查：
+1. baseline_evidence_valid：当前 E/R/S 或原 evidence 是否真的支持当前 speaker。
+2. counter_evidence_type：若要改判，必须指出更强反证类型：
+   - explicit_before：台词前动作主语明确说/问/喊/答
+   - explicit_after：台词后明确“X说/问/喊/答/如此说道”
+   - first_person：第一人称视角/内心锚定明确
+   - address_term：称呼反推明确，且被称呼者不是说话人
+   - identity_alias：别名/身份归并明确（如 moon/帕曼小姐=琴纱月）
+   - semantic_reply：被提问/被点名者接话，语义邻接非常明确
+   - none：没有足够强反证
+3. independent_signal：除强模型判断外，是否有独立风险/分歧信号支持复核目标，例如低置信、风险标签、机器审计第二意见分歧、密集多人场景、候选/称呼冲突。
+
+自动覆盖原则：
+- 只有 baseline_evidence_valid=false，counter_evidence_type 不是 none，且 independent_signal=true，才允许 auto_apply_safe=true。
+- 仅凭“我觉得另一人更像”或普通轮换，不允许 auto_apply_safe=true。
+- 如果证据不足但怀疑错误，decision=uncertain，auto_apply_safe=false。
+- 如果当前 speaker 仍可被证据支持，decision=keep。
+- revise 只用于改成与当前 speaker 不同的规范角色名。
+
+规范名要求：
+- 甘织玲奈子：我、小玲奈、玲奈亲
+- 小柳香穗：小香穗、香穗
+- 琴纱月：纱月、小纱月、moon、moon小姐、帕曼小姐
+- 濑名紫阳花：紫阳花同学、小紫
+
+不要输出解释性正文，只输出 JSON 数组。每个目标格式：
+{"index":整数,"decision":"keep|revise|uncertain","speaker":"角色名","confidence":0.0到1.0,"baseline_evidence_valid":true|false,"counter_evidence_type":"explicit_before|explicit_after|first_person|address_term|identity_alias|semantic_reply|none","independent_signal":true|false,"auto_apply_safe":true|false,"reason":"≤28字"}
+"""
+
+
+STRONG_COUNTER_EVIDENCE = {
+    "explicit_before",
+    "explicit_after",
+    "first_person",
+    "address_term",
+    "identity_alias",
+    "semantic_reply",
+}
+
+DEFAULT_COUNTER_TYPE_THRESHOLDS = {
+    "explicit_after": 0.65,
+    "first_person": 0.75,
+    "identity_alias": 0.75,
+    "address_term": 0.80,
+    "semantic_reply": 0.85,
+}
+
+
 def parse_evidence(evidence: str) -> dict[str, str]:
     m = STRUCTURED_RE.search(str(evidence or ""))
     if not m:
@@ -133,6 +186,35 @@ def audit_disagrees(parse_seg: dict[str, Any], audit_item: dict[str, Any]) -> bo
     return bool(reask) and canon(reask) != canon(current)
 
 
+def as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    text = str(value or "").strip().lower()
+    return text in {"true", "yes", "y", "1", "是", "对"}
+
+
+def parse_type_thresholds(value: str | None) -> dict[str, float]:
+    if not value:
+        return {}
+    if value.strip().lower() in {"default", "strong-default"}:
+        return dict(DEFAULT_COUNTER_TYPE_THRESHOLDS)
+    out: dict[str, float] = {}
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        key, sep, raw = item.partition("=")
+        if not sep:
+            raise argparse.ArgumentTypeError(f"invalid type threshold item: {item}")
+        try:
+            out[key.strip()] = float(raw)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(f"invalid threshold value: {item}") from exc
+    return out
+
+
 def choose_targets(
     seg_name: str,
     parse_segments: list[dict[str, Any]],
@@ -182,11 +264,28 @@ def build_user_prompt(
         audit_line = ""
         if audit_item.get("reask"):
             audit_line = f"机器审计第二意见={audit_item.get('reask')}；理由={audit_item.get('reask_reason') or '-'}"
+        independent_signals = []
+        try:
+            conf = float(s.get("confidence"))
+        except (TypeError, ValueError):
+            conf = 1.0
+        if conf < 0.7:
+            independent_signals.append("low_confidence")
+        if ev["R"] and ev["R"] != "none":
+            independent_signals.append(f"risk={ev['R']}")
+        if weak_evidence(s):
+            independent_signals.append("weak_evidence")
+        if audit_item.get("reask") and audit_disagrees(s, audit_item):
+            independent_signals.append("audit_disagree")
+        scene = s.get("scene_characters") or []
+        if isinstance(scene, list) and len(scene) >= 3:
+            independent_signals.append("multi_speaker_scene")
         lines.extend([
             "",
             f"index={i}",
             f"当前speaker={s.get('speaker')} confidence={s.get('confidence')}",
             f"结构化依据: E={ev['E'] or '-'}; R={ev['R'] or '-'}; S={ev['S'] or '-'}",
+            f"独立信号: {', '.join(independent_signals) if independent_signals else 'none'}",
             audit_line,
             f"候选/在场: {candidates or '（无）'}",
             f"前文: {str(s.get('context_before') or '')[-420:]}",
@@ -217,12 +316,14 @@ def call_review(
     indices: list[int],
     timeout: int,
     audit: dict[int, dict[str, Any]] | None = None,
+    review_style: str = "evidence",
 ) -> list[dict[str, Any]]:
     user = build_user_prompt(seg_name, parse_segments, indices, audit=audit)
+    system_prompt = AUDIT_SAFE_SYSTEM_PROMPT if review_style == "audit-safe" else SYSTEM_PROMPT
     resp = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user},
         ],
         temperature=0.0,
@@ -238,6 +339,8 @@ def apply_reviews(
     reviews: list[dict[str, Any]],
     min_confidence: float,
     reason_gate: str = "none",
+    review_style: str = "evidence",
+    type_thresholds: dict[str, float] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     updated = [dict(s) for s in parse_segments]
     stats = {
@@ -247,7 +350,10 @@ def apply_reviews(
         "uncertain": 0,
         "ignored": 0,
         "blocked_by_reason_gate": 0,
+        "blocked_by_audit_gate": 0,
+        "type_threshold_applied": 0,
     }
+    type_thresholds = type_thresholds or {}
     for r in reviews:
         try:
             i = int(r.get("index"))
@@ -269,7 +375,36 @@ def apply_reviews(
         if decision == "revise" and speaker == old:
             updated[i]["evidence"] = f"{updated[i].get('evidence') or ''}；证据复核确认({conf:.2f}): {reason}"
             stats["kept"] += 1
-        elif decision == "revise" and speaker and conf >= min_confidence:
+        elif decision == "revise" and speaker:
+            counter_type = str(r.get("counter_evidence_type") or "none").strip()
+            apply_threshold = float(type_thresholds.get(counter_type, min_confidence))
+            if conf + 1e-9 < apply_threshold:
+                updated[i]["evidence"] = (
+                    f"{updated[i].get('evidence') or ''}；证据复核待人工({conf:.2f}): "
+                    f"低于{counter_type}阈值{apply_threshold:.2f}: {reason}"
+                )
+                stats["uncertain"] += 1
+                continue
+            if counter_type in type_thresholds and apply_threshold != min_confidence:
+                stats["type_threshold_applied"] += 1
+            if review_style == "audit-safe":
+                baseline_valid = as_bool(r.get("baseline_evidence_valid"))
+                independent = as_bool(r.get("independent_signal"))
+                auto_safe = as_bool(r.get("auto_apply_safe"))
+                if (
+                    baseline_valid
+                    or counter_type not in STRONG_COUNTER_EVIDENCE
+                    or not independent
+                    or not auto_safe
+                ):
+                    updated[i]["evidence"] = (
+                        f"{updated[i].get('evidence') or ''}；证据审计待人工({conf:.2f}): "
+                        f"gate blocked type={counter_type} baseline_valid={baseline_valid} "
+                        f"independent={independent} auto_safe={auto_safe}; {reason}"
+                    )
+                    stats["blocked_by_audit_gate"] += 1
+                    stats["uncertain"] += 1
+                    continue
             if reason_gate == "strong" and not STRONG_REASON_RE.search(reason):
                 updated[i]["evidence"] = f"{updated[i].get('evidence') or ''}；证据复核待人工({conf:.2f}): 反证不够强：{reason}"
                 stats["blocked_by_reason_gate"] += 1
@@ -304,6 +439,10 @@ def main() -> None:
     ap.add_argument("--min-confidence", type=float, default=0.85)
     ap.add_argument("--reason-gate", default="none", choices=["none", "strong"],
                     help="Automatic revise gate: strong requires explicit-counterevidence words in reviewer reason")
+    ap.add_argument("--review-style", default="evidence", choices=["evidence", "audit-safe"],
+                    help="evidence keeps the original verify/refute prompt; audit-safe requires explicit proof and independent signals before auto-apply.")
+    ap.add_argument("--type-thresholds",
+                    help="Optional per counter_evidence_type thresholds, e.g. explicit_before=0.65,first_person=0.75,semantic_reply=0.85. Use 'default' for the tuned audit-safe defaults.")
     ap.add_argument("--timeout", type=int, default=180)
     args = ap.parse_args()
 
@@ -317,6 +456,7 @@ def main() -> None:
         raise SystemExit(f"Missing {key_name}")
 
     parse_segments = load_segments(args.parse)
+    type_thresholds = parse_type_thresholds(args.type_thresholds)
     audit = load_audit(args.audit)
     targets = choose_targets(args.seg, parse_segments, args.target_mode, args.limit, audit=audit)
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -328,19 +468,41 @@ def main() -> None:
         batch = targets[start:start + args.batch_size]
         print(f"review batch {start // args.batch_size + 1}: {batch}", flush=True)
         try:
-            reviews = call_review(client, args.model, args.seg, parse_segments, batch, args.timeout, audit=audit)
+            reviews = call_review(
+                client,
+                args.model,
+                args.seg,
+                parse_segments,
+                batch,
+                args.timeout,
+                audit=audit,
+                review_style=args.review_style,
+            )
         except Exception as exc:  # noqa: BLE001
             print(f"batch failed: {exc}", flush=True)
             reviews = []
         all_reviews.extend(reviews)
         time.sleep(0.5)
 
-    updated, stats = apply_reviews(parse_segments, all_reviews, args.min_confidence, reason_gate=args.reason_gate)
+    updated, stats = apply_reviews(
+        parse_segments,
+        all_reviews,
+        args.min_confidence,
+        reason_gate=args.reason_gate,
+        review_style=args.review_style,
+        type_thresholds=type_thresholds,
+    )
     parse_out = args.out_dir / f"{args.seg}_parse.json"
     parse_out.write_text(json.dumps({"segments": updated, "stats": {"evidence_review": stats}},
                                     ensure_ascii=False, indent=1), encoding="utf-8")
     review_out = args.out_dir / f"{args.seg}_evidence_reviews.json"
-    review_out.write_text(json.dumps({"targets": targets, "reviews": all_reviews, "stats": stats},
+    review_out.write_text(json.dumps({
+        "targets": targets,
+        "reviews": all_reviews,
+        "stats": stats,
+        "review_style": args.review_style,
+        "type_thresholds": type_thresholds,
+    },
                                      ensure_ascii=False, indent=1), encoding="utf-8")
 
     score = score_sample(args.seg, parse_out)
