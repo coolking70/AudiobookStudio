@@ -1454,6 +1454,7 @@ def _parse_with_batch_llm(
             "pre_resolved": len(pre_resolved),
             "llm_resolved": len(llm_attributions),
             "batch_llm_enabled": True,
+            "batch_evidence_mode": getattr(batch_llm_config, "evidence_mode", "short"),
             "uncertain_narrator_chapters": uncertain_chapters,
             "special_perspective_chapter": special_perspective_stats,
             "scene_state": scene_state_stats,

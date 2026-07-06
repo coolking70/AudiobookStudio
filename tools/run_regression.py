@@ -184,7 +184,8 @@ def cmd_run(args) -> None:
         cfg = BatchConfig(base_url="https://apihub.agnes-ai.com/v1", api_key=api_key,
                           model="agnes-2.0-flash", batch_size=8, max_tokens=5000,
                           temperature=0.0, timeout=240, context_chars=args.context_chars,
-                          output_mode="compact", disable_thinking=True)
+                          output_mode="compact", evidence_mode=args.evidence_mode,
+                          disable_thinking=True)
         result = parse_novel(raw, role_hints=ROLE_HINTS, batch_llm_config=cfg,
                              narrator=MANIFEST[s], return_result=True,
                              include_narration=False, review_threshold=0.7,
@@ -204,6 +205,7 @@ def cmd_run(args) -> None:
                  {"mode": "run", "tag": args.tag,
                   "no_block_review": args.no_block_review,
                   "context_chars": args.context_chars,
+                  "evidence_mode": args.evidence_mode,
                   "first_pass": args.first_pass,
                   "conservative": args.conservative,
                   "time": datetime.now().isoformat(timespec="seconds")})
@@ -251,6 +253,8 @@ def main() -> None:
     p.add_argument("--only", help="逗号分隔样本子集")
     p.add_argument("--no-block-review", action="store_true", help="关闭块级复核（消融实验）")
     p.add_argument("--context-chars", type=int, default=320, help="初判每句附带的上下文字数（默认320）")
+    p.add_argument("--evidence-mode", default="short", choices=["short", "structured"],
+                   help="初判 evidence 输出：short=旧短依据，structured=证据标签+风险标签")
     p.add_argument("--conservative", action="store_true",
                    help="块级复核用保守模式（看着当前判断、仅证据改判，针对轮换猜测翻转）")
     p.add_argument("--first-pass", default="batch", choices=["batch", "single"],

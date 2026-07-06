@@ -49,6 +49,8 @@ def main() -> None:
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--max-tokens", type=int, default=5000)
     ap.add_argument("--timeout", type=int, default=240)
+    ap.add_argument("--evidence-mode", default="short", choices=["short", "structured"],
+                    help="初判 evidence 输出：short=旧短依据，structured=证据标签+风险标签")
     ap.add_argument("--narrator", default="甘织玲奈子",
                     help='第一人称叙述者全名（主线甘织视角默认）。第三人称/视角切换的外传'
                          '传空字符串 "" 或 none，让流水线不锚定固定叙述者。')
@@ -76,7 +78,7 @@ def main() -> None:
         base_url=AGNES_BASE_URL, api_key=api_key, model=AGNES_MODEL,
         batch_size=args.batch_size, max_tokens=args.max_tokens, temperature=0.0,
         timeout=args.timeout, context_chars=320, output_mode="compact",
-        disable_thinking=True,
+        evidence_mode=args.evidence_mode, disable_thinking=True,
     )
     print(f"解析 {raw.name}（{len(text)} 字）… 叙述者={narrator or '无(第三人称)'} 完整流水线，可能需数分钟", flush=True)
     result = parse_novel(

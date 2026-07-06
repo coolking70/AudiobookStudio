@@ -59,6 +59,7 @@ class BatchConfig:
     timeout: int = 180               # 秒，批处理比单条慢
     context_chars: int = 200         # 每条台词截取的前后文字符数
     output_mode: str = "compact"     # "verbose"（JSON 数组）或 "compact"（管道分隔行）
+    evidence_mode: str = "short"     # "short" 或 "structured"（证据标签+风险标签，便于复核审计）
     max_retries: int = 2             # 解析失败后重试次数
     disable_thinking: bool = True    # 禁用 Qwen3/DeepSeek 等模型的扩展思考模式
 
@@ -169,6 +170,38 @@ _SYSTEM_PROMPT_COMPACT = """\
 不要输出任何解释或多余文本，只输出上述格式的行。
 """
 
+_STRUCTURED_EVIDENCE_INSTRUCTIONS = """\
+
+【依据字段升级】
+依据必须短而结构化，格式：
+E=<证据标签>;R=<风险标签>;S=<≤18字原文线索>
+
+证据标签 E 只能从下列选择 1-2 个，用逗号连接：
+- explicit_before：紧前文动作主语明确
+- explicit_after：台词后标注说话人
+- reply_turn：承接上一句发问/回应
+- dialogue_alternation：同一对话块轮换
+- address_term：称呼/受话关系判断
+- narrator_anchor：第一人称叙述者锚点
+- scene_presence：在场人物/登场顺序
+- self_identification：自我介绍
+- unknown_weak：证据不足
+
+风险标签 R 只能从下列选择 0-2 个，用逗号连接；无风险填 none：
+- multi_speaker：附近多人同场
+- addressee_trap：台词内称呼可能是受话人
+- weak_turn：仅靠轮换猜测
+- generic_relation：姐姐/妹妹/老师等关系称谓
+- alias_ambiguous：简称/别名可能混淆
+- off_scene：候选不在当前场景
+
+示例：
+1|王冢真唯|0.92|eb|E=explicit_before;R=none;S=真唯压住长发说道
+2|甘织玲奈子|0.70|im|E=reply_turn,dialogue_alternation;R=weak_turn;S=上句真唯发问
+3|遥奈|0.62|im|E=address_term;R=addressee_trap,generic_relation;S=妹妹可能是受话人
+不要写长解释，不要在依据外输出额外说明。
+"""
+
 _USER_TEMPLATE = """\
 角色列表：{role_list}
 {narrator_line}
@@ -253,6 +286,7 @@ def _build_prompt(
     narrator: str | None = None,
     narrator_hints: set[str] | None = None,
     role_aliases: dict[str, list[str]] | None = None,
+    evidence_mode: str = "short",
 ) -> tuple[str, str]:
     """返回 (system_prompt, user_prompt)
 
@@ -371,6 +405,7 @@ def _build_prompt(
         quotes_block_parts.append(part)
 
     quotes_block = "\n".join(quotes_block_parts)
+    structured_evidence = str(evidence_mode or "").lower() == "structured"
     if output_mode == "compact":
         user_prompt = _USER_TEMPLATE_COMPACT.format(
             role_list=role_list,
@@ -378,7 +413,11 @@ def _build_prompt(
             count=len(batch),
             quotes_block=quotes_block,
         )
-        return _SYSTEM_PROMPT_COMPACT, user_prompt
+        system_prompt = _SYSTEM_PROMPT_COMPACT
+        if structured_evidence:
+            system_prompt += _STRUCTURED_EVIDENCE_INSTRUCTIONS
+            user_prompt += "\n请严格使用结构化依据格式：E=<证据标签>;R=<风险标签>;S=<原文线索>。"
+        return system_prompt, user_prompt
     else:
         user_prompt = _USER_TEMPLATE.format(
             role_list=role_list,
@@ -386,7 +425,11 @@ def _build_prompt(
             count=len(batch),
             quotes_block=quotes_block,
         )
-        return _SYSTEM_PROMPT, user_prompt
+        system_prompt = _SYSTEM_PROMPT
+        if structured_evidence:
+            system_prompt += _STRUCTURED_EVIDENCE_INSTRUCTIONS
+            user_prompt += "\n每个 evidence 字段也必须使用：E=<证据标签>;R=<风险标签>;S=<原文线索>。"
+        return system_prompt, user_prompt
 
 
 # ── JSON 解析 ──────────────────────────────────────────────────────────────
@@ -897,6 +940,7 @@ class BatchLLMAttributor:
             narrator=narrator,
             narrator_hints=narrator_hints,
             role_aliases=getattr(self, "_pending_role_aliases", None),
+            evidence_mode=getattr(self.cfg, "evidence_mode", "short"),
         )
         parse_fn = _parse_compact_response if self.cfg.output_mode == "compact" else _parse_llm_response
         last_empty = False
