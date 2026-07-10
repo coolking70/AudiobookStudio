@@ -113,6 +113,21 @@ SPEECH_EVIDENCE_MARKERS = (
     "动作主语",
 )
 
+EXPLICIT_SPEAKER_EVIDENCE_MARKERS = (
+    "动作主语",
+    "明确说话",
+    "明确为说话人",
+    "前文明确",
+    "后文明确",
+    "开口",
+    "回答",
+    "说道",
+    "说出",
+    "自称",
+    "第一人称",
+    "引述动词",
+)
+
 
 # ── LLM 连接配置（dict 或 dataclass 均可，与 spc_ranker 兼容同一接口）──────
 @dataclass
@@ -280,6 +295,7 @@ def _should_auto_apply_review(
     original: SegmentEx,
     new_speaker: str,
     new_confidence: float,
+    review_evidence: str = "",
 ) -> tuple[bool, str]:
     """Return whether an LLM review correction is safe enough to overwrite.
 
@@ -306,8 +322,10 @@ def _should_auto_apply_review(
     sources = _candidate_sources(original, new_speaker)
     evidence_text = str(original.evidence or "")
     address_conflict = ("称呼反推" in evidence_text and "冲突" in evidence_text) or "称呼负权重" in evidence_text
-    if address_conflict and "address_term_backcheck" in sources and new_confidence >= 0.88:
-        return True, ""
+    address_term_only = bool(sources & {"address_term_backcheck", "address_term_local_context", "relation_inferred"})
+    explicit_speaker_evidence = any(marker in str(review_evidence or "") for marker in EXPLICIT_SPEAKER_EVIDENCE_MARKERS)
+    if (address_conflict or address_term_only) and not explicit_speaker_evidence:
+        return False, "称呼关系不能单独证明说话人，需动作主语、第一人称或前后文明示"
     if original.speaker not in SKIP_SPEAKERS and _has_first_person_anchor(original):
         return False, "原结果存在第一人称/叙述者锚点，需人工确认后再改写"
     if new_confidence < MIN_AUTO_CORRECT_CONFIDENCE:
@@ -423,7 +441,9 @@ def route_to_llm(
         new_speaker = attribution.speaker
         new_confidence = attribution.confidence
 
-        can_apply, block_reason = _should_auto_apply_review(seg, new_speaker, new_confidence)
+        can_apply, block_reason = _should_auto_apply_review(
+            seg, new_speaker, new_confidence, str(attribution.evidence or "")
+        )
 
         if new_speaker and new_speaker == seg.speaker and can_apply:
             seg.confidence = max(seg.confidence, min(max(new_confidence, threshold + 0.15), 0.95))
@@ -509,6 +529,7 @@ def route_to_batch_llm(
     batch_size: int = 8,
     narrator: str | None = None,
     verbose: bool = False,
+    cascade_neighbors: bool = True,
 ) -> tuple[list[SegmentEx], dict[str, Any]]:
     """Batch-review unresolved speaker attributions with dialogue context.
 
@@ -527,7 +548,7 @@ def route_to_batch_llm(
         idx for idx, seg in enumerate(updated)
         if 0 <= idx < len(updated)
         and (review_index_set is None or idx in review_index_set)
-        and _looks_like_review_target(seg, threshold)
+        and (review_index_set is not None or _looks_like_review_target(seg, threshold))
     ]
     stats: dict[str, Any] = {
         "mode": "batch",
@@ -541,6 +562,8 @@ def route_to_batch_llm(
         "skipped": len(updated) - len(target_indices),
         "role_hints_count": len(role_hints),
         "batch_size": batch_size,
+        "corrected_indices": [],
+        "chain_review_indices": [],
     }
     if not target_indices:
         return updated, stats
@@ -608,7 +631,9 @@ def route_to_batch_llm(
                 if "narrator_anchor" not in seg.candidate_sources[narrator]:
                     seg.candidate_sources[narrator].append("narrator_anchor")
             turn_only_evidence = _is_turn_only_llm_evidence(str(attr.evidence or ""))
-            can_apply, block_reason = _should_auto_apply_review(seg, new_speaker, new_confidence)
+            can_apply, block_reason = _should_auto_apply_review(
+                seg, new_speaker, new_confidence, str(attr.evidence or "")
+            )
             if can_apply and turn_only_evidence and seg.confidence < threshold:
                 can_apply = False
                 block_reason = "复核依据仅为上一句/轮换，低置信片段需人工确认"
@@ -629,6 +654,7 @@ def route_to_batch_llm(
                 seg.attribution_type = AttributionType.IMPLICIT
                 seg.evidence = f"BatchLLM复核: {attr.evidence or ''}"
                 stats["corrected"] += 1
+                stats["corrected_indices"].append(idx)
             elif new_speaker:
                 seg.evidence = (
                     f"{seg.evidence or ''}；BatchLLM复核待人工: "
@@ -639,5 +665,32 @@ def route_to_batch_llm(
             else:
                 seg.evidence = f"{seg.evidence or ''}；BatchLLM复核失败: 未给出明确说话人"
                 stats["failed"] += 1
+
+    if cascade_neighbors and stats["corrected_indices"]:
+        corrected = set(stats["corrected_indices"])
+        neighbors = sorted({
+            neighbor
+            for idx in corrected
+            for neighbor in (idx - 1, idx + 1)
+            if 0 <= neighbor < len(updated)
+            and neighbor not in corrected
+            and str(updated[neighbor].speaker or "") not in {"", "旁白"}
+            and bool(updated[neighbor].text)
+        })
+        if neighbors:
+            updated, chain_stats = route_to_batch_llm(
+                updated,
+                llm_config,
+                threshold=threshold,
+                review_indices=neighbors,
+                batch_size=batch_size,
+                narrator=narrator,
+                verbose=verbose,
+                cascade_neighbors=False,
+            )
+            stats["chain_review_indices"] = neighbors
+            stats["chain_review"] = chain_stats
+            for key in ("reviewed", "corrected", "confirmed", "failed", "blocked"):
+                stats[key] += int(chain_stats.get(key, 0))
 
     return updated, stats

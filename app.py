@@ -3724,7 +3724,7 @@ async def parse_v2_stream(req: ParseV2Request):
     """
     import asyncio, json as _json, concurrent.futures
 
-    parse_novel, route_to_llm, _, _, OpenAICompatibleSPCRanker, _, _, BatchConfig = _load_book_voice_parser()
+    parse_novel, route_to_llm, route_dense_to_llm, _, OpenAICompatibleSPCRanker, _, _, BatchConfig = _load_book_voice_parser()
 
     batch_llm_config = None
     if req.use_batch_llm and req.llm:
@@ -3761,6 +3761,13 @@ async def parse_v2_stream(req: ParseV2Request):
             )
             segments = result.segments
             llm_stats = {}
+            dense_llm_stats = {}
+            if req.dense_llm:
+                segments, dense_llm_stats = route_dense_to_llm(
+                    segments,
+                    _build_bvp_llm_config(req.dense_llm),
+                    threshold=req.review_threshold,
+                )
             if req.use_llm_review and req.llm:
                 segments, llm_stats = route_to_llm(
                     segments,
@@ -3772,6 +3779,7 @@ async def parse_v2_stream(req: ParseV2Request):
                     "type": "complete",
                     "segments": [_bvp_segment_to_dict(s) for s in segments],
                     "stats": {**result.stats, "llm_review": llm_stats,
+                              "dense_model_route": dense_llm_stats,
                               "review_items_count": len(result.review_items)},
                 }),
                 loop,

@@ -25,6 +25,7 @@ jobs:
           confidence_calibration.py learning_store.py tests
           BookVoiceParser/book_voice_parser/security_bridge.py
           BookVoiceParser/book_voice_parser/audit.py
+          BookVoiceParser/book_voice_parser/review_router.py
           BookVoiceParser/book_voice_parser/spc_ranker.py
       - run: python -m pytest
       - run: python -m compileall -q . -x "^(outputs|.workbuddy)"

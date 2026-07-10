@@ -34,7 +34,7 @@ def select_production_targets(
               "candidate_conflict": 0, "review_evidence": 0, "unresolved": 0}
     for i, seg in enumerate(segments):
         speaker = str(seg.get("speaker") or "")
-        if speaker in _NARRATION_SPEAKERS or not seg.get("text"):
+        if speaker in _TARGET_SKIP_SPEAKERS or not seg.get("text"):
             continue
         counts["named"] += 1
         signals: list[str] = []
@@ -53,10 +53,10 @@ def select_production_targets(
             signals.append("candidate_conflict")
             counts["candidate_conflict"] += 1
         evidence = str(seg.get("evidence") or "")
-        if seg.get("_needs_review") or "review" in evidence.lower() or "寰呬汉宸?" in evidence:
+        if seg.get("_needs_review") or "review" in evidence.lower() or "待人工" in evidence:
             signals.append("review_evidence")
             counts["review_evidence"] += 1
-        if speaker in {"UNKNOWN", "鏈煡", "鏈煡涓存椂浜虹墿"} or not candidates:
+        if speaker in {"UNKNOWN", "未知", "未知临时人物"} or not candidates:
             signals.append("unresolved")
             counts["unresolved"] += 1
         if len(signals) >= 2:
@@ -66,6 +66,7 @@ def select_production_targets(
 
 _STRIP = set("「」『』《》〈〉 \t\r\n　")
 _NARRATION_SPEAKERS = {"旁白", "未知", "未知临时人物", "其他", "UNKNOWN", ""}
+_TARGET_SKIP_SPEAKERS = {"旁白", "其他", ""}
 
 
 def _scene_density(segments: list[dict], i: int, alias_map: dict[str, str], window: int = 4) -> int:
@@ -143,7 +144,8 @@ def make_audit_prompt(roster: str, narrator: str | None, ctx_b: str, text: str, 
 
 {ctx_b}【【「{text}」】】{ctx_a}
 
-只输出JSON：{{"speaker":"角色全名或旁白","reason":"15字内依据"}}"""
+只输出JSON：{{"speaker":"角色全名或旁白","reason":"15字内依据","counter_evidence_type":"explicit_after|first_person|address_term|semantic_reply|none","baseline_evidence_valid":true,"auto_apply_safe":false}}
+其中 auto_apply_safe 仅在动作主语、第一人称自述或前后文明示说话人时为 true；仅有称呼关系或语义接话时必须为 false。"""
 
 
 def _call_llm(prompt: str, llm: dict, retries: int = 5) -> str | None:
@@ -223,7 +225,7 @@ def audit_segments(
 
     if str(target_mode or "production").lower() == "all":
         targets = [i for i, s in enumerate(segments)
-                   if str(s.get("speaker", "")) not in _NARRATION_SPEAKERS and s.get("text")]
+                   if str(s.get("speaker", "")) not in _TARGET_SKIP_SPEAKERS and s.get("text")]
         target_reasons = {i: ["all_mode"] for i in targets}
         target_counts = {"named": len(targets), "selected": len(targets)}
     else:
@@ -271,10 +273,16 @@ def audit_segments(
                 else:
                     tier1[i] = True
                     priorities[i] = _signal_priority(flags, is_dense)
-            details[i] = {"reask": (r or {}).get("speaker"),
-                          "reask_reason": (r or {}).get("reason"), "flags": flags,
-                          "target_reasons": target_reasons.get(i, []),
-                          "priority": priorities.get(i)}
+            details[i] = {
+                "reask": (r or {}).get("speaker"),
+                "reask_reason": (r or {}).get("reason"),
+                "counter_evidence_type": (r or {}).get("counter_evidence_type"),
+                "baseline_evidence_valid": (r or {}).get("baseline_evidence_valid"),
+                "auto_apply_safe": (r or {}).get("auto_apply_safe"),
+                "flags": flags,
+                "target_reasons": target_reasons.get(i, []),
+                "priority": priorities.get(i),
+            }
 
     if hetero_llm:
         sweep = [i for i in targets if not tier1[i]]

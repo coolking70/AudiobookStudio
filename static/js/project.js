@@ -235,6 +235,8 @@
                 ${m.aliases && m.aliases.length ? `<span class="pill">别名 ${esc(m.aliases.join("、"))}</span>` : ""}</div>
               <label>分配声音</label>
               <select onchange="projectCastVoiceChange(${i}, this.value)">${voiceOptionsHtml(m.voice && m.voice.ref_audio)}</select>
+              <label>已确认别名（逗号分隔）</label>
+              <input type="text" value="${esc((m.aliases || []).join("，"))}" onchange="projectCastAliasesChange(${i}, this.value)" />
               <div class="mini-note">ref_audio：${esc((m.voice && m.voice.ref_audio) || "未设置")}</div>
             </div>`).join("")}
         </div>
@@ -270,6 +272,13 @@
       ref_text: v.ref_text || null, style: v.style || null, voice_name: v.voice_name || null } : {};
   }
   window.projectCastVoiceChange = projectCastVoiceChange;
+
+  function projectCastAliasesChange(idx, raw) {
+    const member = projectCurrent && projectCurrent.cast[idx];
+    if (!member) return;
+    member.aliases = Array.from(new Set(String(raw || "").split(/[,，]/).map((x) => x.trim()).filter((x) => x && x !== member.canonical)));
+  }
+  window.projectCastAliasesChange = projectCastAliasesChange;
 
   async function projectSave() {
     if (!projectCurrent) return;

@@ -1,6 +1,7 @@
   let segmentsState = [];
   let auditContextState = null; // 机器审计上下文：最近一次结构化解析的 {text, roleHints, narrator, llm}
   let roleProfilesState = {};
+  let characterAliasMap = {};
   let taskBusy = false;
   let segmentsPanelExpanded = false;
   let progressRenderQueued = false;
@@ -2952,6 +2953,7 @@ very high pitch, very low pitch, whisper, young adult
     localStorage.setItem("ov_llm_backend_mode", analysisSourceMode);
     saveReviewLlmConfig();
     saveHeteroLlmConfig();
+    saveDenseLlmConfig();
     localStorage.setItem(AUDIO_BACKEND_STORAGE_KEY, JSON.stringify(getAudioBackendConfig()));
     localStorage.setItem("ov_role_profiles", JSON.stringify(roleProfilesState));
     localStorage.setItem("ov_role_voice_assignments", JSON.stringify(roleVoiceAssignments));
@@ -8727,7 +8729,16 @@ very high pitch, very low pitch, whisper, young adult
         const prefix = d.priority ? `[P${d.priority}] ` : "";
         const targetReasons = (d.target_reasons || []).join("、");
         const reask = d.reask ? `建议=${d.reask}` : "";
-        seg._audit_hint = prefix + (d.flags || []).join("；") + (reask ? `；${reask}` : "") + (targetReasons ? `；信号=${targetReasons}` : "");
+        const reason = d.reask_reason ? `理由=${d.reask_reason}` : "";
+        const counterType = d.counter_evidence_type ? `反证=${d.counter_evidence_type}` : "";
+        const baselineValid = typeof d.baseline_evidence_valid === "boolean"
+          ? `原证据=${d.baseline_evidence_valid ? "有效" : "无效"}` : "";
+        const autoSafe = typeof d.auto_apply_safe === "boolean"
+          ? `自动应用=${d.auto_apply_safe ? "安全" : "禁止"}` : "";
+        seg._audit_hint = [
+          prefix + (d.flags || []).join("；"), reask, reason, counterType,
+          baselineValid, autoSafe, targetReasons ? `信号=${targetReasons}` : "",
+        ].filter(Boolean).join("；");
         seg._needs_review = t1.has(i); // 每轮审计全量刷新：tier1 标记，其余清除旧标记
       });
       const saved = (result.stats || {}).downgraded_to_tier2 || 0;
@@ -8811,6 +8822,23 @@ very high pitch, very low pitch, whisper, young adult
     if (panel) panel.hidden = !enabled;
   }
 
+  function onDenseModelChange() {
+    const enabled = document.getElementById("denseModelEnabled")?.checked;
+    const panel = document.getElementById("denseModelPanel");
+    if (panel) panel.hidden = !enabled;
+  }
+
+  function getDenseLlmConfig() {
+    if (!document.getElementById("denseModelEnabled")?.checked) return null;
+    const base_url = (document.getElementById("denseLlmBaseUrl")?.value || "").trim();
+    const model = (document.getElementById("denseLlmModel")?.value || "").trim();
+    if (!base_url || !model) {
+      throw new Error("已启用密集场景强模型，请填写 Base URL 和模型名");
+    }
+    const api_key = (document.getElementById("denseLlmApiKey")?.value || "").trim() || "sk-placeholder";
+    return { base_url, model, api_key, temperature: 0.0, max_tokens: 4096 };
+  }
+
   /** 返回异构审计 LLM 配置；未启用或配置不完整时返回 null */
   function getHeteroLlmConfig() {
     if (!document.getElementById("heteroAuditEnabled")?.checked) return null;
@@ -8884,6 +8912,53 @@ very high pitch, very low pitch, whisper, young adult
     } catch {}
   }
 
+  function saveDenseLlmConfig() {
+    const cfg = {
+      enabled: document.getElementById("denseModelEnabled")?.checked || false,
+      base_url: document.getElementById("denseLlmBaseUrl")?.value || "",
+      model: document.getElementById("denseLlmModel")?.value || "",
+      api_key: document.getElementById("denseLlmApiKey")?.value || "",
+    };
+    localStorage.setItem("ov_dense_llm_config", JSON.stringify(cfg));
+  }
+
+  function loadDenseLlmConfig() {
+    try {
+      const raw = localStorage.getItem("ov_dense_llm_config");
+      if (!raw) return;
+      const cfg = JSON.parse(raw);
+      const chk = document.getElementById("denseModelEnabled");
+      if (chk) { chk.checked = !!cfg.enabled; onDenseModelChange(); }
+      if (cfg.base_url) { const el = document.getElementById("denseLlmBaseUrl"); if (el) el.value = cfg.base_url; }
+      if (cfg.model) { const el = document.getElementById("denseLlmModel"); if (el) el.value = cfg.model; }
+      if (cfg.api_key) { const el = document.getElementById("denseLlmApiKey"); if (el) el.value = cfg.api_key; }
+    } catch {}
+  }
+
+  async function previewCharacterAliases() {
+    const text = validateSourceText();
+    if (!text) return;
+    const status = document.getElementById("aliasPreviewStatus");
+    if (status) status.textContent = "正在预解析身份与别名…";
+    try {
+      const resp = await fetchJson("/api/character-aliases/preview", { text, role_hints: null });
+      if (!resp.ok) throw new Error(resp.error || "预解析失败");
+      characterAliasMap = resp.alias_map || {};
+      const byCanonical = {};
+      Object.entries(characterAliasMap).forEach(([alias, canonical]) => {
+        if (!alias || !canonical || alias === canonical) return;
+        if (!byCanonical[canonical]) byCanonical[canonical] = [];
+        if (!byCanonical[canonical].includes(alias)) byCanonical[canonical].push(alias);
+      });
+      const input = document.getElementById("roleHintsInput");
+      if (input) input.value = JSON.stringify(byCanonical);
+      const count = Object.keys(characterAliasMap).length;
+      if (status) status.textContent = `已发现 ${count} 条别名映射；请人工确认或编辑上方 JSON 后再解析。`;
+    } catch (err) {
+      if (status) status.textContent = `预解析失败：${err.message || String(err)}`;
+    }
+  }
+
   async function runStructuredParseFlow() {
     const text = validateSourceText();
     if (!text) return;
@@ -8899,8 +8974,25 @@ very high pitch, very low pitch, whisper, young adult
         roleHints = roleHintsRaw.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
       }
     }
+    if (roleHints && !Array.isArray(roleHints) && typeof roleHints === "object") {
+      characterAliasMap = {};
+      Object.entries(roleHints).forEach(([canonical, value]) => {
+        const aliases = Array.isArray(value) ? value : (value && Array.isArray(value.aliases) ? value.aliases : []);
+        aliases.forEach((alias) => {
+          const normalized = String(alias || "").trim();
+          if (normalized && normalized !== canonical) characterAliasMap[normalized] = canonical;
+        });
+      });
+    }
     const useLlmReview = isLlmReviewEnabled();
     const useBatchLlm = document.getElementById("useBatchLlm")?.checked || false;
+    let denseLlm = null;
+    try {
+      denseLlm = getDenseLlmConfig();
+    } catch (err) {
+      alert(err.message || String(err));
+      return;
+    }
     const narratorRaw = (document.getElementById("narratorInput")?.value || "").trim();
     const narrator = narratorRaw || null;
     const batchLlmMaxTokensRaw = parseInt(document.getElementById("batchLlmMaxTokens")?.value || "2048", 10);
@@ -8934,6 +9026,7 @@ very high pitch, very low pitch, whisper, young adult
         batch_llm_max_tokens: batchLlmMaxTokens,
         review_threshold: reviewThreshold,
         ...(llm ? { llm } : {}),
+        ...(denseLlm ? { dense_llm: denseLlm } : {}),
       };
 
       auditContextState = { text, roleHints, narrator, llm: llm || null }; // 供机器审计复用
@@ -10525,6 +10618,7 @@ very high pitch, very low pitch, whisper, young adult
   loadConfig();
   loadReviewLlmConfig();
   loadHeteroLlmConfig();
+  loadDenseLlmConfig();
   updateAnalysisFlowUI();
   updateOfflineReviewPacketUi();
   initProgressPanelPrefs();

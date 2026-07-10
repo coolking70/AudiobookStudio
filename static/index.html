@@ -746,7 +746,11 @@
                   第一人称叙述者（可选，填主角名）
                   <input id="narratorInput" type="text" placeholder="例：甘织玲奈子" />
                 </label>
-                <button type="button" class="secondary" onclick="copyRoleHintsPrompt()">复制角色提示词</button>
+                <div class="actions" style="margin:0;">
+                  <button type="button" class="secondary" onclick="previewCharacterAliases()">预解析身份/别名</button>
+                  <button type="button" class="secondary" onclick="copyRoleHintsPrompt()">复制角色提示词</button>
+                </div>
+                <div id="aliasPreviewStatus" class="mini-note" style="margin:0;">可先预解析别名，再人工编辑上方 JSON 后执行主管线。</div>
                 <label class="structured-check" hidden>
                   <input type="checkbox" id="useBatchLlm" checked onchange="toggleBatchLlmOptions()" />
                   <span>使用 BatchLLM 主管线（推荐，使用当前文本模型配置）</span>
@@ -779,6 +783,29 @@
                       <label>Base URL<input id="reviewLlmBaseUrl" type="text" placeholder="http://localhost:11434/v1" /></label>
                       <label>模型名<input id="reviewLlmModel" type="text" placeholder="qwen2.5:7b-instruct" /></label>
                       <label>API Key（可选）<input id="reviewLlmApiKey" type="text" placeholder="ollama / lm-studio / sk-..." /></label>
+                    </div>
+                  </div>
+                </div>
+                <!-- 密集场景强模型：仅局部 >=3 人窗口进入独立模型，控制成本与误伤 -->
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                  <label class="structured-check" style="align-items:center;">
+                    <input type="checkbox" id="denseModelEnabled" onchange="onDenseModelChange()" />
+                    <span style="font-weight:500;">密集多人场景使用独立强模型</span>
+                  </label>
+                  <div id="denseModelPanel" hidden class="sub-card" style="margin-top:4px;">
+                    <div class="mini-note" style="margin:0 0 8px 0;">
+                      仅将局部至少 3 位具名角色同框的台词送入强模型复核；普通场景保持主管线结果。
+                    </div>
+                    <div class="model-field-group" style="margin:0;">
+                      <label>Base URL
+                        <input id="denseLlmBaseUrl" type="text" placeholder="https://example.com/v1" />
+                      </label>
+                      <label>模型名
+                        <input id="denseLlmModel" type="text" placeholder="strong-review-model" />
+                      </label>
+                      <label>API Key
+                        <input id="denseLlmApiKey" type="password" placeholder="sk-..." />
+                      </label>
                     </div>
                   </div>
                 </div>

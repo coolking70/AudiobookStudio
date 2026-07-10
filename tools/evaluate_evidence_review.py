@@ -24,6 +24,7 @@ SAMP = REPO / "docs/samples"
 sys.path.insert(0, str(REPO / "tools"))
 
 from run_regression import canon, is_crowd, norm, score_sample  # noqa: E402
+from openai_retry import call_with_404_backoff  # noqa: E402
 
 
 PROVIDERS = {
@@ -323,15 +324,17 @@ def call_review(
 ) -> list[dict[str, Any]]:
     user = build_user_prompt(seg_name, parse_segments, indices, audit=audit)
     system_prompt = AUDIT_SAFE_SYSTEM_PROMPT if review_style == "audit-safe" else SYSTEM_PROMPT
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user},
-        ],
-        temperature=0.0,
-        max_tokens=2500,
-        timeout=timeout,
+    resp = call_with_404_backoff(
+        lambda: client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user},
+            ],
+            temperature=0.0,
+            max_tokens=2500,
+            timeout=timeout,
+        )
     )
     content = (resp.choices[0].message.content or "").strip()
     return extract_json_array(content)
