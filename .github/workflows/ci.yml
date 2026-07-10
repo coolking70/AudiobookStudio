@@ -18,6 +18,14 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -r requirements.txt
       - run: python -m pip install -e ".[dev]"
+      - name: Lint security baseline and maintained core
+        run: >-
+          python -m ruff check
+          security.py schemas.py llm_client.py project_store.py
+          confidence_calibration.py learning_store.py tests
+          BookVoiceParser/book_voice_parser/security_bridge.py
+          BookVoiceParser/book_voice_parser/audit.py
+          BookVoiceParser/book_voice_parser/spc_ranker.py
       - run: python -m pytest
       - run: python -m compileall -q . -x "^(outputs|.workbuddy)"
       - run: node --check static/js/app.js

@@ -43,11 +43,15 @@ def validate_remote_url(url: str, *, allow_private: bool | None = None) -> str:
     except ValueError:
         try:
             addresses = {ipaddress.ip_address(item[4][0]) for item in socket.getaddrinfo(host, parsed.port or 80, type=socket.SOCK_STREAM)}
-        except (OSError, ValueError):
-            addresses = set()
+        except (OSError, ValueError) as exc:
+            raise SecurityError("remote host could not be resolved safely") from exc
+    if not addresses:
+        raise SecurityError("remote host could not be resolved safely")
     for address in addresses:
         if address.is_link_local or address.is_unspecified or address.is_reserved:
             raise SecurityError("remote host is not allowed")
         if address.is_private and not (allow_private or address.is_loopback):
             raise SecurityError("private remote hosts require AUDIOBOOKSTUDIO_ALLOW_PRIVATE_REMOTE_URLS=1")
+        if not address.is_global and not address.is_loopback and not (allow_private and address.is_private):
+            raise SecurityError("non-global remote host is not allowed")
     return value

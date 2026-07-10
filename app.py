@@ -128,7 +128,53 @@ from schemas import (
 )
 
 
+class RequestTooLargeError(Exception):
+    pass
+
+
+class RequestSizeLimitMiddleware:
+    """Reject oversized HTTP bodies, including chunked requests."""
+
+    def __init__(self, app, max_bytes: int | None = None):
+        self.app = app
+        self.max_bytes = max_bytes or int(
+            os.getenv("AUDIOBOOKSTUDIO_MAX_REQUEST_BYTES", str(40 * 1024 * 1024))
+        )
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = {key.lower(): value for key, value in scope.get("headers", [])}
+        raw_length = headers.get(b"content-length")
+        if raw_length:
+            try:
+                if int(raw_length) > self.max_bytes:
+                    await JSONResponse(status_code=413, content={"detail": "request body too large"})(scope, receive, send)
+                    return
+            except ValueError:
+                await JSONResponse(status_code=400, content={"detail": "invalid content-length"})(scope, receive, send)
+                return
+
+        received = 0
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body") or b"")
+                if received > self.max_bytes:
+                    raise RequestTooLargeError
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except RequestTooLargeError:
+            await JSONResponse(status_code=413, content={"detail": "request body too large"})(scope, receive, send)
+
+
 app = FastAPI(title="Audio Book Studio")
+app.add_middleware(RequestSizeLimitMiddleware)
 
 
 @app.middleware("http")
@@ -266,7 +312,7 @@ def _build_batch_llm_config(req: ParseV2Request, BatchConfig):
         batch_size = 8
         context_chars = 320
     return BatchConfig(
-        base_url=str(req.llm.base_url),
+        base_url=normalize_openai_compat_base_url(req.llm.base_url),
         model=str(req.llm.model),
         api_key=str(req.llm.api_key) if req.llm.api_key else "lm-studio",
         batch_size=batch_size,
@@ -1610,8 +1656,8 @@ def absolutize_remote_file_url(base_url: str, file_url: str | None) -> str | Non
     if not file_url:
         return file_url
     if file_url.startswith("http://") or file_url.startswith("https://"):
-        return file_url
-    return urljoin(f"{base_url}/", file_url.lstrip("/"))
+        return validate_remote_url(file_url)
+    return validate_remote_url(urljoin(f"{base_url}/", file_url.lstrip("/")))
 
 
 def remote_post_json(base_url: str, path: str, payload: dict, api_key: str | None = None) -> dict:
@@ -1651,14 +1697,26 @@ def _read_audio_as_data_url(ref_audio: str) -> str:
             raise RuntimeError("MiMo VoiceClone 参考音频 data URL 必须包含 base64 数据。")
         return source
     if source.startswith("/file/"):
-        source = str((OUTPUT_DIR / source.removeprefix("/file/")).resolve())
+        source = str(resolve_within(source.removeprefix("/file/"), OUTPUT_DIR))
     if re.match(r"^https?://", source):
+        source = validate_remote_url(source)
         timeout = httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
-        with httpx.Client(timeout=timeout, trust_env=False) as client:
-            resp = client.get(source)
-            resp.raise_for_status()
-            content = resp.content
-            content_type = resp.headers.get("content-type") or "audio/wav"
+        max_bytes = int(os.getenv("AUDIOBOOKSTUDIO_MAX_REMOTE_AUDIO_BYTES", str(25 * 1024 * 1024)))
+        with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as client:
+            with client.stream("GET", source) as resp:
+                resp.raise_for_status()
+                content_length = int(resp.headers.get("content-length") or 0)
+                if content_length > max_bytes:
+                    raise RuntimeError("远程参考音频超过大小限制。")
+                chunks: list[bytes] = []
+                received = 0
+                for chunk in resp.iter_bytes():
+                    received += len(chunk)
+                    if received > max_bytes:
+                        raise RuntimeError("远程参考音频超过大小限制。")
+                    chunks.append(chunk)
+                content = b"".join(chunks)
+                content_type = resp.headers.get("content-type") or "audio/wav"
     else:
         path = Path(source).expanduser()
         if not path.exists():
@@ -3161,7 +3219,7 @@ def _load_book_voice_parser():
 def _build_bvp_llm_config(llm):
     _, _, _, LLMRouterConfig, _, _, _, _ = _load_book_voice_parser()
     return LLMRouterConfig(
-        base_url=str(llm.base_url),
+        base_url=normalize_openai_compat_base_url(llm.base_url),
         model=str(llm.model),
         api_key=str(llm.api_key) if llm.api_key else "local",
         max_tokens=max(int(llm.max_tokens or 4096), 4096),
@@ -3538,7 +3596,7 @@ def parse_text_v2(req: ParseV2Request):
         # 构建 SPC ranker（旧式逐条 LLM 内联推断，batch_llm 优先）
         implicit_ranker = None
         if req.implicit_strategy == "llm_spc" and req.llm and not batch_llm_config:
-            implicit_ranker = OpenAICompatibleSPCRanker(req.llm)
+            implicit_ranker = OpenAICompatibleSPCRanker(_build_bvp_llm_config(req.llm))
 
         result = parse_novel(
             req.text,
@@ -3606,10 +3664,6 @@ async def audit_segments_stream(req: AuditSegmentsRequest):
         asyncio.run_coroutine_threadsafe(
             queue.put({"type": "progress", "done": done, "total": total}), loop)
 
-    def _llm_dict(cfg) -> dict:
-        return {"base_url": str(cfg.base_url), "api_key": str(cfg.api_key or ""),
-                "model": str(cfg.model), "max_tokens": 2000, "disable_thinking": True}
-
     hetero_cfg = req.hetero_llm
     if hetero_cfg is None:
         hetero_base = os.getenv("AUDIOBOOKSTUDIO_HETERO_AUDIT_BASE_URL", "").strip()
@@ -3637,9 +3691,9 @@ async def audit_segments_stream(req: AuditSegmentsRequest):
     def run_audit():
         try:
             result = audit_segments(
-                req.text, req.segments, _llm_dict(req.llm),
+                req.text, req.segments, _build_remote_llm_payload(req.llm),
                 narrator=req.narrator or None, roster=roster, alias_map=alias_map,
-                hetero_llm=_llm_dict(hetero_cfg) if hetero_cfg else None,
+                hetero_llm=_build_remote_llm_payload(hetero_cfg) if hetero_cfg else None,
                 workers=max(1, min(4, req.workers)), on_progress=on_progress,
                 target_mode=req.target_mode)
             asyncio.run_coroutine_threadsafe(
@@ -3678,7 +3732,7 @@ async def parse_v2_stream(req: ParseV2Request):
 
     implicit_ranker = None
     if req.implicit_strategy == "llm_spc" and req.llm and not batch_llm_config:
-        implicit_ranker = OpenAICompatibleSPCRanker(req.llm)
+        implicit_ranker = OpenAICompatibleSPCRanker(_build_bvp_llm_config(req.llm))
 
     loop = asyncio.get_event_loop()
     queue: asyncio.Queue = asyncio.Queue()
@@ -4442,6 +4496,16 @@ async def generate_tts_style_stream(req: TTSStyleGenerateRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _build_remote_llm_payload(cfg) -> dict[str, object]:
+    return {
+        "base_url": normalize_openai_compat_base_url(cfg.base_url),
+        "api_key": str(cfg.api_key or ""),
+        "model": str(cfg.model),
+        "max_tokens": 2000,
+        "disable_thinking": True,
+    }
 
 
 @app.post("/api/test-connectivity")

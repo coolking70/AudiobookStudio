@@ -38,6 +38,7 @@ from typing import Callable, Optional
 import httpx
 
 from .schema import Attribution, AttributionType, CandidateSet, QuoteSpan
+from .security_bridge import validate_remote_url
 
 logger = logging.getLogger(__name__)
 
@@ -606,9 +607,8 @@ class BatchLLMAttributor:
         base = str(self.cfg.base_url or "").strip().rstrip("/")
         if base.endswith("/chat/completions"):
             base = base[: -len("/chat/completions")].rstrip("/")
-        if base.endswith("/v1"):
-            return base
-        return f"{base}/v1"
+        normalized = base if base.endswith("/v1") else f"{base}/v1"
+        return validate_remote_url(normalized)
 
     def _get_client(self):
         if self._client is None:

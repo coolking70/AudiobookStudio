@@ -15,9 +15,12 @@ import json
 import random
 import re
 import time
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
+
+import httpx
+
+from .security_bridge import validate_remote_url
 
 
 def select_production_targets(
@@ -145,7 +148,7 @@ def make_audit_prompt(roster: str, narrator: str | None, ctx_b: str, text: str, 
 
 def _call_llm(prompt: str, llm: dict, retries: int = 5) -> str | None:
     base = str(llm.get("base_url", "")).rstrip("/")
-    url = base if base.endswith("/chat/completions") else base + "/chat/completions"
+    url = validate_remote_url(base if base.endswith("/chat/completions") else base + "/chat/completions")
     payload: dict[str, Any] = {
         "model": llm.get("model"),
         "messages": [{"role": "user", "content": prompt}],
@@ -154,23 +157,29 @@ def _call_llm(prompt: str, llm: dict, retries: int = 5) -> str | None:
     }
     if llm.get("disable_thinking", True):
         payload["chat_template_kwargs"] = {"enable_thinking": False}
-    req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={
+    headers = {
         "Authorization": f"Bearer {llm.get('api_key') or 'local'}",
-        "Content-Type": "application/json"})
-    for t in range(retries):
-        try:
-            r = json.load(urllib.request.urlopen(req, timeout=int(llm.get("timeout", 150))))
-            return r["choices"][0]["message"]["content"]
-        except Exception as e:  # noqa: BLE001
-            msg = str(e)
-            if "429" in msg or "timed out" in msg.lower():
-                time.sleep(2 ** t + random.random())
-                continue
-            if "400" in msg and "chat_template_kwargs" in json.dumps(payload):
-                payload.pop("chat_template_kwargs", None)  # 不支持该参数的服务降级重试
-                req.data = json.dumps(payload).encode()
-                continue
-            return None
+        "Content-Type": "application/json",
+    }
+    timeout = float(llm.get("timeout", 150))
+    with httpx.Client(timeout=timeout, trust_env=False, follow_redirects=False) as client:
+        for t in range(retries):
+            try:
+                response = client.post(url, headers=headers, json=payload)
+                if 300 <= response.status_code < 400:
+                    raise RuntimeError("LLM redirects are blocked by the outbound security policy")
+                response.raise_for_status()
+                result = response.json()
+                return result["choices"][0]["message"]["content"]
+            except Exception as exc:  # noqa: BLE001
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                if status == 429 or isinstance(exc, httpx.TimeoutException):
+                    time.sleep(2 ** t + random.random())
+                    continue
+                if status == 400 and "chat_template_kwargs" in payload:
+                    payload.pop("chat_template_kwargs", None)
+                    continue
+                return None
     return None
 
 

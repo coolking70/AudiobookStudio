@@ -9,9 +9,15 @@ from typing import Any, Protocol
 from urllib import error, request
 
 from .schema import Attribution, AttributionType, CandidateSet, QuoteSpan
+from .security_bridge import validate_remote_url
 
 
 UNKNOWN_LABEL = "未知"
+
+
+class _NoRedirectHandler(request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
@@ -160,7 +166,7 @@ class OpenAICompatibleSPCRanker:
             base_url = base_url[: -len("/chat/completions")].rstrip("/")
         if not base_url.endswith("/v1"):
             base_url = f"{base_url}/v1"
-        return base_url
+        return validate_remote_url(base_url)
 
     def _chat(self, messages: list[dict[str, str]]) -> str:
         base_url = self._normalize_base_url()
@@ -196,7 +202,8 @@ class OpenAICompatibleSPCRanker:
         attempt = 0
         while True:
             try:
-                with request.urlopen(req, timeout=180) as response:
+                opener = request.build_opener(_NoRedirectHandler())
+                with opener.open(req, timeout=180) as response:
                     data = json.loads(response.read().decode("utf-8"))
                 break
             except error.HTTPError as exc:

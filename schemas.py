@@ -83,9 +83,9 @@ class AnalysisContext(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    base_url: str
-    api_key: str
-    model: str
+    base_url: str = Field(max_length=2048)
+    api_key: str = Field(max_length=8192)
+    model: str = Field(max_length=512)
     local_model_path: Optional[str] = None
     local_runtime: Optional[str] = None
     local_engine: Optional[str] = None
@@ -95,8 +95,8 @@ class LLMConfig(BaseModel):
     local_gpu_layers: Optional[int] = None
     local_threads: Optional[int] = None
     local_batch_size: Optional[int] = None
-    temperature: float = 0.2
-    max_tokens: int = 2000
+    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=2000, ge=1, le=131072)
     compatibility_mode: str = "strict_json"
     chapter_sample_chars: Optional[int] = None
     chapter_prompt: Optional[str] = None
@@ -110,7 +110,7 @@ class LLMConfig(BaseModel):
     optimize_analyze_prompt: Optional[str] = None
     speaker_verification_prompt: Optional[str] = None
     alias_resolution_prompt: Optional[str] = None
-    workers: int = 5
+    workers: int = Field(default=5, ge=1, le=32)
     # ── 上下文感知分析控制 ─────────────────────────────────────────────────
     # "off"     保持原来的纯并发模式，无跨块上下文传递（向后兼容）
     # "chapter" 章节内串行传递上下文，章节间并行（推荐默认）
@@ -137,12 +137,12 @@ class SegmentPlanRequest(BaseModel):
 
 
 class ChunkOptimizeRequest(BaseModel):
-    chunks: List[TextChunk]
+    chunks: List[TextChunk] = Field(max_length=5000)
     llm: LLMConfig
 
 
 class AnalyzeChunksRequest(BaseModel):
-    chunks: List[TextChunk]
+    chunks: List[TextChunk] = Field(max_length=5000)
     llm: LLMConfig
 
 
@@ -162,10 +162,10 @@ class LyricLine(BaseModel):
 
 
 class MergeRequest(BaseModel):
-    wav_files: List[str]
+    wav_files: List[str] = Field(max_length=10_000)
     output_name: str = "merged"
     silence_ms: int = 350
-    lyrics: Optional[List[LyricLine]] = None
+    lyrics: Optional[List[LyricLine]] = Field(default=None, max_length=10_000)
 
 
 class ImportSegmentsRequest(BaseModel):
@@ -188,10 +188,10 @@ class TranscribeRefAudioRequest(BaseModel):
 
 class AudioBackendConfig(BaseModel):
     mode: str = "local"
-    remote_base_url: Optional[str] = None
-    remote_api_key: Optional[str] = None
-    mimo_base_url: Optional[str] = None
-    mimo_api_key: Optional[str] = None
+    remote_base_url: Optional[str] = Field(default=None, max_length=2048)
+    remote_api_key: Optional[str] = Field(default=None, max_length=8192)
+    mimo_base_url: Optional[str] = Field(default=None, max_length=2048)
+    mimo_api_key: Optional[str] = Field(default=None, max_length=8192)
     mimo_model: Optional[str] = None
     mimo_voice: Optional[str] = None
     inference_device: Optional[str] = None
@@ -215,22 +215,22 @@ class BatchImportVoiceLibraryRequest(BaseModel):
 
 
 class ListLLMModelsRequest(BaseModel):
-    base_url: str
-    api_key: Optional[str] = None
+    base_url: str = Field(max_length=2048)
+    api_key: Optional[str] = Field(default=None, max_length=8192)
 
 
 class ScanLocalModelsRequest(BaseModel):
-    root_path: str
+    root_path: str = Field(max_length=4096)
 
 
 class VerifySpeakersRequest(BaseModel):
-    segments: List[Dict[str, Any]]
+    segments: List[Dict[str, Any]] = Field(max_length=10_000)
     llm: LLMConfig
     context: Optional[AnalysisContext] = None
 
 
 class MergeAliasesRequest(BaseModel):
-    segments: List[Dict[str, Any]]
+    segments: List[Dict[str, Any]] = Field(max_length=10_000)
     llm: LLMConfig
 
 
@@ -248,7 +248,7 @@ class SilverCorrectionRequest(BaseModel):
 
 
 class CheckFilesRequest(BaseModel):
-    files: List[str]  # file paths to check (as returned by /api/tts resp.file)
+    files: List[str] = Field(max_length=2000)
 
 
 class ParseV2Request(BaseModel):
@@ -266,6 +266,7 @@ class ParseV2Request(BaseModel):
     use_llm_review: bool = False
     # LLM 配置（复用现有 LLMConfig，use_batch_llm 或 use_llm_review=True 时必填）
     llm: Optional[LLMConfig] = None
+    dense_llm: Optional[LLMConfig] = None
     # 低置信度阈值，低于此值才送 LLM 复核
     review_threshold: float = 0.7
     # 隐式归属策略：heuristic（纯规则）| llm_spc（每条隐式台词调用 LLM）
@@ -274,30 +275,30 @@ class ParseV2Request(BaseModel):
 
 class AuditSegmentsRequest(BaseModel):
     """机器审计请求：对已归因的段做聚焦重问两级分流（见 book_voice_parser/audit.py）。"""
-    text: str
-    segments: List[Dict[str, Any]]  # [{speaker, text, evidence?}, ...] 与解析输出同序
+    text: str = Field(max_length=2_000_000)
+    segments: List[Dict[str, Any]] = Field(max_length=10_000)
     llm: LLMConfig
     narrator: Optional[str] = None
     role_hints: Optional[Any] = None  # dict{角色:[别名]} 或 list[str]
     hetero_llm: Optional[LLMConfig] = None  # 异构第二意见（可选，扫一致段）
-    workers: int = 2
+    workers: int = Field(default=2, ge=1, le=4)
     target_mode: str = "production"
 
 
 class ParseV2ReviewRequest(BaseModel):
     """BookVoiceParser 低置信度片段复核请求。"""
-    segments: List[Dict[str, Any]]
+    segments: List[Dict[str, Any]] = Field(max_length=10_000)
     llm: LLMConfig
     review_threshold: float = 0.7
-    review_indices: Optional[List[int]] = None
-    batch_size: int = 8
+    review_indices: Optional[List[int]] = Field(default=None, max_length=10_000)
+    batch_size: int = Field(default=8, ge=1, le=20)
     narrator: Optional[str] = None
 
 
 class ParseV2ReviewOneRequest(BaseModel):
     """BookVoiceParser 单段低置信度复核请求。"""
-    segments: List[Dict[str, Any]]
-    index: int
+    segments: List[Dict[str, Any]] = Field(max_length=10_000)
+    index: int = Field(ge=0, le=100_000)
     llm: LLMConfig
     review_threshold: float = 0.7
     review_mode: str = "spc"
@@ -305,8 +306,8 @@ class ParseV2ReviewOneRequest(BaseModel):
 
 class ReviewPacketGenerateRequest(BaseModel):
     """离线强模型复核包生成请求。"""
-    text: str = ""
-    segments: List[Dict[str, Any]]
+    text: str = Field(default="", max_length=2_000_000)
+    segments: List[Dict[str, Any]] = Field(max_length=10_000)
     role_hints: Optional[Any] = None
     title: str = "说话人复核包"
     window: int = 4
@@ -316,19 +317,18 @@ class ReviewPacketGenerateRequest(BaseModel):
 
 class ReviewPacketApplyRequest(BaseModel):
     """离线强模型复核结果回写请求。"""
-    segments: List[Dict[str, Any]]
-    verdicts: str
+    segments: List[Dict[str, Any]] = Field(max_length=10_000)
+    verdicts: str = Field(max_length=2_000_000)
     role_hints: Optional[Any] = None
     idmap: Optional[Dict[str, int]] = None
 
 
 class TTSStyleGenerateRequest(BaseModel):
     """固定 speaker 后，为 IndexTTS 生成段级 style/instruct。"""
-    segments: List[Dict[str, Any]]
+    segments: List[Dict[str, Any]] = Field(max_length=10_000)
     llm: Optional[LLMConfig] = None
-    dense_llm: Optional[LLMConfig] = None
-    batch_size: int = 10
-    max_tokens: int = 2500
+    batch_size: int = Field(default=10, ge=1, le=20)
+    max_tokens: int = Field(default=2500, ge=1, le=8000)
 
 
 # ── 统一项目文件（project.json）模型 ────────────────────────────────────────
