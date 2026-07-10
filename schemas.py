@@ -20,7 +20,7 @@ class _BlankNumericNone(BaseModel):
 
 class Segment(_BlankNumericNone):
     speaker: str = Field(default="旁白")
-    text: str
+    text: str = Field(max_length=200_000)
     emotion: str = Field(default="neutral")
     style: Optional[str] = None
     ref_audio: Optional[str] = None
@@ -50,7 +50,7 @@ class RoleProfile(_BlankNumericNone):
 
 
 class TTSRequest(BaseModel):
-    text: str
+    text: str = Field(max_length=200_000)
     instruct: Optional[str] = None
     ref_audio: Optional[str] = None
     ref_text: Optional[str] = None
@@ -65,7 +65,7 @@ class TTSRequest(BaseModel):
 
 
 class NarrateRequest(BaseModel):
-    segments: List[Segment]
+    segments: List[Segment] = Field(max_length=10_000)
     silence_ms: int = 350
     output_name: str = "narration"
     role_profiles: Optional[Dict[str, RoleProfile]] = None
@@ -122,17 +122,17 @@ class LLMConfig(BaseModel):
 
 
 class ParseRequest(BaseModel):
-    text: str
+    text: str = Field(max_length=2_000_000)
     llm: LLMConfig
 
 
 class TextChunk(BaseModel):
     title: str = "全文"
-    content: str
+    content: str = Field(max_length=500_000)
 
 
 class SegmentPlanRequest(BaseModel):
-    text: str
+    text: str = Field(max_length=2_000_000)
     llm: LLMConfig
 
 
@@ -147,7 +147,7 @@ class AnalyzeChunksRequest(BaseModel):
 
 
 class AutoNarrateRequest(BaseModel):
-    text: str
+    text: str = Field(max_length=2_000_000)
     llm: LLMConfig
     silence_ms: int = 350
     output_name: str = "auto_narration"
@@ -169,7 +169,7 @@ class MergeRequest(BaseModel):
 
 
 class ImportSegmentsRequest(BaseModel):
-    content: str
+    content: str = Field(max_length=2_000_000)
 
 
 class ConnectivityTestRequest(BaseModel):
@@ -177,8 +177,8 @@ class ConnectivityTestRequest(BaseModel):
 
 
 class UploadRefAudioRequest(BaseModel):
-    filename: str
-    content_base64: str
+    filename: str = Field(max_length=255)
+    content_base64: str = Field(max_length=35 * 1024 * 1024)
 
 
 class TranscribeRefAudioRequest(BaseModel):
@@ -204,12 +204,12 @@ class ModelLoadRequest(BaseModel):
 
 
 class VoiceLibraryImportItem(BaseModel):
-    filename: str
-    content_base64: str
+    filename: str = Field(max_length=255)
+    content_base64: str = Field(max_length=35 * 1024 * 1024)
 
 
 class BatchImportVoiceLibraryRequest(BaseModel):
-    files: List[VoiceLibraryImportItem]
+    files: List[VoiceLibraryImportItem] = Field(max_length=64)
     transcribe_ref_text: bool = False
     backend: Optional[AudioBackendConfig] = None
 
@@ -234,13 +234,26 @@ class MergeAliasesRequest(BaseModel):
     llm: LLMConfig
 
 
+class AliasPreviewRequest(BaseModel):
+    text: str = Field(max_length=2_000_000)
+    role_hints: Optional[Any] = None
+
+
+class SilverCorrectionRequest(BaseModel):
+    text: str = Field(max_length=2_000_000)
+    segment: Dict[str, Any]
+    index: int = Field(ge=0, le=100_000)
+    previous_speaker: str = Field(max_length=200)
+    source: str = Field(default="ui", max_length=64)
+
+
 class CheckFilesRequest(BaseModel):
     files: List[str]  # file paths to check (as returned by /api/tts resp.file)
 
 
 class ParseV2Request(BaseModel):
     """结构化解析请求：使用 BookVoiceParser 规则层 + 可选 LLM 复核。"""
-    text: str
+    text: str = Field(max_length=2_000_000)
     # 角色提示：列表 ["张三","李四"] 或别名字典 {"张三":["三哥","张公子"]}
     role_hints: Optional[Any] = None
     # 第一人称叙述者角色名（如"甘织玲奈子"），设置后台词中「我」自动锚定到该角色
@@ -268,6 +281,7 @@ class AuditSegmentsRequest(BaseModel):
     role_hints: Optional[Any] = None  # dict{角色:[别名]} 或 list[str]
     hetero_llm: Optional[LLMConfig] = None  # 异构第二意见（可选，扫一致段）
     workers: int = 2
+    target_mode: str = "production"
 
 
 class ParseV2ReviewRequest(BaseModel):
@@ -312,6 +326,7 @@ class TTSStyleGenerateRequest(BaseModel):
     """固定 speaker 后，为 IndexTTS 生成段级 style/instruct。"""
     segments: List[Dict[str, Any]]
     llm: Optional[LLMConfig] = None
+    dense_llm: Optional[LLMConfig] = None
     batch_size: int = 10
     max_tokens: int = 2500
 

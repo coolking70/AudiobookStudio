@@ -14,6 +14,8 @@ import sys
 import threading
 import time
 import traceback
+import binascii
+import ipaddress
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
@@ -44,7 +46,7 @@ except ImportError:
     DataReader = None
     InputStreamOptions = None
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from audio_utils import (
@@ -68,6 +70,8 @@ from output_layout import (
 )
 from pipeline import ASR_MODEL_NAME, HF_CACHE_DIRS, MODEL_NAME, VOXCPM_MODEL_NAME, OmniVoicePipeline, VoxCPMPipeline, get_asr_runtime_dependency_status, get_runtime_dependency_status, get_voxcpm_runtime_dependency_status
 import project_store
+import learning_store
+from security import SecurityError, resolve_within, validate_remote_url
 from review_packet import apply_review_verdicts, build_review_packet
 from tts_style_service import build_style_items, generate_style_batch, resolve_style_llm_config
 from role_analyzer import (
@@ -94,6 +98,8 @@ from role_analyzer import (
 )
 from schemas import (
     AnalyzeChunksRequest,
+    AliasPreviewRequest,
+    SilverCorrectionRequest,
     AuditSegmentsRequest,
     AutoNarrateRequest,
     BatchImportVoiceLibraryRequest,
@@ -123,6 +129,20 @@ from schemas import (
 
 
 app = FastAPI(title="Audio Book Studio")
+
+
+@app.middleware("http")
+async def local_access_guard(request: Request, call_next):
+    if request.url.path.startswith(("/api/", "/file/")):
+        client_host = request.client.host if request.client else ""
+        try:
+            is_loopback = ipaddress.ip_address(client_host).is_loopback
+        except ValueError:
+            is_loopback = False
+        token = os.getenv("AUDIOBOOKSTUDIO_API_TOKEN", "").strip()
+        if not is_loopback and (not token or request.headers.get("x-audiobookstudio-token") != token):
+            return JSONResponse(status_code=403, content={"detail": "remote access requires AUDIOBOOKSTUDIO_API_TOKEN"})
+    return await call_next(request)
 pipeline_cache: dict[tuple[str, str, str], OmniVoicePipeline] = {}
 voxcpm_pipeline_cache: dict[tuple[str, str], VoxCPMPipeline] = {}
 
@@ -1398,7 +1418,14 @@ def save_ref_audio_from_base64(filename: str, content_base64: str) -> Path:
     if "," in raw:
         raw = raw.split(",", 1)[1]
 
-    content = base64.b64decode(raw)
+    if len(raw) > int(os.getenv("AUDIOBOOKSTUDIO_MAX_UPLOAD_B64", str(35 * 1024 * 1024))):
+        raise ValueError("uploaded audio is too large")
+    try:
+        content = base64.b64decode(raw, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("invalid base64 audio payload") from exc
+    if len(content) > int(os.getenv("AUDIOBOOKSTUDIO_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024))):
+        raise ValueError("uploaded audio is too large")
     target.write_bytes(content)
     return target
 
@@ -1496,7 +1523,8 @@ def build_merge_response_payload(
 
 def raise_api_error(exc: Exception) -> None:
     traceback.print_exc()
-    raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}") from exc
+    detail = f"{type(exc).__name__}: {exc}" if os.getenv("AUDIOBOOKSTUDIO_DEBUG_ERRORS", "").lower() in {"1", "true", "yes"} else "internal server error"
+    raise HTTPException(status_code=500, detail=detail) from exc
 
 
 def find_ai_helper_config_path() -> Path | None:
@@ -1540,7 +1568,7 @@ def load_ai_helper_llm_defaults() -> dict[str, object]:
 
     return {
         "base_url": base_url_match.group(1),
-        "api_key": api_key_match.group(1),
+        "api_key": api_key_match.group(1) if os.getenv("AUDIOBOOKSTUDIO_EXPOSE_DEFAULT_KEY", "").lower() in {"1", "true", "yes"} else "",
         "model": model,
         "temperature": 0.3,
         "max_tokens": 8000,
@@ -1557,7 +1585,7 @@ def normalize_remote_base_url(base_url: str | None) -> str:
     normalized = str(base_url or "").strip().rstrip("/")
     if not normalized:
         raise ValueError("远程 API Base URL 不能为空")
-    return normalized
+    return validate_remote_url(normalized)
 
 
 def normalize_openai_compat_base_url(base_url: str | None) -> str:
@@ -1566,18 +1594,16 @@ def normalize_openai_compat_base_url(base_url: str | None) -> str:
         raise ValueError("Base URL 不能为空")
     if normalized.endswith("/chat/completions"):
         normalized = normalized[: -len("/chat/completions")].rstrip("/")
-    if normalized.endswith("/v1"):
-        return normalized
-    return f"{normalized}/v1"
+    result = normalized if normalized.endswith("/v1") else f"{normalized}/v1"
+    return validate_remote_url(result)
 
 
 def normalize_mimo_base_url(base_url: str | None) -> str:
     normalized = str(base_url or MIMO_TTS_DEFAULT_BASE_URL).strip().rstrip("/")
     if not normalized:
         return MIMO_TTS_DEFAULT_BASE_URL
-    if normalized.endswith("/v1"):
-        return normalized
-    return f"{normalized}/v1"
+    result = normalized if normalized.endswith("/v1") else f"{normalized}/v1"
+    return validate_remote_url(result)
 
 
 def absolutize_remote_file_url(base_url: str, file_url: str | None) -> str | None:
@@ -3125,15 +3151,15 @@ def _load_book_voice_parser():
     if str(_bvp_root) not in _sys.path:
         _sys.path.insert(0, str(_bvp_root))
 
-    from book_voice_parser import BatchConfig, LLMRouterConfig, parse_novel, route_to_llm
+    from book_voice_parser import BatchConfig, LLMRouterConfig, parse_novel, route_dense_to_llm, route_to_llm
     from book_voice_parser.schema import AttributionType, SegmentEx
     from book_voice_parser.spc_ranker import OpenAICompatibleSPCRanker
 
-    return parse_novel, route_to_llm, LLMRouterConfig, OpenAICompatibleSPCRanker, SegmentEx, AttributionType, BatchConfig
+    return parse_novel, route_to_llm, route_dense_to_llm, LLMRouterConfig, OpenAICompatibleSPCRanker, SegmentEx, AttributionType, BatchConfig
 
 
 def _build_bvp_llm_config(llm):
-    _, _, LLMRouterConfig, _, _, _, _ = _load_book_voice_parser()
+    _, _, _, LLMRouterConfig, _, _, _, _ = _load_book_voice_parser()
     return LLMRouterConfig(
         base_url=str(llm.base_url),
         model=str(llm.model),
@@ -3342,7 +3368,7 @@ def _bvp_segment_to_dict(seg) -> dict[str, object]:
 
 
 def _dict_to_bvp_segment(data: dict[str, object]):
-    _, _, _, _, SegmentEx, AttributionType, _ = _load_book_voice_parser()
+    _, _, _, _, _, SegmentEx, AttributionType, _ = _load_book_voice_parser()
     attribution_type = data.get("attribution_type") or None
     if attribution_type:
         try:
@@ -3502,7 +3528,7 @@ def parse_text_v2(req: ParseV2Request):
     返回与 /api/parse 兼容的 segments 列表，并附带 confidence / evidence 等扩展字段。
     """
     try:
-        parse_novel, route_to_llm, _, OpenAICompatibleSPCRanker, _, _, BatchConfig = _load_book_voice_parser()
+        parse_novel, route_to_llm, route_dense_to_llm, _, OpenAICompatibleSPCRanker, _, _, BatchConfig = _load_book_voice_parser()
 
         # 构建 BatchConfig（BatchLLM 主管线）
         batch_llm_config = None
@@ -3530,6 +3556,13 @@ def parse_text_v2(req: ParseV2Request):
 
         # 可选：对低置信度片段调用 LLM 后处理复核
         llm_stats = {}
+        dense_llm_stats = {}
+        if req.dense_llm:
+            segments, dense_llm_stats = route_dense_to_llm(
+                segments,
+                _build_bvp_llm_config(req.dense_llm),
+                threshold=req.review_threshold,
+            )
         if req.use_llm_review and req.llm:
             segments, llm_stats = route_to_llm(
                 segments,
@@ -3543,6 +3576,7 @@ def parse_text_v2(req: ParseV2Request):
             "stats": {
                 **result.stats,
                 "llm_review": llm_stats,
+                "dense_model_route": dense_llm_stats,
                 "review_items_count": len(result.review_items),
             },
         }
@@ -3576,6 +3610,17 @@ async def audit_segments_stream(req: AuditSegmentsRequest):
         return {"base_url": str(cfg.base_url), "api_key": str(cfg.api_key or ""),
                 "model": str(cfg.model), "max_tokens": 2000, "disable_thinking": True}
 
+    hetero_cfg = req.hetero_llm
+    if hetero_cfg is None:
+        hetero_base = os.getenv("AUDIOBOOKSTUDIO_HETERO_AUDIT_BASE_URL", "").strip()
+        hetero_model = os.getenv("AUDIOBOOKSTUDIO_HETERO_AUDIT_MODEL", "").strip()
+        if hetero_base and hetero_model:
+            hetero_cfg = type("EnvLLM", (), {
+                "base_url": hetero_base,
+                "api_key": os.getenv("AUDIOBOOKSTUDIO_HETERO_AUDIT_API_KEY", ""),
+                "model": hetero_model,
+            })()
+
     # roster/alias_map 来自 role_hints（dict{角色:[别名]} 或 list[str]）
     roster = None
     alias_map: dict[str, str] = {}
@@ -3594,8 +3639,9 @@ async def audit_segments_stream(req: AuditSegmentsRequest):
             result = audit_segments(
                 req.text, req.segments, _llm_dict(req.llm),
                 narrator=req.narrator or None, roster=roster, alias_map=alias_map,
-                hetero_llm=_llm_dict(req.hetero_llm) if req.hetero_llm else None,
-                workers=max(1, min(4, req.workers)), on_progress=on_progress)
+                hetero_llm=_llm_dict(hetero_cfg) if hetero_cfg else None,
+                workers=max(1, min(4, req.workers)), on_progress=on_progress,
+                target_mode=req.target_mode)
             asyncio.run_coroutine_threadsafe(
                 queue.put({"type": "complete", **result}), loop)
         except Exception as exc:  # noqa: BLE001
@@ -3624,7 +3670,7 @@ async def parse_v2_stream(req: ParseV2Request):
     """
     import asyncio, json as _json, concurrent.futures
 
-    parse_novel, route_to_llm, _, OpenAICompatibleSPCRanker, _, _, BatchConfig = _load_book_voice_parser()
+    parse_novel, route_to_llm, _, _, OpenAICompatibleSPCRanker, _, _, BatchConfig = _load_book_voice_parser()
 
     batch_llm_config = None
     if req.use_batch_llm and req.llm:
@@ -3744,7 +3790,7 @@ def review_parse_v2_segment(req: ParseV2ReviewOneRequest):
         if req.index < 0 or req.index >= len(req.segments):
             raise HTTPException(status_code=400, detail=f"review index out of range: {req.index}")
 
-        _, route_to_llm, _, _, _, _, _ = _load_book_voice_parser()
+        _, route_to_llm, _, _, _, _, _, _ = _load_book_voice_parser()
         segments = [_dict_to_bvp_segment(item) for item in req.segments]
         original = segments[req.index].model_copy()
         if str(getattr(req, "review_mode", "") or "").lower() == "generic_relation":
@@ -4248,6 +4294,34 @@ def import_segments(req: ImportSegmentsRequest):
         }
     except Exception as exc:
         raise_api_error(exc)
+
+
+@app.post("/api/character-aliases/preview")
+def preview_character_aliases(req: AliasPreviewRequest):
+    """Deterministically preview aliases before any LLM merge operation."""
+    try:
+        parse_novel, _, _, _, _, _, _, _ = _load_book_voice_parser()
+        result = parse_novel(req.text, role_hints=req.role_hints, return_result=True)
+        inferred = result.stats.get("inferred_aliases") or {}
+        return {"ok": True, "alias_map": inferred, "stats": result.stats}
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.post("/api/learning/silver")
+def record_silver_correction(req: SilverCorrectionRequest):
+    try:
+        return {"ok": True, **learning_store.append_correction(
+            text=req.text, segment=req.segment, index=req.index,
+            previous_speaker=req.previous_speaker, source=req.source,
+        )}
+    except Exception as exc:
+        raise_api_error(exc)
+
+
+@app.get("/api/learning/silver/stats")
+def silver_learning_stats():
+    return {"ok": True, **learning_store.stats()}
 
 
 @app.post("/api/review-packet/generate")
@@ -4804,9 +4878,9 @@ def merge_audio(req: MergeRequest):
 
         for file_name in req.wav_files:
             requested = Path(file_name)
-            wav_path = OUTPUT_DIR / requested
+            wav_path = resolve_within(requested, OUTPUT_DIR)
             if not wav_path.exists():
-                wav_path = OUTPUT_DIR / requested.name
+                wav_path = resolve_within(requested.name, OUTPUT_DIR)
             if not wav_path.exists():
                 raise FileNotFoundError(f"找不到分段音频: {requested}")
             wav_paths.append(wav_path)
@@ -4844,7 +4918,7 @@ def check_files(req: CheckFilesRequest):
     result: dict[str, bool] = {}
     for raw_path in req.files[:2000]:  # safety cap
         try:
-            p = Path(raw_path)
+            p = resolve_within(raw_path.removeprefix("outputs/").removeprefix("outputs\\"), OUTPUT_DIR)
             result[raw_path] = p.is_file() and p.stat().st_size > 100
         except Exception:
             result[raw_path] = False
@@ -5142,7 +5216,10 @@ def mcp_source_text():
 
 @app.get("/file/{name:path}")
 def get_file(name: str):
-    path = Path("outputs") / name
+    try:
+        path = resolve_within(name, OUTPUT_DIR)
+    except SecurityError:
+        raise HTTPException(status_code=404, detail="file not found") from None
     if not path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")
     media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"

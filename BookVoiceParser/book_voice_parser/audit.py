@@ -19,6 +19,48 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
+
+def select_production_targets(
+    segments: list[dict], *, threshold: float = 0.7,
+    alias_map: dict[str, str] | None = None, window: int = 4,
+) -> tuple[list[int], dict[int, list[str]], dict[str, int]]:
+    """Select audit targets from production-observable signal intersections."""
+    a2c = dict(alias_map or {})
+    reasons: dict[int, list[str]] = {}
+    counts = {"named": 0, "selected": 0, "low_confidence": 0, "dense_scene": 0,
+              "candidate_conflict": 0, "review_evidence": 0, "unresolved": 0}
+    for i, seg in enumerate(segments):
+        speaker = str(seg.get("speaker") or "")
+        if speaker in _NARRATION_SPEAKERS or not seg.get("text"):
+            continue
+        counts["named"] += 1
+        signals: list[str] = []
+        try:
+            confidence = float(seg.get("confidence", 1.0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        if confidence < threshold:
+            signals.append("low_confidence")
+            counts["low_confidence"] += 1
+        if _scene_density(segments, i, a2c, window=window) >= 3:
+            signals.append("dense_scene")
+            counts["dense_scene"] += 1
+        candidates = [str(x) for x in (seg.get("candidates") or []) if str(x).strip()]
+        if candidates and speaker in candidates and speaker != candidates[0]:
+            signals.append("candidate_conflict")
+            counts["candidate_conflict"] += 1
+        evidence = str(seg.get("evidence") or "")
+        if seg.get("_needs_review") or "review" in evidence.lower() or "寰呬汉宸?" in evidence:
+            signals.append("review_evidence")
+            counts["review_evidence"] += 1
+        if speaker in {"UNKNOWN", "鏈煡", "鏈煡涓存椂浜虹墿"} or not candidates:
+            signals.append("unresolved")
+            counts["unresolved"] += 1
+        if len(signals) >= 2:
+            reasons[i] = signals
+    counts["selected"] = len(reasons)
+    return sorted(reasons), reasons, counts
+
 _STRIP = set("「」『』《》〈〉 \t\r\n　")
 _NARRATION_SPEAKERS = {"旁白", "未知", "未知临时人物", "其他", "UNKNOWN", ""}
 
@@ -154,6 +196,7 @@ def audit_segments(
     workers: int = 2,
     context_chars: int = 800,
     on_progress: Callable[[int, int], None] | None = None,
+    target_mode: str = "production",
 ) -> dict:
     """对段列表做机器审计。
 
@@ -169,8 +212,13 @@ def audit_segments(
         sorted({canon(s.get("speaker", "")) for s in segments
                 if s.get("speaker") and s["speaker"] not in _NARRATION_SPEAKERS}))
 
-    targets = [i for i, s in enumerate(segments)
-               if str(s.get("speaker", "")) not in _NARRATION_SPEAKERS and s.get("text")]
+    if str(target_mode or "production").lower() == "all":
+        targets = [i for i, s in enumerate(segments)
+                   if str(s.get("speaker", "")) not in _NARRATION_SPEAKERS and s.get("text")]
+        target_reasons = {i: ["all_mode"] for i in targets}
+        target_counts = {"named": len(targets), "selected": len(targets)}
+    else:
+        targets, target_reasons, target_counts = select_production_targets(segments, alias_map=a2c)
     n = len(segments)
     details: dict[int, dict] = {}
     tier1 = [False] * n
@@ -216,6 +264,7 @@ def audit_segments(
                     priorities[i] = _signal_priority(flags, is_dense)
             details[i] = {"reask": (r or {}).get("speaker"),
                           "reask_reason": (r or {}).get("reason"), "flags": flags,
+                          "target_reasons": target_reasons.get(i, []),
                           "priority": priorities.get(i)}
 
     if hetero_llm:
@@ -260,5 +309,7 @@ def audit_segments(
         "audited": len(targets),
         "stats": {
             "downgraded_to_tier2": len(downgraded),
+            "target_mode": str(target_mode or "production"),
+            "target_signals": target_counts,
         },
     }

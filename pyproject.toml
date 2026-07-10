@@ -1,0 +1,29 @@
+[project]
+name = "audiobook-studio"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "soundfile",
+  "python-multipart",
+  "httpx",
+  "numpy",
+  "scipy",
+  "pydantic>=2,<3",
+  "psutil",
+  "imageio-ffmpeg",
+  "mcp[cli]>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "ruff>=0.8,<1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+exclude = ["outputs", ".workbuddy"]

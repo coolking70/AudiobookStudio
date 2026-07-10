@@ -14,17 +14,15 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from .batch_llm_attributor import BatchConfig, BatchLLMAttributor
 from .schema import AttributionType, CandidateSet as BatchCandidateSet, QuoteSpan as BatchQuoteSpan, SegmentEx
 from .spc_ranker import (
     CandidateSet,
     OpenAICompatibleSPCRanker,
     QuoteSpan,
-    build_spc_task,
-    build_spc_prompt,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ── 默认复核阈值 ───────────────────────────────────────────────────────────
@@ -413,9 +411,6 @@ def route_to_llm(
 
         quote_span = _segment_to_quote_span(seg)
         candidate_set = _segment_to_candidate_set(seg)
-        task = build_spc_task(quote_span, candidate_set, recent_speakers=recent)
-        messages = build_spc_prompt(task)
-
         try:
             attribution = ranker.rank(quote_span, candidate_set, recent_speakers=recent)
         except Exception as exc:
@@ -470,6 +465,40 @@ def route_to_llm(
             confirmed_speakers.append(seg.speaker)
 
     return updated, stats
+
+
+def route_dense_to_llm(
+    segments: list[SegmentEx],
+    llm_config: LLMRouterConfig | Any,
+    *,
+    threshold: float = DEFAULT_THRESHOLD,
+    window: int = 4,
+    min_scene_size: int = 3,
+) -> tuple[list[SegmentEx], dict[str, Any]]:
+    """Route only dense multi-speaker windows to an opt-in strong model."""
+    names = [str(seg.speaker or "") for seg in segments]
+    targets: set[int] = set()
+    for idx, name in enumerate(names):
+        if name in SKIP_SPEAKERS:
+            continue
+        local = {names[j] for j in range(max(0, idx - window), min(len(names), idx + window + 1)) if names[j] not in SKIP_SPEAKERS}
+        if len(local) >= min_scene_size:
+            targets.add(idx)
+    if not targets:
+        return [seg.model_copy() for seg in segments], {"mode": "dense_model_route", "targets": 0}
+    routed = [seg.model_copy() for seg in segments]
+    original_confidences = [seg.confidence for seg in routed]
+    for idx in targets:
+        routed[idx].confidence = min(float(routed[idx].confidence or 0.0), threshold - 0.01)
+    for idx in range(len(routed)):
+        if idx not in targets:
+            routed[idx].confidence = 1.0
+    routed, stats = route_to_llm(routed, llm_config, threshold=threshold)
+    for idx in range(len(routed)):
+        if idx not in targets:
+            routed[idx].confidence = original_confidences[idx]
+    stats.update({"mode": "dense_model_route", "targets": len(targets), "target_indices": sorted(targets)})
+    return routed, stats
 
 
 def route_to_batch_llm(

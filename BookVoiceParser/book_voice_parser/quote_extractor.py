@@ -5,6 +5,9 @@ import re
 from .schema import QuoteSpan
 
 
+SMART_SINGLE_QUOTE_RE = re.compile(r"\u2018(?P<single>[^\u2019\n]{1,1500})\u2019")
+
+
 # 允许内层一级嵌套引号（如「...以「词语」为标语...」），外层最多 1500 字
 BRACKET_QUOTE_RE = re.compile(r"「(?P<bracket>(?:[^「」]|「[^「」]*」){1,1500})」|\"(?P<ascii>[^\"\n]{1,300})\"")
 COLON_QUOTE_RE = re.compile(
@@ -61,15 +64,24 @@ def extract_quotes(text: str, context_chars: int = 120, prefix: str = "q") -> li
     occupied: list[tuple[int, int]] = []
 
     for match in BRACKET_QUOTE_RE.finditer(text):
-        quote_text = (match.group("bracket") or match.group("ascii") or "").strip()
+        quote_text = (match.group("bracket") or match.group("ascii") or "").strip().strip("\u2018\u2019")
         # 过滤名词性引用（「X」的声音 / 「X」这个 / 「X」一声 / 称为「X」）
         if _is_nominal_quote(match.start(), match.end(), text):
             continue
         extracted.append((match.start(), match.end(), match.start(), match.end(), quote_text, match.group(0)))
         occupied.append((match.start(), match.end()))
 
-    for match in COLON_QUOTE_RE.finditer(text):
+    for match in SMART_SINGLE_QUOTE_RE.finditer(text):
         if any(start <= match.start() < end for start, end in occupied):
+            continue
+        quote_text = (match.group("single") or "").strip()
+        if not quote_text or _is_nominal_quote(match.start(), match.end(), text):
+            continue
+        extracted.append((match.start(), match.end(), match.start("single"), match.end("single"), quote_text, match.group(0)))
+        occupied.append((match.start(), match.end()))
+
+    for match in COLON_QUOTE_RE.finditer(text):
+        if any(start < match.end("quote") and match.start("quote") < end for start, end in occupied):
             continue
         quote_text = match.group("quote").strip()
         extracted.append((match.start(), match.end(), match.start("quote"), match.end("quote"), quote_text, match.group(0)))

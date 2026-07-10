@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+import sys
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -20,6 +22,11 @@ from .review_router import collect_review_items
 from .rule_attributor import attribute_explicit
 from .schema import Attribution, AttributionType, CandidateSet, ParseResult, QuoteSpan, SegmentEx
 from .spc_ranker import CandidateRanker, OpenAICompatibleSPCRanker
+try:
+    from confidence_calibration import calibrate_segments, load_calibrator
+except ImportError:  # CLI tools may put only BookVoiceParser/ on sys.path.
+    sys.path.insert(0, str(__file__.replace("\\", "/").rsplit("/", 3)[0]))
+    from confidence_calibration import calibrate_segments, load_calibrator
 
 
 NARRATOR_CUE_ONLY_RE = re.compile(
@@ -1525,7 +1532,7 @@ def parse_novel(
 
     # ── 批量 LLM 路径（P0）────────────────────────────────────────────────────
     if batch_llm_config is not None:
-        return _parse_with_batch_llm(
+        parsed = _parse_with_batch_llm(
             cleaned=cleaned,
             quotes=quotes,
             aliases=aliases,
@@ -1543,6 +1550,7 @@ def parse_novel(
             first_pass=first_pass,
             block_review_conservative=block_review_conservative,
         )
+        return _apply_optional_calibration(parsed, return_result=return_result)
 
     # ── 经典逐条路径（兼容旧接口）──────────────────────────────────────────────
     segments: list[SegmentEx] = []
@@ -1640,4 +1648,21 @@ def parse_novel(
             "address_term_backcheck": address_term_stats,
         },
     )
-    return result if return_result else result.segments
+    return _apply_optional_calibration(result, return_result=return_result)
+
+
+def _apply_optional_calibration(result: ParseResult | list[SegmentEx], *, return_result: bool):
+    path = os.getenv("AUDIOBOOKSTUDIO_CONFIDENCE_CALIBRATOR", "").strip()
+    if path:
+        try:
+            artifact = load_calibrator(path)
+            segments = result.segments if isinstance(result, ParseResult) else result
+            changed = calibrate_segments(segments, artifact)
+            if isinstance(result, ParseResult):
+                result.stats["confidence_calibration"] = {"enabled": True, "changed": changed, "artifact": path}
+                result.review_items = collect_review_items(segments, threshold=0.7)
+        except Exception as exc:  # noqa: BLE001 - calibration must fail safe
+            logger.warning("[parser] confidence calibration skipped: %s", exc)
+    if isinstance(result, ParseResult):
+        return result if return_result else result.segments
+    return result

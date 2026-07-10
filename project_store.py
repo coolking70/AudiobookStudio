@@ -24,6 +24,7 @@ from typing import Iterable, Optional
 from audio_utils import build_lrc, get_wav_duration_seconds, join_wavs_auto
 from character_registry import SKIP_SPEAKERS
 from output_layout import OUTPUT_DIR, _sanitize_component
+from security import resolve_within
 from schemas import (
     PROJECT_SCHEMA_VERSION,
     CastMember,
@@ -259,11 +260,12 @@ def _resolve_existing_clip(clip: object) -> Optional[Path]:
     raw = str(clip or "").strip()
     if not raw:
         return None
-    for cand in (Path(raw), OUTPUT_DIR / raw, OUTPUT_DIR / Path(raw).name):
+    for candidate in (Path(raw), OUTPUT_DIR / raw, OUTPUT_DIR / Path(raw).name):
         try:
+            cand = resolve_within(candidate, OUTPUT_DIR)
             if cand.is_file():
                 return cand
-        except OSError:
+        except (OSError, ValueError):
             continue
     return None
 
@@ -445,8 +447,11 @@ def merge_project(project: Project, *, silence_ms: Optional[int] = None, write_l
     lyric_lines: list[str] = []
     for seg in ordered:
         if seg.gen.status == "done" and seg.gen.clip:
-            clip = pdir / seg.gen.clip
-            if clip.exists():
+            try:
+                clip = resolve_within(seg.gen.clip, pdir)
+            except ValueError:
+                continue
+            if clip.is_file():
                 wav_paths.append(str(clip))
                 lyric_lines.append(f"{seg.speaker}：{seg.text}" if seg.speaker not in SKIP_SPEAKERS else seg.text)
     if not wav_paths:

@@ -16,6 +16,7 @@ except ImportError:
 from schemas import LLMConfig
 from local_llm import get_local_llm_runner
 from output_layout import get_temp_archive_dir
+from security import validate_remote_url
 
 
 class LLMContentFilterError(RuntimeError):
@@ -38,8 +39,8 @@ class OpenAICompatibleClient:
         if base.endswith("/chat/completions"):
             base = base[: -len("/chat/completions")].rstrip("/")
         if base.endswith("/v1"):
-            return base
-        return f"{base}/v1"
+            return validate_remote_url(base)
+        return validate_remote_url(f"{base}/v1")
 
     def _chat_completions_url(self) -> str:
         base = (getattr(self.config, "base_url", "") or "").strip().rstrip("/")

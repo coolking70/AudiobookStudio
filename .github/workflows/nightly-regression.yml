@@ -1,0 +1,21 @@
+name: nightly-regression
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python tools/build_regression_dashboard.py --output /tmp/regression-dashboard.json
+      - run: python -c "import json; d=json.load(open('/tmp/regression-dashboard.json', encoding='utf-8')); assert d['overall']['accuracy'] >= 0.90, d['overall']"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: regression-dashboard
+          path: /tmp/regression-dashboard.*

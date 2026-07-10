@@ -4,6 +4,7 @@ soundfile
 python-multipart
 httpx
 numpy
+scipy
 pydantic>=2,<3
 psutil
 imageio-ffmpeg

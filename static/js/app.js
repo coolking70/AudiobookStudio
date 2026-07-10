@@ -2705,7 +2705,17 @@ very high pitch, very low pitch, whisper, young adult
       input?.focus();
       return;
     }
-    segmentsState[index] = resolveSegmentManualReview(segmentsState[index] || {}, nextSpeaker);
+    const previousSegment = { ...(segmentsState[index] || {}) };
+    const previousSpeaker = String(previousSegment.speaker || "").trim();
+    segmentsState[index] = resolveSegmentManualReview(previousSegment, nextSpeaker);
+    fetch("/api/learning/silver", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: auditContextState?.text || document.getElementById("sourceText")?.value || "",
+        segment: segmentsState[index], index, previous_speaker: previousSpeaker, source: "content_filter_review",
+      }),
+    }).catch((error) => console.warn("silver correction save failed", error));
     ensureRoleProfile(nextSpeaker);
     renderRoles();
     renderRoleAssignments();
@@ -2729,7 +2739,17 @@ very high pitch, very low pitch, whisper, young adult
       input?.focus();
       return;
     }
-    segmentsState[index] = resolveSegmentManualReview(segmentsState[index] || {}, nextSpeaker);
+    const previousSegment = { ...(segmentsState[index] || {}) };
+    const previousSpeaker = String(previousSegment.speaker || "").trim();
+    segmentsState[index] = resolveSegmentManualReview(previousSegment, nextSpeaker);
+    fetch("/api/learning/silver", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: auditContextState?.text || document.getElementById("sourceText")?.value || "",
+        segment: segmentsState[index], index, previous_speaker: previousSpeaker, source: "review_workbench",
+      }),
+    }).catch((error) => console.warn("silver correction save failed", error));
     ensureRoleProfile(nextSpeaker);
     renderRoles();
     renderRoleAssignments();
@@ -8701,10 +8721,13 @@ very high pitch, very low pitch, whisper, young adult
       const t1 = new Set(result.tier1 || []); const t2 = new Set(result.tier2 || []);
       segmentsState.forEach((seg, i) => {
         const d = (result.details || {})[String(i)] || (result.details || {})[i] || {};
+        seg._audit_detail = d;
         seg._audit_tier = t1.has(i) ? 1 : (t2.has(i) ? 2 : 0);
         seg._audit_priority = d.priority != null ? d.priority : (t1.has(i) ? 99 : null);
         const prefix = d.priority ? `[P${d.priority}] ` : "";
-        seg._audit_hint = prefix + (d.flags || []).join("；");
+        const targetReasons = (d.target_reasons || []).join("、");
+        const reask = d.reask ? `建议=${d.reask}` : "";
+        seg._audit_hint = prefix + (d.flags || []).join("；") + (reask ? `；${reask}` : "") + (targetReasons ? `；信号=${targetReasons}` : "");
         seg._needs_review = t1.has(i); // 每轮审计全量刷新：tier1 标记，其余清除旧标记
       });
       const saved = (result.stats || {}).downgraded_to_tier2 || 0;

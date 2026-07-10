@@ -661,10 +661,15 @@ class BatchLLMAttributor:
         )
         max_retries = self._max_rate_limit_retries()
         attempt = 0
+        raw_base_url = str(self.cfg.base_url or "").strip().rstrip("/")
+        base_url = self._normalize_base_url()
+        urls = [f"{base_url}/chat/completions"]
+        if not raw_base_url.endswith("/v1") and not raw_base_url.endswith("/chat/completions"):
+            urls.append(f"{raw_base_url}/chat/completions")
         with httpx.Client(timeout=timeout, trust_env=False) as client:
             while True:
                 response = client.post(
-                    f"{self._normalize_base_url()}/chat/completions",
+                    urls[min(attempt, len(urls) - 1)],
                     headers=headers,
                     json=payload,
                 )
@@ -676,6 +681,10 @@ class BatchLLMAttributor:
                     delay = self._rate_limit_delay(response, attempt)
                     logger.warning("BatchLLM HTTP 429 限流，%.0fs 后重试（第 %d/%d 次）", delay, attempt + 1, max_retries)
                     time.sleep(delay)
+                    attempt += 1
+                    continue
+                if response.status_code == 404 and attempt < len(urls) - 1:
+                    logger.warning("BatchLLM HTTP 404，尝试兼容路径 %s", urls[attempt + 1])
                     attempt += 1
                     continue
                 response.raise_for_status()

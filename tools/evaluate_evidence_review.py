@@ -14,7 +14,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-from openai import OpenAI
+try:
+    from openai import OpenAI
+except ImportError:  # offline scoring/gating does not require the client SDK
+    OpenAI = None
 
 REPO = Path(__file__).resolve().parents[1]
 SAMP = REPO / "docs/samples"
@@ -341,7 +344,7 @@ def apply_reviews(
     reason_gate: str = "none",
     review_style: str = "evidence",
     type_thresholds: dict[str, float] | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     updated = [dict(s) for s in parse_segments]
     stats = {
         "reviewed": 0,
@@ -351,8 +354,10 @@ def apply_reviews(
         "ignored": 0,
         "blocked_by_reason_gate": 0,
         "blocked_by_audit_gate": 0,
+        "blocked_by_address_term_gate": 0,
         "type_threshold_applied": 0,
     }
+    chain_review_indices: set[int] = set()
     type_thresholds = type_thresholds or {}
     for r in reviews:
         try:
@@ -405,6 +410,18 @@ def apply_reviews(
                     stats["blocked_by_audit_gate"] += 1
                     stats["uncertain"] += 1
                     continue
+            if counter_type == "address_term":
+                # A vocative identifies the addressee, not the speaker. Only
+                # an explicit first-person/action-subject explanation can
+                # override this hard gate.
+                address_override = re.search(r"第一人称|动作主语|我(?:说|问|道)|(?:说|问|回答|喊|道)出|explicit", reason, re.I)
+                if not address_override:
+                    updated[i]["evidence"] = (
+                        f"{updated[i].get('evidence') or ''}; address_term_gate_blocked: {reason}"
+                    )
+                    stats["blocked_by_address_term_gate"] += 1
+                    stats["uncertain"] += 1
+                    continue
             if reason_gate == "strong" and not STRONG_REASON_RE.search(reason):
                 updated[i]["evidence"] = f"{updated[i].get('evidence') or ''}；证据复核待人工({conf:.2f}): 反证不够强：{reason}"
                 stats["blocked_by_reason_gate"] += 1
@@ -415,12 +432,14 @@ def apply_reviews(
             updated[i]["confidence"] = max(conf, float(updated[i].get("confidence") or 0.0))
             updated[i]["evidence"] = f"证据复核改判：{old}→{speaker}({conf:.2f}); {reason}; {updated[i].get('evidence') or ''}"
             stats["revised"] += 1
+            chain_review_indices.update(j for j in (i - 1, i, i + 1) if 0 <= j < len(updated))
         elif decision == "keep":
             updated[i]["evidence"] = f"{updated[i].get('evidence') or ''}；证据复核确认({conf:.2f}): {reason}"
             stats["kept"] += 1
         else:
             updated[i]["evidence"] = f"{updated[i].get('evidence') or ''}；证据复核待人工({conf:.2f}): {reason}"
             stats["uncertain"] += 1
+    stats["chain_review_indices"] = sorted(chain_review_indices)
     return updated, stats
 
 
