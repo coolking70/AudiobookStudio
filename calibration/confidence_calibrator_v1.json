@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "method": "isotonic_equal_width",
+  "bins": 10,
+  "values": [
+    0.5,
+    0.5,
+    0.55,
+    0.55,
+    0.55,
+    0.631579,
+    0.870206,
+    0.870206,
+    0.870206,
+    0.965517
+  ],
+  "counts": [
+    0,
+    0,
+    1,
+    0,
+    8,
+    19,
+    486,
+    2,
+    190,
+    1508
+  ],
+  "samples": 2214,
+  "source": "docs/samples",
+  "validation": {
+    "samples": [
+      "muli4_seg7b_side_kaho",
+      "muli4_seg8",
+      "muli4_seg8b_side_mayu",
+      "muli4_seg9"
+    ],
+    "raw": {
+      "samples": 501,
+      "brier": 0.12969062,
+      "ece": 0.13668663
+    },
+    "calibrated": {
+      "samples": 501,
+      "brier": 0.10149758,
+      "ece": 0.02322862
+    }
+  },
+  "promoted": true
+}

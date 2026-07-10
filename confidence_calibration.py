@@ -49,6 +49,34 @@ def apply_calibration(score: float, artifact: dict | None) -> float:
     return min(1.0, max(0.0, values[idx]))
 
 
+def calibration_metrics(
+    pairs: Iterable[tuple[float, bool]],
+    artifact: dict | None = None,
+    *,
+    bins: int = 10,
+) -> dict:
+    """Return Brier score and expected calibration error for an independent set."""
+    items = [
+        (apply_calibration(score, artifact), 1.0 if correct else 0.0)
+        for score, correct in pairs
+    ]
+    if not items:
+        return {"samples": 0, "brier": None, "ece": None}
+    bucket_count = max(2, int(bins))
+    grouped: list[list[tuple[float, float]]] = [[] for _ in range(bucket_count)]
+    for score, outcome in items:
+        grouped[min(bucket_count - 1, int(min(0.999999, max(0.0, score)) * bucket_count))].append((score, outcome))
+    brier = sum((score - outcome) ** 2 for score, outcome in items) / len(items)
+    ece = 0.0
+    for bucket in grouped:
+        if not bucket:
+            continue
+        mean_score = sum(score for score, _ in bucket) / len(bucket)
+        accuracy = sum(outcome for _, outcome in bucket) / len(bucket)
+        ece += (len(bucket) / len(items)) * abs(mean_score - accuracy)
+    return {"samples": len(items), "brier": round(brier, 8), "ece": round(ece, 8)}
+
+
 def load_calibrator(path: str | Path) -> dict:
     data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
     if not isinstance(data, dict) or data.get("version") != 1 or not isinstance(data.get("values"), list):
