@@ -190,6 +190,14 @@ def audit_disagrees(parse_seg: dict[str, Any], audit_item: dict[str, Any]) -> bo
     return bool(reask) and canon(reask) != canon(current)
 
 
+def load_scene_brief(path: Path | None) -> str:
+    if not path:
+        return ""
+    if not path.exists():
+        raise FileNotFoundError(f"scene brief not found: {path}")
+    return path.read_text(encoding="utf-8").strip()
+
+
 def as_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
@@ -258,8 +266,17 @@ def build_user_prompt(
     parse_segments: list[dict[str, Any]],
     indices: list[int],
     audit: dict[int, dict[str, Any]] | None = None,
+    scene_brief: str = "",
 ) -> str:
     lines = [f"样本：{seg_name}", "请复核以下目标："]
+    if scene_brief:
+        lines.extend([
+            "",
+            "【全局场景摘要与身份事实】",
+            scene_brief,
+            "",
+            "注意：全局摘要只作为场景/身份背景，不能覆盖台词附近的明确动作主语或后文明示。",
+        ])
     for i in indices:
         s = parse_segments[i]
         ev = parse_evidence(str(s.get("evidence") or ""))
@@ -321,8 +338,9 @@ def call_review(
     timeout: int,
     audit: dict[int, dict[str, Any]] | None = None,
     review_style: str = "evidence",
+    scene_brief: str = "",
 ) -> list[dict[str, Any]]:
-    user = build_user_prompt(seg_name, parse_segments, indices, audit=audit)
+    user = build_user_prompt(seg_name, parse_segments, indices, audit=audit, scene_brief=scene_brief)
     system_prompt = AUDIT_SAFE_SYSTEM_PROMPT if review_style == "audit-safe" else SYSTEM_PROMPT
     resp = call_with_404_backoff(
         lambda: client.chat.completions.create(
@@ -456,6 +474,8 @@ def main() -> None:
     ap.add_argument("--target-mode", default="flagged",
                     choices=["flagged", "errors", "errors-and-controls", "audit-disagree", "audit-disagree-all"])
     ap.add_argument("--audit", type=Path, help="Optional machine-audit JSON with reask second opinions")
+    ap.add_argument("--scene-brief", type=Path,
+                    help="Optional chapter/scene summary and identity facts injected into review prompts.")
     ap.add_argument("--limit", type=int, default=24)
     ap.add_argument("--batch-size", type=int, default=6)
     ap.add_argument("--min-confidence", type=float, default=0.85)
@@ -480,8 +500,11 @@ def main() -> None:
     parse_segments = load_segments(args.parse)
     type_thresholds = parse_type_thresholds(args.type_thresholds)
     audit = load_audit(args.audit)
+    scene_brief = load_scene_brief(args.scene_brief)
     targets = choose_targets(args.seg, parse_segments, args.target_mode, args.limit, audit=audit)
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    if OpenAI is None:
+        raise SystemExit("openai package is required only for live evidence review; offline apply/score is available")
     client = OpenAI(base_url=PROVIDERS[args.provider], api_key=api_key)
 
     print(f"provider={args.provider} model={args.model} targets={len(targets)} mode={args.target_mode}")
@@ -499,6 +522,7 @@ def main() -> None:
                 args.timeout,
                 audit=audit,
                 review_style=args.review_style,
+                scene_brief=scene_brief,
             )
         except Exception as exc:  # noqa: BLE001
             print(f"batch failed: {exc}", flush=True)
@@ -524,6 +548,7 @@ def main() -> None:
         "stats": stats,
         "review_style": args.review_style,
         "type_thresholds": type_thresholds,
+        "scene_brief": scene_brief,
     },
                                      ensure_ascii=False, indent=1), encoding="utf-8")
 

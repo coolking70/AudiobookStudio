@@ -1,0 +1,547 @@
+{
+ "part": "muli_5_part_005",
+ "method": "single-pass(整文+角色表) 第二意见 vs 流水线，suggest-only 未自动改写",
+ "note": "分歧供人工复核：单遍召回高(~98%)但精度~51%，含双人轮换相位翻转误报。 | 已人工复核：applied=已改入快照, kept=维持流水线；含1条手动改判(322,单遍亦误)。",
+ "dialogue_segments_checked": 469,
+ "flags": 61,
+ "items": [
+  {
+   "part005_index_1based": 4,
+   "quote_id": "q1978",
+   "pipeline_speaker": "亮发少女",
+   "singlepass_suggestion": "高田卑弥呼",
+   "text": "啥？甘织你这种人也敢这么嚣张啊。",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 29,
+   "quote_id": "q1992",
+   "pipeline_speaker": "濑名紫阳花",
+   "singlepass_suggestion": "王冢真唯",
+   "text": "玲奈子。",
+   "resolution": "applied",
+   "applied_speaker": "王冢真唯"
+  },
+  {
+   "part005_index_1based": 45,
+   "quote_id": "q2001",
+   "pipeline_speaker": "濑名紫阳花",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "……唉？",
+   "resolution": "applied",
+   "applied_speaker": "甘织玲奈子"
+  },
+  {
+   "part005_index_1based": 47,
+   "quote_id": "q2002",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "濑名紫阳花",
+   "text": "虽然我也稍微练了一点垒球……不过，我觉得没关系。",
+   "resolution": "applied",
+   "applied_speaker": "濑名紫阳花"
+  },
+  {
+   "part005_index_1based": 70,
+   "quote_id": "q2017",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "濑名紫阳花",
+   "text": "我以前说过。我不想让你痛苦，不想让你难过。可以的话，我愿意替你承担一切，现在也一直是这样想的。",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 79,
+   "quote_id": "q2023",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "濑名紫阳花",
+   "text": "关于这点，我们是彼此彼此喔……毕竟是我先在暑假的时候拉着小玲奈到处跑的嘛。",
+   "resolution": "applied",
+   "applied_speaker": "濑名紫阳花"
+  },
+  {
+   "part005_index_1based": 93,
+   "quote_id": "q2031",
+   "pipeline_speaker": "濑名紫阳花",
+   "singlepass_suggestion": "王冢真唯",
+   "text": "若是玲奈子因为发烧病倒，想必我可以作为替补选手参赛吧。如果只投一场比赛，也就不过是热身而已。",
+   "resolution": "applied",
+   "applied_speaker": "王冢真唯"
+  },
+  {
+   "part005_index_1based": 96,
+   "quote_id": "q2033",
+   "pipeline_speaker": "濑名紫阳花",
+   "singlepass_suggestion": "王冢真唯",
+   "text": "有什么问题吗？",
+   "resolution": "applied",
+   "applied_speaker": "王冢真唯"
+  },
+  {
+   "part005_index_1based": 129,
+   "quote_id": "q2054",
+   "pipeline_speaker": "王冢真唯",
+   "singlepass_suggestion": "濑名紫阳花",
+   "text": "所以，我反而觉得自己是多余的，应该要顾虑到你们两个才对……明明小真唯都邀请我一起去了，我却还在犹豫不决。",
+   "resolution": "applied",
+   "applied_speaker": "濑名紫阳花"
+  },
+  {
+   "part005_index_1based": 141,
+   "quote_id": "q2062",
+   "pipeline_speaker": "濑名紫阳花",
+   "singlepass_suggestion": "王冢真唯",
+   "text": "是啊。我没办法说出那句话。所以，我有点羡慕你可以为了一个人而全心全意地陪伴在对方身边。",
+   "resolution": "applied",
+   "applied_speaker": "王冢真唯"
+  },
+  {
+   "part005_index_1based": 202,
+   "quote_id": "q2102",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "王冢真唯",
+   "text": "一定会好起来的。",
+   "resolution": "applied",
+   "applied_speaker": "王冢真唯"
+  },
+  {
+   "part005_index_1based": 214,
+   "quote_id": "q2109",
+   "pipeline_speaker": "甘织遥奈",
+   "singlepass_suggestion": "玲奈子妈妈",
+   "text": "一大早就好吵……",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 216,
+   "quote_id": "q2110",
+   "pipeline_speaker": "王冢真唯",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "学校，让我去学校嘛！",
+   "resolution": "applied",
+   "applied_speaker": "甘织玲奈子"
+  },
+  {
+   "part005_index_1based": 244,
+   "quote_id": "q2128",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "小柳香穗",
+   "text": "就是说啊。不过，既然你已经来了，我就原谅你！直到球技大赛开始之前你先老实一点！",
+   "resolution": "applied",
+   "applied_speaker": "小柳香穗"
+  },
+  {
+   "part005_index_1based": 256,
+   "quote_id": "q2136",
+   "pipeline_speaker": "长谷川同学",
+   "singlepass_suggestion": "琴纱月",
+   "text": "……",
+   "resolution": "applied",
+   "applied_speaker": "琴纱月"
+  },
+  {
+   "part005_index_1based": 292,
+   "quote_id": "q2160",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "琴纱月",
+   "text": "那就好。",
+   "resolution": "applied",
+   "applied_speaker": "琴纱月"
+  },
+  {
+   "part005_index_1based": 297,
+   "quote_id": "q2163",
+   "pipeline_speaker": "琴纱月",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "……难道纱月同学，是因为真唯有了恋人，能陪她玩的时间变少了，所以才感到寂寞吗……？",
+   "resolution": "applied",
+   "applied_speaker": "甘织玲奈子"
+  },
+  {
+   "part005_index_1based": 300,
+   "quote_id": "q2165",
+   "pipeline_speaker": "王冢真唯",
+   "singlepass_suggestion": "琴纱月",
+   "text": "不晓得笨蛋死了能不能治好爱犯蠢的毛病，你要不要实验看看？",
+   "resolution": "applied",
+   "applied_speaker": "琴纱月"
+  },
+  {
+   "part005_index_1based": 307,
+   "quote_id": "q2169",
+   "pipeline_speaker": "琴纱月",
+   "singlepass_suggestion": "高田卑弥呼",
+   "text": "你说什么？",
+   "resolution": "applied",
+   "applied_speaker": "高田卑弥呼"
+  },
+  {
+   "part005_index_1based": 321,
+   "quote_id": "q2177",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "王冢真唯",
+   "text": "这句话我原封不动地还给你。你那头漂亮的长发就要脏掉了，真是可惜。",
+   "resolution": "applied",
+   "applied_speaker": "王冢真唯"
+  },
+  {
+   "part005_index_1based": 322,
+   "quote_id": "q2178",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "王冢真唯",
+   "text": "……这话是什么意思？",
+   "resolution": "applied",
+   "applied_speaker": "高田卑弥呼"
+  },
+  {
+   "part005_index_1based": 345,
+   "quote_id": "q2192",
+   "pipeline_speaker": "濑名紫阳花",
+   "singlepass_suggestion": "王冢真唯",
+   "text": "事情就是这样，靠你了喔。",
+   "resolution": "applied",
+   "applied_speaker": "王冢真唯"
+  },
+  {
+   "part005_index_1based": 347,
+   "quote_id": "q2193",
+   "pipeline_speaker": "濑名紫阳花",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "交、交给我吧！",
+   "resolution": "applied",
+   "applied_speaker": "甘织玲奈子"
+  },
+  {
+   "part005_index_1based": 353,
+   "quote_id": "q2196",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "羽贺铃兰",
+   "text": "让你久等了，对不起哦。",
+   "resolution": "applied",
+   "applied_speaker": "羽贺铃兰"
+  },
+  {
+   "part005_index_1based": 356,
+   "quote_id": "q2198",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "羽贺铃兰",
+   "text": "谢谢你愿意过来。",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 364,
+   "quote_id": "q2204",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "羽贺铃兰",
+   "text": "那个，信上的内容全都是骗人的。",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 365,
+   "quote_id": "q2205",
+   "pipeline_speaker": "羽贺铃兰",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "…………骗、骗人的？",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 369,
+   "quote_id": "q2209",
+   "pipeline_speaker": "羽贺铃兰",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "这是哪儿来的偏见啊！？",
+   "resolution": "applied",
+   "applied_speaker": "甘织玲奈子"
+  },
+  {
+   "part005_index_1based": 384,
+   "quote_id": "q2217",
+   "pipeline_speaker": "羽贺铃兰",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "知道了",
+   "resolution": "applied",
+   "applied_speaker": "甘织玲奈子"
+  },
+  {
+   "part005_index_1based": 409,
+   "quote_id": "q2233",
+   "pipeline_speaker": "羽贺铃兰",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "咦……！？",
+   "resolution": "applied",
+   "applied_speaker": "甘织玲奈子"
+  },
+  {
+   "part005_index_1based": 421,
+   "quote_id": "q2241",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "羽贺铃兰",
+   "text": "甘织同学！",
+   "resolution": "applied",
+   "applied_speaker": "羽贺铃兰"
+  },
+  {
+   "part005_index_1based": 423,
+   "quote_id": "q2242",
+   "pipeline_speaker": "羽贺铃兰",
+   "singlepass_suggestion": "龟崎千鹤",
+   "text": "拜托你，甘织同学。",
+   "resolution": "applied",
+   "applied_speaker": "龟崎千鹤"
+  },
+  {
+   "part005_index_1based": 429,
+   "quote_id": "q2245",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "龟崎千鹤",
+   "text": "她明明无论什么时候都自信满满……但是，这次卑弥呼罕见地说了丧气话。她说既然已经没有退路，除了赢也别无选择了。如果输了，将",
+   "resolution": "applied",
+   "applied_speaker": "龟崎千鹤"
+  },
+  {
+   "part005_index_1based": 437,
+   "quote_id": "q2249",
+   "pipeline_speaker": "王冢真唯",
+   "singlepass_suggestion": "龟崎千鹤",
+   "text": "甘织同学，求求你。我知道这样做是不对的。可是，现在已经没有其他方法了……如果卑弥呼知道我在做这种事，一定会生气的……所以",
+   "resolution": "applied",
+   "applied_speaker": "龟崎千鹤"
+  },
+  {
+   "part005_index_1based": 460,
+   "quote_id": "q2264",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "琴纱月",
+   "text": "是吗。",
+   "resolution": "applied",
+   "applied_speaker": "琴纱月"
+  },
+  {
+   "part005_index_1based": 462,
+   "quote_id": "q2265",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "小柳香穗",
+   "text": "我们也要像真唯和小紫她们两个那样好好努力哦！",
+   "resolution": "applied",
+   "applied_speaker": "小柳香穗"
+  },
+  {
+   "part005_index_1based": 464,
+   "quote_id": "q2266",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "高田卑弥呼",
+   "text": "终于要一决胜负了呢。五重奏。",
+   "resolution": "applied",
+   "applied_speaker": "高田卑弥呼"
+  },
+  {
+   "part005_index_1based": 479,
+   "quote_id": "q2275",
+   "pipeline_speaker": "小柳香穗",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "呃，竟然还把篮球社一年级的王牌带来了！",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 488,
+   "quote_id": "q2281",
+   "pipeline_speaker": "琴纱月",
+   "singlepass_suggestion": "平野",
+   "text": "好！",
+   "resolution": "applied",
+   "applied_speaker": "平野"
+  },
+  {
+   "part005_index_1based": 489,
+   "quote_id": "q2282",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "琴纱月",
+   "text": "无所谓啦。",
+   "resolution": "applied",
+   "applied_speaker": "琴纱月"
+  },
+  {
+   "part005_index_1based": 516,
+   "quote_id": "q2299",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "高田卑弥呼",
+   "text": "果然是强敌……！但我们早就知道了！被拿走的分数就让我们好好要回来吧，大家！",
+   "resolution": "applied",
+   "applied_speaker": "高田卑弥呼"
+  },
+  {
+   "part005_index_1based": 519,
+   "quote_id": "q2301",
+   "pipeline_speaker": "群众·B班同学",
+   "singlepass_suggestion": "平野",
+   "text": "……什么战术？",
+   "resolution": "applied",
+   "applied_speaker": "平野"
+  },
+  {
+   "part005_index_1based": 531,
+   "quote_id": "q2307",
+   "pipeline_speaker": "甘织遥奈",
+   "singlepass_suggestion": "平野",
+   "text": "甘织同学单手投篮的动作好帅喔……！",
+   "resolution": "applied",
+   "applied_speaker": "平野"
+  },
+  {
+   "part005_index_1based": 532,
+   "quote_id": "q2308",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "长谷川",
+   "text": "这是五重奏用球连结在一起的羁绊……啊啊，神啊……！我现在成为了历史的见证人……！",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 541,
+   "quote_id": "q2312",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "高田卑弥呼",
+   "text": "我们会投进这球，继续拉开比分。",
+   "resolution": "applied",
+   "applied_speaker": "高田卑弥呼"
+  },
+  {
+   "part005_index_1based": 543,
+   "quote_id": "q2313",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "高田卑弥呼",
+   "text": "甘织同学，你来了啊。",
+   "resolution": "applied",
+   "applied_speaker": "高田卑弥呼"
+  },
+  {
+   "part005_index_1based": 562,
+   "quote_id": "q2326",
+   "pipeline_speaker": "琴纱月",
+   "singlepass_suggestion": "小柳香穗",
+   "text": "说得也是。",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 570,
+   "quote_id": "q2332",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "小柳香穗",
+   "text": "不过，那我们应该怎么办呢？",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 573,
+   "quote_id": "q2334",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "平野",
+   "text": "唉！？啊……那、那个……！",
+   "resolution": "applied",
+   "applied_speaker": "平野"
+  },
+  {
+   "part005_index_1based": 579,
+   "quote_id": "q2337",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "平野",
+   "text": "啊，不，没什么，没什么！这样不行对吧！",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 593,
+   "quote_id": "q2346",
+   "pipeline_speaker": "琴纱月",
+   "singlepass_suggestion": "平野",
+   "text": "呃，可是。",
+   "resolution": "applied",
+   "applied_speaker": "平野"
+  },
+  {
+   "part005_index_1based": 599,
+   "quote_id": "q2350",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "小柳香穗",
+   "text": "那么我们得决定一下具体要怎么做了。",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 603,
+   "quote_id": "q2353",
+   "pipeline_speaker": "高田卑弥呼",
+   "singlepass_suggestion": "羽贺铃兰",
+   "text": "嗯……我们这边可是连帮手都请来了耶。",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 605,
+   "quote_id": "q2354",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "高田卑弥呼",
+   "text": "不愧是五重奏。不这样就没意思了。",
+   "resolution": "applied",
+   "applied_speaker": "高田卑弥呼"
+  },
+  {
+   "part005_index_1based": 612,
+   "quote_id": "q2359",
+   "pipeline_speaker": "琴纱月",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "嗳，小香穗……我和你换吧？",
+   "resolution": "applied",
+   "applied_speaker": "甘织玲奈子"
+  },
+  {
+   "part005_index_1based": 615,
+   "quote_id": "q2362",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "小柳香穗",
+   "text": "我虽然不是体育人，但别看我这样，其实我还挺热血的喔。",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 617,
+   "quote_id": "q2363",
+   "pipeline_speaker": "甘织玲奈子",
+   "singlepass_suggestion": "小柳香穗",
+   "text": "就算因为超越了极限，而在比赛后整个人累倒，肯定也会成为美好的回忆的。全班像这样团结一致，为了比赛而奋斗的这种感觉，是我从",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 618,
+   "quote_id": "q2364",
+   "pipeline_speaker": "琴纱月",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "……我知道了。",
+   "resolution": "kept"
+  },
+  {
+   "part005_index_1based": 622,
+   "quote_id": "q2367",
+   "pipeline_speaker": "小柳香穗",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "真是的！",
+   "resolution": "applied",
+   "applied_speaker": "甘织玲奈子"
+  },
+  {
+   "part005_index_1based": 627,
+   "quote_id": "q2370",
+   "pipeline_speaker": "平野同学",
+   "singlepass_suggestion": "照泽耀子",
+   "text": "对、对不起！",
+   "resolution": "applied",
+   "applied_speaker": "照泽耀子"
+  },
+  {
+   "part005_index_1based": 639,
+   "quote_id": "q2378",
+   "pipeline_speaker": "小柳香穗",
+   "singlepass_suggestion": "甘织玲奈子",
+   "text": "不不不，这样不行啦！纱月同学的尊脚要是受了伤怎么办！而且你看起来真的很痛！",
+   "resolution": "applied",
+   "applied_speaker": "甘织玲奈子"
+  }
+ ],
+ "resolution_summary": {
+  "applied": 45,
+  "kept": 16,
+  "deferred": 0
+ }
+}
